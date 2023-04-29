@@ -1,0 +1,18 @@
+[package]
+name = "pdf2"
+version = "0.1.0"
+authors = ["Alexander Korolev <alexander.korolev.germany@gmail.com>"]
+edition = "2021"
+categories = []
+description = """
+PDF 2.0 Rust library.
+"""
+homepage = "https://github.com/pdf2-rs/pdf2"
+keywords = []
+license = "Unlicense OR MIT"
+readme = "README.md"
+repository = "https://github.com/pdf2-rs/pdf2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
