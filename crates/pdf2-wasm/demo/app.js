@@ -10,6 +10,28 @@ const SAMPLES = [
   { file: 'samples/encrypted.pdf', title: 'AES-256 encrypted (password: user)', password: 'user' },
 ];
 
+// Each entry names a sample (index into SAMPLES) and the page it starts on, so a
+// reader can jump straight to the thing that demonstrates a capability.
+const FEATURES = [
+  { label: 'Colour spaces: gray, RGB, CMYK', sample: 3, page: 0 },
+  { label: 'Caps: butt, round, square', sample: 3, page: 1 },
+  { label: 'Joins: miter, bevel, miter limit', sample: 3, page: 1 },
+  { label: 'Non-zero and even-odd fill rules', sample: 3, page: 1 },
+  { label: 'Dash patterns and dash phase', sample: 3, page: 1 },
+  { label: 'Bézier curves: a filled circle of known area', sample: 3, page: 1 },
+  { label: 'Images: exact scale, /Decode, /Indexed', sample: 3, page: 2 },
+  { label: 'Image on a quarter-turn matrix', sample: 3, page: 2 },
+  { label: 'Media box with a non-zero origin', sample: 3, page: 3 },
+  { label: '/Rotate 90 pages', sample: 3, page: 4 },
+  { label: 'Text metrics: horizontal scaling, word spacing', sample: 3, page: 5 },
+  { label: '/Widths and /MissingWidth advances', sample: 3, page: 6 },
+  { label: 'Embedded TrueType program', sample: 3, page: 8 },
+  { label: 'Composite (Type 0) fonts over a CID map', sample: 3, page: 9 },
+  { label: 'AES-256 encrypted file (password: user)', sample: 4, page: 0 },
+  { label: 'Base-14 fallback glyphs and accents', sample: 0, page: 0 },
+  { label: 'Text extraction for the page', sample: 2, page: 0 },
+];
+
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 const elements = {
@@ -35,6 +57,8 @@ const elements = {
   factEncrypted: document.querySelector('#factEncrypted'),
   factTime: document.querySelector('#factTime'),
   text: document.querySelector('#text'),
+  download: document.querySelector('#download'),
+  features: document.querySelector('#features'),
 };
 
 const state = {
@@ -143,9 +167,12 @@ async function showDocument(bytes, name, password, source) {
     fact(elements.factName, name);
     fact(elements.factVersion, state.document.version());
     fact(elements.factEncrypted, state.document.isEncrypted() ? 'yes' : 'no');
+    elements.download.disabled = false;
+    elements.download.textContent = `Download ${name}`;
     document.title = `pdf2 — ${name}`;
     await render();
   } catch (error) {
+    elements.download.disabled = true;
     if (looksEncrypted(error) && !password) {
       state.sampleIndex = source.sampleIndex ?? null;
       selectSource(source.sampleIndex ?? null, name);
@@ -186,7 +213,7 @@ function zoomBy(direction) {
   zoomTo(direction > 0 ? candidates[0] : candidates[candidates.length - 1]);
 }
 
-async function loadSample(index) {
+async function loadSample(index, page = 0) {
   const sample = SAMPLES[index];
   if (!sample) {
     return;
@@ -196,6 +223,9 @@ async function loadSample(index) {
   await showDocument(bytes, sample.file.split('/').pop(), sample.password ?? null, {
     sampleIndex: index,
   });
+  if (page > 0) {
+    setPage(page);
+  }
 }
 
 function fileChosen(file) {
@@ -226,6 +256,31 @@ elements.sample.addEventListener('change', (event) => {
 });
 
 elements.file.addEventListener('change', (event) => fileChosen(event.target.files[0]));
+
+elements.download.addEventListener('click', () => {
+  if (!state.bytes) {
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([state.bytes], { type: 'application/pdf' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = state.name === '–' ? 'document.pdf' : state.name;
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+for (const [index, feature] of FEATURES.entries()) {
+  const item = document.createElement('li');
+  const button = document.createElement('button');
+  button.type = 'button';
+  const sample = SAMPLES[feature.sample];
+  button.innerHTML = `${feature.label} <span class="where">${sample.file.split('/').pop()}${
+    feature.sample === 3 ? ` · page ${feature.page + 1}` : ''
+  }</span>`;
+  button.addEventListener('click', () => loadSample(feature.sample, feature.page));
+  item.append(button);
+  elements.features.append(item);
+}
 
 elements.prev.addEventListener('click', () => setPage(state.page - 1));
 elements.next.addEventListener('click', () => setPage(state.page + 1));
