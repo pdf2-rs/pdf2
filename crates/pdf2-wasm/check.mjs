@@ -125,6 +125,21 @@ expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_G
       `the demo sample ${sample} is committed`,
     );
   }
+  // Zooming past the container width used to clamp the canvas with CSS while its
+  // height kept the zoomed value, so the page stretched vertically only.
+  expect(
+    !/canvas\s*\{[^}]*max-width/.test(page),
+    'the canvas is not clamped by CSS, so zoom cannot stretch it',
+  );
+  // The loaded file can be saved and checked in another viewer.
+  expect(
+    /link\.download/.test(script) && /createObjectURL/.test(script),
+    'the demo can download the document it is showing',
+  );
+  expect(
+    (script.match(/const FEATURES = \[/) || []).length === 1,
+    'the demo lists what it supports',
+  );
   // The sample select is the visible record of what is loaded; clearing it after
   // a successful open made the choice vanish the moment it worked.
   expect(
