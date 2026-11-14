@@ -13,7 +13,7 @@ use pdf2::lexer::{is_delimiter, is_whitespace};
 use pdf2::{Dictionary, Document, Encoding, Object, Page, Parser, Token};
 
 use crate::canvas::{Canvas, ClipMask, Color};
-use crate::font::Font;
+use crate::font::{Font, Glyph};
 use crate::geom::{Matrix, Point};
 use crate::image::{resolve, Image};
 use crate::path::{dash_polyline, stroke_outline, Cap, Dash, Join, Path};
@@ -116,6 +116,58 @@ impl SimpleWidths {
     }
 }
 
+/// What a font resource yields, with the reason it is not drawable when it is
+/// not.
+#[derive(Debug, Clone, Default)]
+struct LoadedFont {
+    font: Option<Font>,
+    widths: Option<SimpleWidths>,
+    cid: Option<CidFont>,
+    note: Option<&'static str>,
+}
+
+/// A composite (Type 0) font: two-byte codes, CIDs mapped to glyph ids through
+/// `/CIDToGIDMap`, and advances from `/W` with `/DW` as the default (9.7.4).
+#[derive(Debug, Clone)]
+struct CidFont {
+    font: Font,
+    to_gid: CidToGid,
+    widths: CidWidths,
+}
+
+#[derive(Debug, Clone)]
+enum CidToGid {
+    Identity,
+    Table(Vec<u16>),
+}
+
+#[derive(Debug, Clone, Default)]
+struct CidWidths {
+    /// `(first CID, widths)` runs from `/W`, in 1/1000 em.
+    ranges: Vec<(u32, Vec<f64>)>,
+    /// `/DW`, which the standard sets to 1000 when absent.
+    default: f64,
+}
+
+impl CidFont {
+    fn glyph_id(&self, cid: u16) -> u16 {
+        match &self.to_gid {
+            CidToGid::Identity => cid,
+            CidToGid::Table(table) => table.get(usize::from(cid)).copied().unwrap_or(0),
+        }
+    }
+
+    fn advance(&self, cid: u16) -> f64 {
+        for (start, widths) in &self.widths.ranges {
+            let index = u32::from(cid).wrapping_sub(*start);
+            if let Some(width) = widths.get(index as usize) {
+                return width / 1000.0;
+            }
+        }
+        self.widths.default / 1000.0
+    }
+}
+
 /// Rasterise one page.
 pub fn render_page(
     document: &Document,
@@ -184,6 +236,7 @@ struct State {
     font_size: f64,
     miter_limit: f64,
     widths: Option<SimpleWidths>,
+    cid: Option<CidFont>,
     char_spacing: f64,
     word_spacing: f64,
     horizontal_scale: f64,
@@ -207,6 +260,7 @@ impl State {
             font_size: 0.0,
             miter_limit: 10.0,
             widths: None,
+            cid: None,
             char_spacing: 0.0,
             word_spacing: 0.0,
             horizontal_scale: 1.0,
@@ -403,9 +457,10 @@ impl Walker<'_> {
                     _ => return Err(crate::Error::malformed("/Tf needs a font name")),
                 };
                 self.state.font_size = number(operands, 1);
-                let (font, widths) = self.load_font(&name);
+                let (font, widths, cid) = self.load_font(&name);
                 self.state.font = font;
                 self.state.widths = widths;
+                self.state.cid = cid;
             }
             b"Td" | b"TD" => {
                 let tx = number(operands, 0);
@@ -544,42 +599,24 @@ impl Walker<'_> {
     }
 
     fn show_text(&mut self, bytes: &[u8]) -> crate::Result<()> {
+        if let Some(cid) = self.state.cid.clone() {
+            // Identity-H and friends: the string is a run of two-byte codes.
+            for pair in bytes.chunks_exact(2) {
+                let code = u16::from_be_bytes([pair[0], pair[1]]);
+                if let Some(glyph) = cid.font.glyph_by_id(cid.glyph_id(code)) {
+                    self.place_glyph(&glyph);
+                }
+                let advance = cid.advance(code) * self.state.font_size + self.state.char_spacing;
+                self.advance_text(advance * self.state.horizontal_scale);
+            }
+            return Ok(());
+        }
         let Some(font) = self.state.font.clone() else {
             return Ok(());
         };
         for &code in bytes {
             if let Some(glyph) = font.glyph(code) {
-                if !glyph.contours.is_empty() {
-                    let scale = Matrix::new(
-                        self.state.font_size * self.state.horizontal_scale,
-                        0.0,
-                        0.0,
-                        self.state.font_size,
-                        0.0,
-                        self.state.rise,
-                    );
-                    let transform = scale
-                        .multiply(self.state.text_matrix)
-                        .multiply(self.state.ctm);
-                    let polygons: Vec<Vec<Point>> = glyph
-                        .contours
-                        .iter()
-                        .map(|contour| {
-                            contour
-                                .iter()
-                                .map(|point| transform.apply(*point))
-                                .collect()
-                        })
-                        .collect();
-                    fill_polygons(
-                        self.canvas,
-                        &self.mask,
-                        &polygons,
-                        self.state.fill,
-                        false,
-                        1.0,
-                    );
-                }
+                self.place_glyph(&glyph);
             }
             let em = self
                 .state
@@ -590,11 +627,51 @@ impl Walker<'_> {
             if code == b' ' {
                 advance += self.state.word_spacing;
             }
-            advance *= self.state.horizontal_scale;
-            self.state.text_matrix =
-                Matrix::new(1.0, 0.0, 0.0, 1.0, advance, 0.0).multiply(self.state.text_matrix);
+            self.advance_text(advance * self.state.horizontal_scale);
         }
         Ok(())
+    }
+
+    /// Fill one glyph outline at the current text position.
+    fn place_glyph(&mut self, glyph: &Glyph) {
+        if glyph.contours.is_empty() {
+            return;
+        }
+        let scale = Matrix::new(
+            self.state.font_size * self.state.horizontal_scale,
+            0.0,
+            0.0,
+            self.state.font_size,
+            0.0,
+            self.state.rise,
+        );
+        let transform = scale
+            .multiply(self.state.text_matrix)
+            .multiply(self.state.ctm);
+        let polygons: Vec<Vec<Point>> = glyph
+            .contours
+            .iter()
+            .map(|contour| {
+                contour
+                    .iter()
+                    .map(|point| transform.apply(*point))
+                    .collect()
+            })
+            .collect();
+        fill_polygons(
+            self.canvas,
+            &self.mask,
+            &polygons,
+            self.state.fill,
+            false,
+            1.0,
+        );
+    }
+
+    /// Move the text position by `advance` in unscaled text space.
+    fn advance_text(&mut self, advance: f64) {
+        self.state.text_matrix =
+            Matrix::new(1.0, 0.0, 0.0, 1.0, advance, 0.0).multiply(self.state.text_matrix);
     }
 
     fn draw_image(&mut self, name: &[u8]) -> crate::Result<()> {
@@ -636,22 +713,19 @@ impl Walker<'_> {
         Ok(())
     }
 
-    fn load_font(&mut self, name: &[u8]) -> (Option<Font>, Option<SimpleWidths>) {
-        let Some((font, widths, unsupported)) = self.font_entry(name) else {
-            return (None, None);
+    fn load_font(&mut self, name: &[u8]) -> (Option<Font>, Option<SimpleWidths>, Option<CidFont>) {
+        let Some(loaded) = self.font_entry(name) else {
+            return (None, None, None);
         };
-        if let Some(kind) = unsupported {
-            self.report.note(kind.as_bytes());
+        if let Some(note) = loaded.note {
+            self.report.note(note.as_bytes());
         }
-        (font, widths)
+        (loaded.font, loaded.widths, loaded.cid)
     }
 
-    /// The font dictionary behind a resource name, its widths and, when the
-    /// family is not one this renderer draws, the name to report.
-    fn font_entry(
-        &mut self,
-        name: &[u8],
-    ) -> Option<(Option<Font>, Option<SimpleWidths>, Option<&'static str>)> {
+    /// Everything the walker needs from a font resource, with a note when the
+    /// family is one this renderer cannot draw.
+    fn font_entry(&mut self, name: &[u8]) -> Option<LoadedFont> {
         let resources = self.resources.clone()?;
         let fonts = match resolve(self.document, resources.get(b"Font")) {
             Ok(Object::Dictionary(fonts)) => fonts,
@@ -666,12 +740,14 @@ impl Walker<'_> {
             Some(Object::Name(name)) => name.clone(),
             _ => Vec::new(),
         };
-        // Type 0 (CID), Type 3 and embedded Type 1/CFF programs are not drawn
-        // yet; report them by name instead of painting fallback glyphs as if
-        // they were the document's font.
         match subtype.as_slice() {
-            b"Type0" => return Some((None, None, Some("font:Type0"))),
-            b"Type3" => return Some((None, None, Some("font:Type3"))),
+            b"Type0" => return Some(self.cid_entry(&font)),
+            b"Type3" => {
+                return Some(LoadedFont {
+                    note: Some("font:Type3"),
+                    ..LoadedFont::default()
+                })
+            }
             _ => {}
         }
         let encoding = self.encoding_for(&font);
@@ -684,7 +760,12 @@ impl Walker<'_> {
                     (&b"FontFile"[..], "font:FontFile"),
                 ] {
                     if descriptor.get(key).is_some() {
-                        return Some((Some(Font::builtin(encoding)), widths, Some(kind)));
+                        return Some(LoadedFont {
+                            font: Some(Font::builtin(encoding)),
+                            widths,
+                            cid: None,
+                            note: Some(kind),
+                        });
                     }
                 }
                 if let Some(font_file) = descriptor.get(b"FontFile2") {
@@ -694,13 +775,147 @@ impl Walker<'_> {
                     };
                     if let Some(data) = data {
                         if let Some(font) = Font::true_type(encoding.clone(), data) {
-                            return Some((Some(font), widths, None));
+                            return Some(LoadedFont {
+                                font: Some(font),
+                                widths,
+                                cid: None,
+                                note: None,
+                            });
                         }
                     }
                 }
             }
         }
-        Some((Some(Font::builtin(encoding)), widths, None))
+        Some(LoadedFont {
+            font: Some(Font::builtin(encoding)),
+            widths,
+            cid: None,
+            note: None,
+        })
+    }
+
+    /// A Type 0 font: a descendant CIDFontType2 with an embedded program and an
+    /// identity CMap is drawable; anything else is reported by reason.
+    fn cid_entry(&mut self, font: &Dictionary) -> LoadedFont {
+        let identity = matches!(
+            resolve(self.document, font.get(b"Encoding")).ok(),
+            Some(Object::Name(name)) if name.starts_with(b"Identity")
+        );
+        if !identity {
+            return LoadedFont {
+                note: Some("font:Type0-cmap"),
+                ..LoadedFont::default()
+            };
+        }
+        let descendant = match resolve(self.document, font.get(b"DescendantFonts")).ok() {
+            Some(Object::Array(items)) => items
+                .first()
+                .and_then(|item| resolve(self.document, Some(item)).ok()),
+            _ => None,
+        };
+        let Some(Object::Dictionary(descendant)) = descendant else {
+            return LoadedFont {
+                note: Some("font:Type0-descendant"),
+                ..LoadedFont::default()
+            };
+        };
+        let subtype = match descendant.get(b"Subtype") {
+            Some(Object::Name(name)) => name.clone(),
+            _ => Vec::new(),
+        };
+        if subtype != b"CIDFontType2" {
+            // CIDFontType0 is CFF, whose charstrings this renderer cannot read.
+            return LoadedFont {
+                note: Some("font:CIDFontType0"),
+                ..LoadedFont::default()
+            };
+        }
+        let program = descendant
+            .get(b"FontDescriptor")
+            .and_then(|descriptor| resolve(self.document, Some(descriptor)).ok())
+            .and_then(|descriptor| match descriptor {
+                Object::Dictionary(descriptor) => {
+                    descriptor.get(b"FontFile2").and_then(|file| match file {
+                        Object::Reference(id) => self.document.stream_data(*id).ok(),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            })
+            .and_then(|data| Font::true_type(Encoding::standard(), data));
+        let Some(program) = program else {
+            return LoadedFont {
+                note: Some("font:Type0-no-program"),
+                ..LoadedFont::default()
+            };
+        };
+        // Read the entry unresolved: resolving it would dereference the stream
+        // reference and lose the id the bytes are behind.
+        let to_gid = match descendant.get(b"CIDToGIDMap") {
+            Some(Object::Name(name)) if name == b"Identity" => CidToGid::Identity,
+            Some(Object::Reference(id)) => self
+                .document
+                .stream_data(*id)
+                .map(|data| {
+                    CidToGid::Table(
+                        data.chunks_exact(2)
+                            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                            .collect(),
+                    )
+                })
+                .unwrap_or(CidToGid::Identity),
+            // Absent means identity.
+            _ => CidToGid::Identity,
+        };
+        LoadedFont {
+            font: None,
+            widths: None,
+            cid: Some(CidFont {
+                font: program,
+                to_gid,
+                widths: self.cid_widths(&descendant),
+            }),
+            note: None,
+        }
+    }
+
+    /// `/W` runs and `/DW` from a CID font dictionary (9.7.4.3).
+    fn cid_widths(&self, descendant: &Dictionary) -> CidWidths {
+        let mut ranges = vec![];
+        if let Ok(Object::Array(items)) = resolve(self.document, descendant.get(b"W")) {
+            let number = |item: Option<&Object>| {
+                item.and_then(|item| resolve(self.document, Some(item)).ok())
+                    .and_then(|item| item.as_real())
+            };
+            let mut index = 0;
+            while index + 1 < items.len() {
+                let Some(first) = number(items.get(index)) else {
+                    break;
+                };
+                match items.get(index + 1) {
+                    Some(Object::Array(list)) => {
+                        let widths = list
+                            .iter()
+                            .map(Object::as_real)
+                            .map(|w| w.unwrap_or(0.0))
+                            .collect();
+                        ranges.push((first as u32, widths));
+                        index += 2;
+                    }
+                    second => {
+                        let Some(last) = number(second) else { break };
+                        let Some(width) = number(items.get(index + 2)) else {
+                            break;
+                        };
+                        let count = (last - first).max(0.0) as usize + 1;
+                        ranges.push((first as u32, vec![width; count]));
+                        index += 3;
+                    }
+                }
+            }
+        }
+        let default = number_of(self.document, descendant.get(b"DW")).unwrap_or(1000.0);
+        CidWidths { ranges, default }
     }
 
     /// `/Widths` plus the descriptor's `/MissingWidth`, when the font states
@@ -713,19 +928,14 @@ impl Walker<'_> {
         };
         let widths: Vec<f64> = items
             .iter()
-            .map(|item| {
-                resolve(self.document, Some(item))
-                    .ok()
-                    .and_then(|item| item.as_real())
-            })
-            .map(|width| width.unwrap_or(0.0))
+            .map(|item| number_of(self.document, Some(item)).unwrap_or(0.0))
             .collect();
         let missing = font
             .get(b"FontDescriptor")
             .and_then(|descriptor| resolve(self.document, Some(descriptor)).ok())
             .and_then(|descriptor| match descriptor {
                 Object::Dictionary(descriptor) => {
-                    descriptor.get(b"MissingWidth").and_then(Object::as_real)
+                    number_of(self.document, descriptor.get(b"MissingWidth"))
                 }
                 _ => None,
             })
@@ -791,6 +1001,12 @@ fn integer(operands: &[Object], index: usize) -> i64 {
         .get(index)
         .and_then(Object::as_integer)
         .unwrap_or(0)
+}
+
+fn number_of(document: &Document, object: Option<&Object>) -> Option<f64> {
+    resolve(document, object)
+        .ok()
+        .and_then(|object| object.as_real())
 }
 
 fn matrix_operand(operands: &[Object]) -> Option<Matrix> {

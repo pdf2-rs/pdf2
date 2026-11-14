@@ -58,14 +58,7 @@ impl Font {
                 let character = encoding.character(code)?;
                 let face = ttf_parser::Face::parse(data, 0).ok()?;
                 let glyph_id = face.glyph_index(character)?;
-                let units = f64::from(face.units_per_em());
-                let mut builder = OutlineBuilder::new(units);
-                face.outline_glyph(glyph_id, &mut builder)?;
-                let advance = f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)) / units;
-                Some(Glyph {
-                    contours: builder.contours,
-                    advance,
-                })
+                glyph_from_face(data, glyph_id)
             }
         }
     }
@@ -75,6 +68,30 @@ impl Font {
         self.glyph(code)
             .map_or(BUILTIN_ADVANCE, |glyph| glyph.advance)
     }
+
+    /// The outline for a glyph id, which is how composite (Type 0) fonts select
+    /// glyphs: a CID maps to an id through `/CIDToGIDMap`, not through a cmap.
+    ///
+    /// The built-in bitmap alphabet has no glyph ids, so it has no answer here.
+    pub fn glyph_by_id(&self, id: u16) -> Option<Glyph> {
+        match self {
+            Self::Builtin { .. } => None,
+            Self::TrueType { data, .. } => glyph_from_face(data, ttf_parser::GlyphId(id)),
+        }
+    }
+}
+
+/// An outline for a glyph id, from a parsed TrueType program.
+fn glyph_from_face(data: &[u8], glyph_id: ttf_parser::GlyphId) -> Option<Glyph> {
+    let face = ttf_parser::Face::parse(data, 0).ok()?;
+    let units = f64::from(face.units_per_em());
+    let mut builder = OutlineBuilder::new(units);
+    face.outline_glyph(glyph_id, &mut builder)?;
+    let advance = f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)) / units;
+    Some(Glyph {
+        contours: builder.contours,
+        advance,
+    })
 }
 
 const BUILTIN_ADVANCE: f64 = 6.0 / 9.0;
@@ -527,6 +544,15 @@ mod tests {
         let glyph = font.glyph(b' ').expect("space");
         assert!(glyph.contours.is_empty());
         assert!(glyph.advance > 0.0);
+    }
+
+    #[test]
+    fn glyph_ids_are_selected_directly_for_composite_fonts() {
+        let font = Font::builtin(Encoding::standard());
+        assert!(
+            font.glyph_by_id(1).is_none(),
+            "the bitmap alphabet has no glyph ids"
+        );
     }
 
     #[test]
