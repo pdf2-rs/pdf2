@@ -63,8 +63,38 @@ struct GroupMeasurement {
     alloc_bytes: u64,
 }
 
+/// The note about unsupported pages is printed once per run, not once per group.
+static NOTE_PRINTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Pages whose text extraction hits a feature this version does not implement.
+/// They are counted and reported rather than failing the run: the corpus is for
+/// throughput, and an unsupported font in one fixture is not a reason to stop.
+fn unsupported_pages(group: &Group) -> Result<usize, String> {
+    let mut skipped = 0;
+    for file in &group.files {
+        let document = Document::open(file.clone()).map_err(|error| error.to_string())?;
+        let pages = document.pages().map_err(|error| error.to_string())?;
+        for page in &pages {
+            match document.extract_text(page) {
+                Ok(_) => {}
+                Err(pdf2::Error::Unsupported { .. }) => skipped += 1,
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+    }
+    Ok(skipped)
+}
+
 fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String> {
     let bytes = group.bytes();
+    let skipped = unsupported_pages(group)?;
+    if skipped > 0 && !NOTE_PRINTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "note: {skipped} page(s) in {} use text features this version does not \
+             support; their text is skipped, the rest is measured",
+            group.name
+        );
+    }
     let (pages, allocations, alloc_bytes) = allocation_pass(group)?;
     let read = median_timing(runs, || {
         for file in &group.files {
@@ -74,9 +104,11 @@ fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String>
                 document
                     .page_content(page)
                     .map_err(|error| error.to_string())?;
-                document
-                    .extract_text(page)
-                    .map_err(|error| error.to_string())?;
+                if let Err(error) = document.extract_text(page) {
+                    if !matches!(error, pdf2::Error::Unsupported { .. }) {
+                        return Err(error.to_string());
+                    }
+                }
             }
             std::hint::black_box(&document);
         }
@@ -99,9 +131,11 @@ fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String>
             let document = Document::open(file.clone()).map_err(|error| error.to_string())?;
             let pages = document.pages().map_err(|error| error.to_string())?;
             for page in &pages {
-                document
-                    .extract_text(page)
-                    .map_err(|error| error.to_string())?;
+                if let Err(error) = document.extract_text(page) {
+                    if !matches!(error, pdf2::Error::Unsupported { .. }) {
+                        return Err(error.to_string());
+                    }
+                }
             }
         }
         Ok(())
@@ -129,9 +163,11 @@ fn allocation_pass(group: &Group) -> Result<(u64, u64, u64), String> {
             document
                 .page_content(page)
                 .map_err(|error| error.to_string())?;
-            document
-                .extract_text(page)
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = document.extract_text(page) {
+                if !matches!(error, pdf2::Error::Unsupported { .. }) {
+                    return Err(error.to_string());
+                }
+            }
         }
     }
     let (allocations, alloc_bytes) = alloc::snapshot();

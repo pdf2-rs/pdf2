@@ -39,6 +39,15 @@ pub enum Error {
         what: &'static str,
     },
 
+    /// A construct this version does not implement yet.
+    ///
+    /// Unlike [`Error::Malformed`], the file is not wrong: the reader simply
+    /// does not support the feature, and callers may choose to skip it.
+    Unsupported {
+        /// What is missing, for example `"composite (Type0) fonts"`.
+        what: &'static str,
+    },
+
     /// A numeric token could not be parsed.
     InvalidNumber {
         /// The offending token, as it appeared in the input.
@@ -90,6 +99,7 @@ impl fmt::Display for Error {
                 offset: Some(offset),
             } => write!(f, "malformed {what} at offset {offset}"),
             Self::Malformed { what, offset: None } => write!(f, "malformed {what}"),
+            Self::Unsupported { what } => write!(f, "unsupported: {what}"),
             Self::Io { message } => write!(f, "i/o error: {message}"),
         }
     }
@@ -125,6 +135,14 @@ mod tests {
             "malformed xref table at offset 12"
         );
         assert_eq!(Error::malformed("stream").to_string(), "malformed stream");
+        assert_eq!(
+            Error::Unsupported {
+                what: "composite (Type0) fonts"
+            }
+            .to_string(),
+            "unsupported: composite (Type0) fonts",
+            "a valid construct this version cannot read is not called malformed"
+        );
     }
 
     #[test]
