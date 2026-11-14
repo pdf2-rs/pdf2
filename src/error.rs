@@ -1,0 +1,127 @@
+//! Errors returned by the `pdf2` crate.
+//!
+//! Every parsing path in this crate reports failure through [`Error`]; nothing
+//! is expected to panic on malformed input, which is what M10 of the project
+//! plan pins down with a corpus of truncated and mutated files.
+
+use std::fmt;
+
+/// Result type used throughout the crate.
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Every failure mode the crate reports.
+///
+/// The set grows as new layers (cross-reference tables, filters, content
+/// streams, encryption) are added, which is why it is `#[non_exhaustive]`:
+/// matching on it from outside the crate needs a catch-all arm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Error {
+    /// The input ended in the middle of a construct.
+    ///
+    /// `what` names the construct being read, for example `"number"`.
+    UnexpectedEof { what: &'static str },
+
+    /// A byte that cannot start the expected construct was found.
+    ///
+    /// `offset` is the position of `byte` within the input being read.
+    UnexpectedByte {
+        byte: u8,
+        offset: usize,
+        what: &'static str,
+    },
+
+    /// A numeric token could not be parsed.
+    ///
+    /// `text` holds the offending token as it appeared in the input.
+    InvalidNumber { text: String },
+
+    /// The input is structurally wrong in a way particular to `what`.
+    ///
+    /// `offset` is where the problem was noticed, if it is known.
+    Malformed {
+        what: &'static str,
+        offset: Option<usize>,
+    },
+
+    /// Reading or writing a file failed.
+    Io { message: String },
+}
+
+impl Error {
+    /// The input ended while `what` was being read.
+    pub const fn unexpected_eof(what: &'static str) -> Self {
+        Self::UnexpectedEof { what }
+    }
+
+    /// The input is structurally wrong in a way particular to `what`.
+    pub const fn malformed(what: &'static str) -> Self {
+        Self::Malformed { what, offset: None }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnexpectedEof { what } => {
+                write!(f, "unexpected end of input while reading {what}")
+            }
+            Self::UnexpectedByte { byte, offset, what } => write!(
+                f,
+                "unexpected byte {byte:#04X} at offset {offset} while reading {what}"
+            ),
+            Self::InvalidNumber { text } => write!(f, "invalid number {text:?}"),
+            Self::Malformed {
+                what,
+                offset: Some(offset),
+            } => write!(f, "malformed {what} at offset {offset}"),
+            Self::Malformed { what, offset: None } => write!(f, "malformed {what}"),
+            Self::Io { message } => write!(f, "i/o error: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io {
+            message: error.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+
+    #[test]
+    fn display_names_the_construct() {
+        assert_eq!(
+            Error::unexpected_eof("number").to_string(),
+            "unexpected end of input while reading number"
+        );
+        assert_eq!(
+            Error::Malformed {
+                what: "xref table",
+                offset: Some(12),
+            }
+            .to_string(),
+            "malformed xref table at offset 12"
+        );
+        assert_eq!(Error::malformed("stream").to_string(), "malformed stream");
+    }
+
+    #[test]
+    fn unexpected_byte_is_reported_in_hex() {
+        assert_eq!(
+            Error::UnexpectedByte {
+                byte: 0x0A,
+                offset: 3,
+                what: "name",
+            }
+            .to_string(),
+            "unexpected byte 0x0A at offset 3 while reading name"
+        );
+    }
+}

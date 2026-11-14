@@ -1,16 +1,162 @@
 # PDF 2.0 Rust library
 
-## Legal
+A reader and writer for PDF 2.0 — the file format defined by ISO 32000-2. No
+`unsafe`, no C dependencies, and the format is implemented in this crate rather
+than wrapped: the four dependencies (`flate2`, `aes`, `cbc`, `sha2`) only supply
+DEFLATE and AES/SHA primitives.
 
-Dual-licensed under `MIT` or the [UNLICENSE](http://unlicense.org/).
+## Status
 
-## Features
+The gate is `cargo test`, `cargo fmt --check` and
+`cargo clippy --all-targets -- -D warnings`; all three pass on every commit.
+
+Working today:
+
+- Classic cross-reference tables, `/Prev` chains and incremental updates.
+- Cross-reference streams (`/Type /XRef` with `/W` and `/Index`), object
+  streams (`/ObjStm`) and hybrid files (`/XRefStm`).
+- Filters: FlateDecode (with PNG 10–15 and TIFF 2 predictors), LZWDecode,
+  ASCIIHexDecode, ASCII85Decode and RunLengthDecode, including `/Filter` and
+  `/DecodeParms` arrays and indirect `/Length`.
+- Every base object type, parsed and re-serialized byte-for-byte.
+- The document model: catalog, page tree with inherited `/MediaBox`,
+  `/CropBox`, `/Rotate` and `/Resources`, page content streams, and XMP
+  `/Metadata`.
+- Content-stream interpretation and text extraction for simple fonts:
+  `BT`/`ET`, `Tf`, `Td`, `TD`, `T*`, `TL`, `Tm`, `Tj`, `TJ`, `'`, `"`, with
+  `StandardEncoding`, `WinAnsiEncoding` and `/Differences` arrays. Line breaks
+  come from the positioning operators, spaces from the text itself or from wide
+  `TJ` adjustments; inline images are skipped.
+- Lazy object fetching with a cache, and every malformed input reported as an
+  `Err` instead of a panic — `tests/robustness.rs` opens every fixture from
+  every truncation and from sampled mutations and exercises the whole read API
+  on whatever still opens.
+- Writing PDF 2.0 files: `Document::new()` builds a document, `add_page` appends
+  pages, `save()` emits a `%PDF-2.0` header, a Flate-compressed `/ObjStm` for
+  non-stream objects, a compressed `/Type /XRef` cross-reference stream with
+  recorded byte offsets, XMP `/Metadata` and no `trailer`/`Info` dictionaries.
+  Files written by this crate are read back by it — the writer has no other
+  proof, and `tests/writer.rs` compares the whole object graph.
+- AES-256 encryption, read side: `/V 5 /R 6` with the standard security
+  handler. User and owner passwords are both accepted; strings, streams, object
+  streams and XMP metadata are decrypted, `/EncryptMetadata` is honoured, and
+  the `/Perms` tamper check is verified. Deprecated revisions (RC4, AES-128,
+  `/R 5`) are refused with an error rather than half-implemented.
+
+## Limits
+
+Deliberately out of scope: rendering, PDF/A conformance, RC4 and AES-128, the
+`Info` dictionary, form filling, JavaScript, XFA and image codecs (DCT, JPX,
+CCITT, JBIG2). A file that needs one of these is reported as an error rather
+than silently misread.
+
+Known limits inside the supported surface:
+
+- Text extraction: composite (Type0) fonts and `/ToUnicode` CMaps are reported
+  as unsupported; the upper half of `MacRomanEncoding` is not decoded; glyph
+  names outside the built-in table are skipped rather than guessed. Spaces are
+  recognised from the text itself and from wide `TJ` adjustments, not from glyph
+  advance widths.
+- Encryption is read-only and revision 6 only; the writer always produces
+  unencrypted files.
+- `/Count` in a page tree is treated as a hint and never trusted; pages are
+  counted by walking.
+- No external validator (`qpdf`, `verapdf`, `mutool`, `gs`) exists in the
+  environment this was built in. Proof rests on committed fixtures, byte-exact
+  round-trips and cross-checks against independent implementations (NIST
+  SP 800-38A for AES-256-CBC, `base64.a85encode` for ASCII85, a separate
+  encoder for LZW, Python for the PNG predictors).
+
+## Layout
+
+| Module | Responsibility |
+| --- | --- |
+| `src/error.rs` | one `Error` enum, no panics in the read paths |
+| `src/lexer.rs` | tokens: whitespace, comments, numbers, names, strings |
+| `src/object.rs` | the object model and its serialization |
+| `src/parser.rs` | objects and indirect objects, streams by `/Length` |
+| `src/filter.rs` | stream filters and predictors |
+| `src/document.rs` | cross-reference tables and streams, object fetching |
+| `src/page.rs` | page tree, boxes, XMP metadata |
+| `src/content.rs` | content streams and text extraction |
+| `src/crypto.rs` | AES-256 revision 6 security handler |
+| `src/writer.rs` | `Document::new()` … `save()` |
 
 ## Usage
 
-Add dependency to Cargo.toml:
+```rust,no_run
+use pdf2::{Document, ObjectId};
 
-```toml
-[dependencies]
-pdf2 = "0.1"
+fn main() -> Result<(), pdf2::Error> {
+    let document = Document::open(std::fs::read("file.pdf")?)?;
+    println!("PDF {}", document.version());
+
+    for page in document.pages()? {
+        println!("media box: {:?}, rotate: {}", page.media_box, page.rotate);
+        let content = document.page_content(&page)?;
+        println!("{} content bytes", content.len());
+    }
+
+    if let Some(stream) = document.get_object(ObjectId::new(4, 0))?.as_stream() {
+        let decoded = document.decode_stream(stream)?;
+        println!("{} decoded bytes", decoded.len());
+    }
+
+    if let Some(xmp) = document.metadata()? {
+        println!("{} bytes of XMP", xmp.len());
+    }
+
+    Ok(())
+}
 ```
+
+An encrypted file takes its password:
+
+```rust,no_run
+use pdf2::Document;
+
+fn main() -> Result<(), pdf2::Error> {
+    let bytes = std::fs::read("secret.pdf")?;
+    let document = Document::open_with_password(bytes, b"user")?;
+    println!("{} page(s)", document.page_count()?);
+    Ok(())
+}
+```
+
+Writing looks like this (also available as `cargo run --example write`):
+
+```rust,no_run
+use pdf2::{Document, Rect};
+
+fn main() -> Result<(), pdf2::Error> {
+    let mut document = Document::new();
+    document.add_page(
+        Rect::new(0.0, 0.0, 612.0, 792.0),
+        "BT /F1 24 Tf 72 700 Td (Hello from pdf2) Tj ET",
+    );
+    let bytes = document.save()?;
+    std::fs::write("hello.pdf", bytes)?;
+    Ok(())
+}
+```
+
+## Tests and fixtures
+
+`cargo test` runs unit tests next to each module, integration tests in
+`tests/*.rs`, and doc-tests that compile the examples above.
+
+The fixtures in `tests/fixtures/` are small, committed PDFs, each named after
+the structure it proves — see `tests/fixtures/README.md`. Six are generated by
+`tests/fixtures/make_fixtures.py` (offsets and zlib streams computed there), and
+the encryption pair by `cargo run --example make_encrypted_fixture`, because no
+external PDF tool is available to produce them. Both generators are deterministic:
+re-running them reproduces every byte.
+
+`tests/robustness.rs` is the single corpus that opens every fixture from every
+truncation, from sampled byte mutations and from single-byte deletions, and then
+exercises pages, metadata, content decoding and text extraction on anything that
+still opens.
+
+## Legal
+
+Dual-licensed under `MIT` or the [UNLICENSE](http://unlicense.org/).
