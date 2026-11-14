@@ -202,6 +202,13 @@ expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_G
     expect(!/\d+\s+pages?/.test(title), `the sample title "${title}" carries no page count`);
   }
 
+  // The build stamp the page imports the module with: without it a cached wasm
+  // from an older build silently draws blank pages.
+  const stamp = JSON.parse(readFileSync(join(demo, 'build.json'), 'utf8'));
+  const manifest = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'));
+  expect(stamp.version === manifest.version, `build.json names version ${manifest.version}`);
+  expect(/\/^[0-9]+$/.test('') || /^[0-9]+$/.test(stamp.build), 'build.json carries a build stamp');
+
   const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((match) => match[1]));
   const demoPkg = readdirSync(join(demo, 'pkg'));
   for (const name of ['pdf2_wasm.js', 'pdf2_wasm_bg.wasm']) {

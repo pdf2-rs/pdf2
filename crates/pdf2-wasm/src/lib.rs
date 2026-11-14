@@ -16,6 +16,19 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 use pdf2::Document as Pdf2Document;
 use pdf2_render::{render_page_number, RenderOptions};
 
+/// The renderer's report as a JSON object of `"reason": count`.
+fn report_json(report: &pdf2_render::Report) -> String {
+    let entries: Vec<String> = report
+        .unsupported
+        .iter()
+        .map(|(reason, count)| {
+            let escaped = reason.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{escaped}\":{count}")
+        })
+        .collect();
+    format!("{{{}}}", entries.join(","))
+}
+
 /// An open PDF document.
 #[wasm_bindgen]
 pub struct PdfDocument {
@@ -114,13 +127,18 @@ impl PdfDocument {
     }
 
     /// Render a page straight onto a canvas, resizing it to the page.
+    ///
+    /// Returns the report of what this renderer could not draw, as JSON: an
+    /// object of `"reason": count`, empty when everything was drawn. A page
+    /// that is blank because its font is unsupported says so here instead of
+    /// looking broken.
     #[wasm_bindgen(js_name = renderPageToCanvas)]
     pub fn render_page_to_canvas(
         &self,
         index: usize,
         scale: f64,
         canvas: HtmlCanvasElement,
-    ) -> Result<(), JsError> {
+    ) -> Result<String, JsError> {
         let rendered = self
             .render(index, scale)
             .map_err(|error| JsError::new(&error))?;
@@ -143,7 +161,8 @@ impl PdfDocument {
         .map_err(|error| JsError::new(&format!("ImageData: {error:?}")))?;
         context
             .put_image_data(&image, 0.0, 0.0)
-            .map_err(|error| JsError::new(&format!("putImageData: {error:?}")))
+            .map_err(|error| JsError::new(&format!("putImageData: {error:?}")))?;
+        Ok(report_json(&rendered.report))
     }
 
     fn render(&self, index: usize, scale: f64) -> Result<pdf2_render::RenderedPage, String> {

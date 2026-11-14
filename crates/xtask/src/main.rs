@@ -235,6 +235,25 @@ fn wasm_package() -> Result<(), String> {
             &format!("crates/pdf2-wasm/demo/pkg/{file}"),
         )?;
     }
+    // GitHub Pages serves fixed file names with a cache lifetime, so a browser
+    // can pair a new page with last week's wasm and render nothing where the
+    // newer build would draw. The demo imports the module with this stamp.
+    let version = std::fs::read_to_string("crates/pdf2-wasm/package.json")
+        .ok()
+        .and_then(|text| {
+            text.split("\"version\": \"")
+                .nth(1)
+                .and_then(|rest| rest.split('"').next().map(str::to_owned))
+        })
+        .unwrap_or_else(|| "0.0.0".to_owned());
+    let build = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    std::fs::write(
+        "crates/pdf2-wasm/demo/build.json",
+        format!("{{\"version\":\"{version}\",\"build\":\"{build}\"}}\n"),
+    )
+    .map_err(|error| format!("writing build.json: {error}"))?;
     // The demo's samples are the crate's own fixtures, copied rather than kept:
     // a committed copy went stale the moment the fixture grew pages, and the
     // page numbers in the feature list began to point past the end of it.

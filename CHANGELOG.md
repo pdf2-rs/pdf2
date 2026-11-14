@@ -4,6 +4,15 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] — 2026-11-14
+
+- `renderPageToCanvas` returns the renderer's report as JSON (`{"reason": count}`,
+  empty when everything was drawn), so a page that is blank because its font is
+  unsupported can say so instead of looking broken.
+- The demo imports the wasm module with a build stamp from `build.json`:
+  GitHub Pages serves fixed filenames with a cache lifetime, and a cached wasm
+  from an older build drew blank pages where the current one draws text.
+
 ## [1.1.0] — 2026-11-14
 
 Composite (Type 0) fonts render: two-byte codes from an Identity CMap, CIDs
