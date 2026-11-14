@@ -3,8 +3,8 @@
   "entries": [
     {
       "platform": "macos-aarch64",
-      "fixtures.alloc_bytes": 246987,
-      "fixtures.allocations": 2195,
+      "fixtures.alloc_bytes": 306711,
+      "fixtures.allocations": 3059,
       "fixtures.pages_s": 147626.4926016113,
       "fixtures.read_mb_s": 77.34589717938071,
       "fixtures.text_pages_s": 115003.93810208901,
