@@ -1,0 +1,16 @@
+[package]
+name = "pdf2-render"
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.87"
+description = "Rasteriser for the pdf2 crate: paths, clips, transforms and (soon) images and text."
+license = "Unlicense OR MIT"
+repository = "https://github.com/pdf2-rs/pdf2"
+homepage = "https://github.com/pdf2-rs/pdf2"
+readme = "README.md"
+keywords = ["pdf", "pdf2", "render", "raster"]
+categories = ["graphics"]
+
+[dependencies]
+miniz_oxide = "0.9"
+pdf2 = { path = "../..", version = "0.2.0-alpha.1" }

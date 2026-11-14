@@ -70,7 +70,13 @@ mod tests {
         assert!(second.0 > first.0, "{first:?} -> {second:?}");
         assert!(second.1 >= first.1 + 4096, "{first:?} -> {second:?}");
         assert_eq!(buffer[0], 7);
+        // The counters are process-global, so a test running in parallel can
+        // allocate between a reset and a snapshot; only growth is asserted.
         reset();
-        assert_eq!(snapshot(), (0, 0));
+        let after_reset = snapshot();
+        assert!(
+            after_reset.0 < second.0 || after_reset.0 == 0,
+            "{after_reset:?} vs {second:?}"
+        );
     }
 }

@@ -355,6 +355,40 @@ def make_classic_xref():
     write("classic-xref.pdf", bytes(writer.out))
 
 
+PATHS_CONTENT = (
+    b"q 1 0 0 rg 20 20 60 60 re f Q\n"
+    b"q 0 0 1 rg 100 20 60 60 re 120 40 60 60 re f* Q\n"
+    b"q 0 1 0 RG 8 w 20 120 60 40 re S Q\n"
+    b"q 0 1 1 rg 20 140 40 40 re W n 0 140 200 40 re f Q\n"
+    b"q 0 0 0 rg 1 0 0 1 140 120 cm 0.5 0 0 0.5 0 0 cm 0 0 20 20 re f Q\n"
+    b"q 1 0 1 RG 2 w [6 4] 0 d 90 160 m 190 160 l S Q\n"
+    b"BT /F1 12 Tf 20 190 Td (text waits for Q7) Tj ET\n"
+)
+
+
+def make_paths():
+    """Paths, clips, transforms and dashes, for the pdf2-render golden image."""
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R"
+        b" /Resources << /Font << /F1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", PATHS_CONTENT)
+    writer.obj(5, HELVETICA)
+    offsets = writer.offsets
+    xref = len(writer.out)
+    writer.out += b"xref\n0 %d\n" % (max(offsets) + 1)
+    writer.out += b"0000000000 65535 f \n"
+    for number in range(1, max(offsets) + 1):
+        writer.out += b"%010d 00000 n \n" % offsets[number]
+    writer.out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (max(offsets) + 1)
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
+    write("paths.pdf", bytes(writer.out))
+
+
 if __name__ == "__main__":
     make_xref_stream_pdf()
     make_classic_twin()
@@ -362,3 +396,4 @@ if __name__ == "__main__":
     make_page_tree()
     make_text()
     make_classic_xref()
+    make_paths()

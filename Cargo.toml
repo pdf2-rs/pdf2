@@ -34,5 +34,10 @@ sha2 = { version = "0.10.9", default-features = false }
 # The repository root is both the `pdf2` package and the workspace root, so the
 # library keeps its paths and no source has to move. Tools live under crates/.
 [workspace]
-members = ["crates/pdf2-bench", "crates/pdf2-cli", "crates/pdf2-wasm-smoke"]
+members = [
+    "crates/pdf2-bench",
+    "crates/pdf2-cli",
+    "crates/pdf2-render",
+    "crates/pdf2-wasm-smoke",
+]
 resolver = "2"

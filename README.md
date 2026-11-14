@@ -97,6 +97,18 @@ WASI binary (`wasm32-wasip1`) that reads a fixture through `std::fs`; CI runs
 both and fails if their gzip size passes the budget in
 [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
+## Rendering
+
+`crates/pdf2-render` rasterises a page into RGBA8 with the library's own
+tokenizer: paths, fills (non-zero and even-odd), strokes with caps/joins and
+dashes, clipping through `q`/`Q`, and the `cm` transform. Text and images are
+counted as unsupported until they land. Golden images pin the output:
+
+```sh
+cargo run -p pdf2-render --bin pdf2-render-golden              # verify
+cargo run -p pdf2-render --bin pdf2-render-golden -- --bless   # regenerate
+```
+
 ## Layout
 
 The repository is a Cargo workspace: `pdf2` is the root package (the library in
@@ -116,6 +128,8 @@ The repository is a Cargo workspace: `pdf2` is the root package (the library in
 | `src/crypto.rs` | AES-256 revision 6 security handler |
 | `src/writer.rs` | `Document::new()` … `save()` |
 | `crates/pdf2-cli/src/main.rs` | the `pdf2` command: `info`, argument parsing, exit codes |
+| `crates/pdf2-render/src/` | the rasteriser: canvas, geometry, paths, scanline fill, content walker, PNG |
+| `crates/pdf2-bench/src/` | the benchmark binary and baseline comparison |
 
 ## Command line
 
