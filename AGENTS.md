@@ -45,6 +45,39 @@ paths and 1.0's layout depend on them.
   page proves what.
 - `Cargo.lock` is git-ignored on purpose; do not commit it.
 
+## Branching and pull requests
+
+`main` is protected by the repository ruleset **"main: pull requests must pass
+the gate"**: a direct push is refused (`push declined due to repository rule
+violations`), force pushes and deletion are blocked, and history stays linear.
+Every change reaches `main` through a pull request whose checks are green.
+
+```sh
+git switch -c fix/curve-operand-index      # one concern, one branch
+cargo gate                                 # the same steps CI will run
+git push -u origin fix/curve-operand-index
+gh pr create --fill                        # or with a body that explains why
+gh pr checks --watch                       # eleven required jobs, see the table below
+gh pr merge --squash --delete-branch
+```
+
+- Branch prefixes: `feat/`, `fix/`, `docs/`, `chore/`, `release/`.
+- The required checks are every job in `ci.yml`: Gate, Test (1.87), Test (beta),
+  Package, both `no_std` jobs, `wasm`, `wasm package`, Licences and advisories,
+  Semver and Benchmarks. A red one blocks the merge; a flaky one is re-run, not
+  skipped.
+- Squash-merge by default, so `main` reads as one commit per change; the PR body
+  is the only place the reasoning can live, so write it.
+- The ruleset does not cover tags. Releases still push `pdf2-v*`/`render-v*`/
+  `cli-v*`/`wasm-v*`/`npm-v*` tags directly to the tagged commit on `main`, as
+  described below; a tag must point at a commit that is already on `main`.
+- Repository administrators can bypass the *check* requirement when merging a
+  pull request (the ruleset's bypass mode is `pull_request`), which is for an
+  emergency only; a direct push to `main` is still refused for everyone. A
+  bypass is an incident note in the PR, not the normal path.
+- Automated and agent work follows the same flow: open a pull request, let the
+  checks run, merge when green. There is no "just this once".
+
 ## The gate
 
 ```sh
@@ -68,7 +101,8 @@ in `crates/xtask`, and exposed as `cargo gate`/`fixtures`/`bless` by
 
 Hooks (optional, per clone): `scripts/install-hooks.sh` points git at
 `.githooks/`, which formats-checks on commit and runs `cargo gate` before a push
-(`SKIP_GATE=1` for a docs-only push).
+(`SKIP_GATE=1` for a docs-only push). With `main` protected they protect a
+feature branch from arriving at review with a red gate.
 
 ## Pipeline
 
@@ -80,6 +114,9 @@ gh run list --workflow ci.yml --limit 3
 gh run watch <run-id> --exit-status
 gh run view <run-id> --log-failed
 ```
+
+Every job below runs on `pull_request` as well as on `main`, and each is a
+required check in the ruleset.
 
 | Job | Guards | What a failure means |
 | --- | --- | --- |
@@ -180,9 +217,11 @@ generated automatically. Tags are **`npm-v<version>`**, where the version is
    path-dependency `version` pins in step.
 2. Add the `CHANGELOG.md` entry; state breaking changes, fixes and the reason.
 3. `cargo gate --full` (and `cargo package -p <crate> --list` for what ships).
-4. Commit on `main` with a message that explains the release.
-5. Tag per registry (`pdf2-v*`, `render-v*`, `cli-v*`, `wasm-v*`, `npm-v*`) and
-   push the tags one namespace at a time; watch each run to green.
+4. Land the version bump and CHANGELOG through a pull request (the parity of the
+   release commit is what the tags will point at), then update `main` locally.
+5. Tag per registry (`pdf2-v*`, `render-v*`, `cli-v*`, `wasm-v*`, `npm-v*`) on
+   the merged commit and push the tags one namespace at a time; tags bypass the
+   branch ruleset, so watch each run to green.
 6. Verify from the registries, not from the logs: `cargo search`/the crates.io
    API, `npm view <package> version`, `curl -I` the docs.rs page, and the Pages
    demo.

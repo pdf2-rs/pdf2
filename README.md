@@ -137,7 +137,8 @@ cargo gate --full # plus no_std, the wasm modules and the benchmark budget
 
 Lint levels live in `[workspace.lints]`, so clippy failures show up in a plain
 `cargo build` too; `scripts/install-hooks.sh` adds a pre-commit format check and
-a pre-push gate.
+a pre-push gate. `main` is protected: changes land as pull requests whose eleven
+CI checks must be green; releases are tags pushed at a merged commit.
 
 ## Layout
 
