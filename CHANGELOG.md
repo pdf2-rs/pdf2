@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `renderPageToCanvas` returns the renderer's report as JSON (`{"reason": count}`,
   empty when everything was drawn), so a page that is blank because its font is
   unsupported can say so instead of looking broken.
+- The npm package keeps the name `pdf2-wasm`: npm refuses `pdf2` with
+  `403 Package name too similar to existing packages pbkdf2,pbf,pm2,pify`, and
+  only a scoped name could change that. `publishConfig.provenance` also goes,
+  because it only resolves under CI's OIDC and fails a local publish with
+  `provider: null`; the tag path still publishes with provenance.
 - The demo imports the wasm module with a build stamp from `build.json`:
   GitHub Pages serves fixed filenames with a cache lifetime, and a cached wasm
   from an older build drew blank pages where the current one draws text.
