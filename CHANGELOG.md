@@ -4,7 +4,24 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-alpha.2] — unreleased
+## [0.7.0-rc.1] — unreleased
+
+First release candidate. **The public API is frozen from this release**: after
+it, only bug fixes and internal changes until 1.0.0.
+
+### Changed
+
+- Version scheme: the library jumps to `0.7.0-rc.1` so that `1.0.0` is the next
+  minor; the tools in this repository move to `0.1.0-rc.1` in step
+  (`pdf2-render`, `pdf2-cli`, `pdf2-wasm`).
+
+### Compatibility
+
+Everything from `0.2.0-alpha.2` is unchanged: no public item was removed or
+renamed, and the fixture corpus plus the renderer goldens are byte-identical.
+See `docs/MIGRATING.md` for the alpha.1 → alpha.2 feature notes.
+
+## [0.2.0-alpha.2] — 2026-11-14
 
 The library gained its `no_std` build and a public encoding API; the rendering,
 CLI and WebAssembly crates were released on top of it.
@@ -84,3 +101,4 @@ and the public API may change before 0.2.0.
 
 [0.2.0-alpha.1]: https://crates.io/crates/pdf2/0.2.0-alpha.1
 [0.2.0-alpha.2]: https://crates.io/crates/pdf2/0.2.0-alpha.2
+[0.7.0-rc.1]: https://crates.io/crates/pdf2/0.7.0-rc.1

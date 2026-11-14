@@ -49,10 +49,10 @@ Current state (2026-11-14):
 
 | Crate | Version | First publish |
 | --- | --- | --- |
-| `pdf2` | `0.2.0-alpha.2` | trusted publishing from a `v*` tag |
-| `pdf2-cli` | `0.1.0-alpha.1` | manual, token |
-| `pdf2-render` | `0.1.0-alpha.1` | manual, token |
-| `pdf2-wasm` | `0.1.0-alpha.1` | manual, token |
+| `pdf2` | `0.7.0-rc.1` | trusted publishing from a `pdf2-v*` tag |
+| `pdf2-render` | `0.1.0-rc.1` | manual, token |
+| `pdf2-cli` | `0.1.0-rc.1` | manual, token |
+| `pdf2-wasm` | `0.1.0-rc.1` | manual, token |
 
 Trusted publishers still need adding on crates.io for `pdf2-cli`,
 `pdf2-render` and `pdf2-wasm` (same repository, workflow `publish.yml`,

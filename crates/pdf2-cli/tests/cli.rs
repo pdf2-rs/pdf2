@@ -311,8 +311,10 @@ fn help_and_version_exit_zero() {
     }
     let output = run(&["--version"]);
     assert_success(&output);
+    // The version comes from the crate itself, so a release bump cannot stale
+    // this assertion.
     assert!(
-        stdout(&output).starts_with("pdf2-cli 0.1.0-alpha.1"),
+        stdout(&output).starts_with(&format!("pdf2-cli {}", env!("CARGO_PKG_VERSION"))),
         "{}",
         stdout(&output)
     );

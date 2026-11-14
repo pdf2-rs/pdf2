@@ -255,6 +255,22 @@ rendering crate and a wasm package, with the gates between alpha, beta, rc and
 `0.2.0-alpha.1` needs nothing beyond the version bump, but the feature flags are
 worth knowing: see [docs/MIGRATING.md](docs/MIGRATING.md).
 
+## Compatibility policy
+
+From `0.7.0-rc.1` the public API is frozen; `1.0.0` changes no signatures.
+
+- **Covered by semver**: every public item of `pdf2` (types, functions, trait
+  implementations) and the file-format behaviour documented in
+  `docs/SPEC-MAP.md` — the features listed under *Status* keep working for the
+  documents they claim to support.
+- **Not covered**: rendering fidelity beyond the documented scope, benchmark
+  numbers, the content of error messages, and anything listed under *Limits* or
+  out of scope. Adding a new API item, a new filter, a new font case or a new
+  document feature is a minor release; changing or removing one is a major
+  release.
+- The tools (`pdf2-cli`, `pdf2-render`, `pdf2-wasm`) follow their own semver
+  lines, starting at 1.0 alongside the library.
+
 ## Legal
 
 Dual-licensed under `MIT` or the [UNLICENSE](http://unlicense.org/).
