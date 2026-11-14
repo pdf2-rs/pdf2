@@ -117,7 +117,8 @@ rules, a Bézier circle of known area, exact image block edges, `/Decode`
 inversion, a rotated image, a shifted media box, a `/Rotate` page and text
 scaling/spacing — and `crates/pdf2-render/tests/calibration.rs` asserts them.
 [docs/RENDERING.md](docs/RENDERING.md) maps each page to its clause and lists
-what is still unimplemented. Golden images pin the output as a regression net:
+what is still unimplemented. `tests/fixtures/book.pdf` is the human check: a page
+of book prose in an embedded Crimson Text subset, with the font's own metrics. Golden images pin the output as a regression net:
 
 ```sh
 cargo run -p pdf2-render --bin pdf2-render-golden              # verify

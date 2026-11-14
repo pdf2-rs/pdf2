@@ -695,6 +695,178 @@ CALIBRATION_EMBEDDED_TEXT = b"BT /F1 40 Tf 20 150 Td (ABA) Tj ET\n"
 # id. CID 1 is glyph 1 (`A`) and CID 2 is glyph 2 (`B`); page 11 swaps them.
 CALIBRATION_CID_TEXT = b"BT /F1 40 Tf 20 150 Td <000100020001> Tj ET\n"
 
+
+# A tiny TrueType reader, so the book page can be typeset with the font's own
+# metrics instead of guessed ones: cmap format 4 for code -> glyph, hmtx for
+# advances. The font itself is a Crimson Text subset (OFL), committed beside it.
+def truetype_metrics(path):
+    import struct
+
+    data = open(path, "rb").read()
+    table_count = struct.unpack(">H", data[4:6])[0]
+    tables = {}
+    for index in range(table_count):
+        record = 12 + index * 16
+        tag = data[record : record + 4]
+        offset, length = struct.unpack(">II", data[record + 8 : record + 16])
+        tables[tag] = offset
+    units = struct.unpack(">H", data[tables[b"head"] + 18 : tables[b"head"] + 20])[0]
+    metrics = struct.unpack(">H", data[tables[b"hhea"] + 34 : tables[b"hhea"] + 36])[0]
+    glyphs = struct.unpack(">H", data[tables[b"maxp"] + 4 : tables[b"maxp"] + 6])[0]
+    hmtx = tables[b"hmtx"]
+    advances = []
+    for index in range(metrics):
+        advances.append(struct.unpack(">H", data[hmtx + index * 4 : hmtx + index * 4 + 2])[0])
+    advances.extend([advances[-1]] * (glyphs - metrics))
+
+    cmap = tables[b"cmap"]
+    subtable = None
+    for index in range(struct.unpack(">H", data[cmap + 2 : cmap + 4])[0]):
+        record = cmap + 4 + index * 8
+        platform, encoding, offset = struct.unpack(">HHI", data[record : record + 8])
+        if platform == 3 and encoding == 1:
+            subtable = cmap + offset
+    fmt, _, _, segments_x2 = struct.unpack(">HHHH", data[subtable : subtable + 8])
+    assert fmt == 4, fmt
+    segments = segments_x2 // 2
+    ends_at = subtable + 14
+    starts_at = ends_at + segments * 2 + 2
+    deltas_at = starts_at + segments * 2
+    ranges_at = deltas_at + segments * 2
+    mapping = {}
+    for segment in range(segments):
+        end = struct.unpack(">H", data[ends_at + segment * 2 : ends_at + segment * 2 + 2])[0]
+        start = struct.unpack(">H", data[starts_at + segment * 2 : starts_at + segment * 2 + 2])[0]
+        delta = struct.unpack(">h", data[deltas_at + segment * 2 : deltas_at + segment * 2 + 2])[0]
+        range_offset = struct.unpack(
+            ">H", data[ranges_at + segment * 2 : ranges_at + segment * 2 + 2]
+        )[0]
+        for code in range(start, min(end, 0xFF) + 1):
+            if code == 0xFFFF:
+                continue
+            if range_offset == 0:
+                glyph = (code + delta) & 0xFFFF
+            else:
+                address = ranges_at + segment * 2 + range_offset + (code - start) * 2
+                glyph = struct.unpack(">H", data[address : address + 2])[0]
+                if glyph:
+                    glyph = (glyph + delta) & 0xFFFF
+            if glyph:
+                mapping[code] = glyph
+    return units, mapping, advances
+
+
+# A page of a book, set in the committed Crimson Text subset: public-domain
+# prose, wrapped to the measure with the font's own advances.
+BOOK_PARAGRAPHS = [
+    "The Time Traveller (for so it will be convenient to speak of him) was "
+    "expounding a recondite matter to us. His grey eyes shone and twinkled, and "
+    "his usually pale face was flushed and animated. The fire burned brightly, "
+    "and the soft radiance of the incandescent lights in the lilies of silver "
+    "caught the bubbles that flashed and passed in our glasses.",
+    "Our chairs, being his patents, embraced and caressed us rather than "
+    "submitted to be sat upon, and there was that luxurious after-dinner "
+    "atmosphere when thought runs gracefully free of the trammels of precision.",
+    "And he put it to us in this way - marking the points with a lean "
+    "forefinger - as we sat and lazily admired his earnestness over this new "
+    "paradox (as we thought it) and his fecundity.",
+    "\"You must follow me carefully. I shall have to controvert one or two ideas "
+    "that are almost universally accepted. The geometry, for instance, they "
+    "taught you at school is founded on a misconception.\"",
+    "\"Is not that rather a large thing to expect us to begin upon?\" said "
+    "Filby, an argumentative person with red hair.",
+    "\"I do not mean to ask you to accept anything without reasonable ground for "
+    "it. You will soon admit as much as I need from you. You know of course "
+    "that a mathematical line, a line of thickness nil, has no real existence.",
+]
+
+
+def make_book():
+    """A page of prose in an embedded serif font, for the demo and the goldens."""
+    units, mapping, advances = truetype_metrics(
+        os.path.join(HERE, "fonts", "CrimsonText-Regular-subset.ttf")
+    )
+    size = 11.5
+    leading = 16.0
+    left = 54.0
+    top = 520.0
+    measure = 420.0 - 2 * left
+    font_program = open(
+        os.path.join(HERE, "fonts", "CrimsonText-Regular-subset.ttf"), "rb"
+    ).read()
+
+    def text_width(text, at_size=size):
+        return sum(advances[mapping.get(ord(character), 0)] for character in text) / units * at_size
+
+    def escape(text):
+        return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    paragraphs = []
+    for paragraph in BOOK_PARAGRAPHS:
+        lines = []
+        line = ""
+        for word in paragraph.split():
+            candidate = word if not line else f"{line} {word}"
+            if text_width(candidate) > measure and line:
+                lines.append(line)
+                line = word
+            else:
+                line = candidate
+        if line:
+            lines.append(line)
+        paragraphs.append(lines)
+
+    content = bytearray(b"BT\n/F1 %g Tf\n" % size)
+    y = top
+    for number, lines in enumerate(paragraphs):
+        if number > 0:
+            y -= leading * 0.7  # a paragraph break, not a full line
+        for line in lines:
+            content += b"1 0 0 1 %g %g Tm (%s) Tj\n" % (left, y, escape(line).encode("latin-1"))
+            y -= leading
+    content += b"ET\n"
+
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 595] /Contents 4 0 R"
+        b" /Resources << /Font << /F1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", bytes(content), compress=True)
+
+    first, last = 32, max(mapping)
+    widths = [advances[mapping.get(code, 0)] for code in range(first, last + 1)]
+    writer.obj(
+        5,
+        b"<< /Type /Font /Subtype /TrueType /BaseFont /CrimsonText-Regular"
+        b" /Encoding /WinAnsiEncoding /FirstChar %d /LastChar %d /Widths [%s]"
+        b" /FontDescriptor 6 0 R >>"
+        % (first, last, b" ".join(b"%d" % width for width in widths)),
+    )
+    writer.obj(
+        6,
+        b"<< /Type /FontDescriptor /FontName /CrimsonText-Regular /Flags 32"
+        b" /FontBBox [0 -200 1000 800] /ItalicAngle 0 /Ascent 800 /Descent -200"
+        b" /CapHeight 660 /StemV 80 /MissingWidth 500 /FontFile2 7 0 R >>",
+    )
+    writer.stream(
+        7,
+        b"/Length1 %d" % len(font_program),
+        font_program,
+        compress=True,
+    )
+    offsets = writer.offsets
+    xref = len(writer.out)
+    writer.out += b"xref\n0 %d\n" % (max(offsets) + 1)
+    writer.out += b"0000000000 65535 f \n"
+    for number in range(1, max(offsets) + 1):
+        writer.out += b"%010d 00000 n \n" % offsets[number]
+    writer.out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (max(offsets) + 1)
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
+    write("book.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -905,3 +1077,4 @@ if __name__ == "__main__":
     make_paths()
     make_images()
     make_calibration()
+    make_book()

@@ -158,6 +158,7 @@ expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_G
     'samples/text.pdf': 'text.pdf',
     'samples/paths.pdf': 'paths.pdf',
     'samples/images.pdf': 'images.pdf',
+    'samples/book.pdf': 'book.pdf',
     'samples/calibration.pdf': 'calibration.pdf',
     'samples/encrypted.pdf': 'encrypted-r6.pdf',
   };
