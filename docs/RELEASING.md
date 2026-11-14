@@ -88,10 +88,13 @@ exists at the required version. The order is `pdf2` → `pdf2-render` →
   cd crates/pdf2-wasm && npm publish --access public
   ```
 
-- **Then trusted publishing (OIDC)** — on npmjs.com add a trusted publisher for
-  `pdf2-wasm`: repository `pdf2-rs/pdf2`, workflow `npm.yml`, environment
-  `release`. npm CLI 11.5.1+ and Node 22.14+ are required (the workflow uses
-  Node 22), provenance is generated automatically, and no token is stored.
+- **Trusted publishing (OIDC) — configured and proven.** The trusted publisher
+  on npmjs.com is `pdf2-rs/pdf2`, workflow `npm.yml`, environment `release`.
+  `pdf2-wasm` 1.0.1 was published this way: no token, and npm logged
+  `Signed provenance statement with source and build information from GitHub
+  Actions` with a transparency-log entry, so `npm audit signatures` and the
+  package page verify where the tarball came from. The workflow installs
+  `npm@latest` because Node 22 ships npm 10 and OIDC needs 11.5.1 or newer.
 - **Or a token** — add an `NPM_TOKEN` repository secret (automation token); the
   workflow passes it as `NODE_AUTH_TOKEN` and publishes with `--provenance`.
 

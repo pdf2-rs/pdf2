@@ -95,7 +95,9 @@ WebAssembly is tested the same way: `crates/pdf2-wasm-smoke` builds a browser
 module (`wasm32-unknown-unknown`) driven from Node through a small C ABI, and a
 WASI binary (`wasm32-wasip1`) that reads a fixture through `std::fs`; CI runs
 both and fails if their gzip size passes the budget in
-[docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md). The browser package is on npm as
+`pdf2-wasm` (`npm install pdf2-wasm`, SLSA provenance), and
+https://pdf2-rs.github.io/pdf2/ runs it against a real file.
 
 ## Rendering
 
