@@ -18,6 +18,9 @@ loud instead of being approximated:
 - `tests/fixtures/calibration.pdf` gained a `/Widths` page and an unsupported
   font page, both pinned by probes and goldens; `docs/RENDERING.md` has the
   support matrix.
+- npm `pdf2-wasm` 1.0.4 is published as a package root — wasm, glue, TypeScript
+  declarations, manifest, README and licences — instead of a `demo/` subtree,
+  and ships both licence texts.
 
 ## [1.0.1] — 2026-11-14
 

@@ -183,18 +183,11 @@ jobs:
           fi
           wasm-bindgen --version
 
-      - name: Build the package
-        run: cargo +stable build -p pdf2-wasm --release --target wasm32-unknown-unknown
-
-      - name: Generate the bindings
-        run: |
-          wasm-bindgen --target nodejs --out-dir crates/pdf2-wasm/pkg-node \
-            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
-          wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
-            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
-
-      - name: API smoke test and size budget
-        run: node --no-warnings crates/pdf2-wasm/check.mjs
+      # One chore builds the published package (wasm, glue, types, manifest,
+      # README, licences), copies what the demo loads, and then runs the API
+      # smoke test and the size budget against the package itself.
+      - name: Build the package and check it
+        run: cargo +stable run -q -p xtask -- wasm-package
 
   deny:
     name: Licences and advisories

@@ -100,11 +100,14 @@ for the release checklist and the tag namespaces.
   login (or `NPM_TOKEN`):
 
   ```sh
-  cargo build -p pdf2-wasm --release --target wasm32-unknown-unknown
-  wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
-      target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
-  cd crates/pdf2-wasm && npm publish --access public
+  cargo xtask wasm-package          # builds and checks crates/pdf2-wasm/pkg
+  cd crates/pdf2-wasm/pkg && npm publish
   ```
+
+  The published package is that directory: the wasm, its glue, the TypeScript
+  declarations, `package.json`, the README and both licences. The demo site has
+  its own copy of the two files it loads, which is why the package is not the
+  demo's directory.
 
 - **Trusted publishing (OIDC) — configured and proven.** The trusted publisher
   on npmjs.com is `pdf2-rs/pdf2`, workflow `npm.yml`, environment `release`.
