@@ -1,6 +1,14 @@
 // The demo drives the wasm package through its public API only: open a
 // document, read its facts, render a page straight onto the canvas opaque.
-import init, { open } from './pkg/pdf2_wasm.js';
+//
+// The module is imported with a build stamp from `build.json`. GitHub Pages
+// serves a fixed filename with a cache lifetime, so without it a browser can
+// pair this page with a wasm build from before composite fonts existed and show
+// a blank page where the current renderer draws text.
+const stamp = await fetch('build.json', { cache: 'no-store' }).then((response) => response.json());
+const module = await import(`./pkg/pdf2_wasm.js?v=${encodeURIComponent(stamp.build)}`);
+const init = module.default;
+const open = module.open;
 
 const SAMPLES = [
   { file: 'samples/text.pdf', title: 'Text and accents' },
@@ -59,6 +67,7 @@ const elements = {
   factSize: document.querySelector('#factSize'),
   factEncrypted: document.querySelector('#factEncrypted'),
   factTime: document.querySelector('#factTime'),
+  factSkipped: document.querySelector('#factSkipped'),
   text: document.querySelector('#text'),
   download: document.querySelector('#download'),
   features: document.querySelector('#features'),
@@ -169,7 +178,9 @@ async function render() {
     const base = scaleFor(width, height);
     const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
     const started = performance.now();
-    state.document.renderPageToCanvas(state.page, base * dpr, elements.canvas);
+    const skipped = JSON.parse(
+      state.document.renderPageToCanvas(state.page, base * dpr, elements.canvas) || '{}',
+    );
     const elapsed = performance.now() - started;
     if (token !== state.renderToken) {
       return;
@@ -186,22 +197,35 @@ async function render() {
     fact(elements.factPages, String(pages));
     fact(elements.factSize, `${Math.round(width)} × ${Math.round(height)} pt`);
     fact(elements.factTime, `${elapsed.toFixed(1)} ms at ${base.toFixed(2)}×`);
+    const skippedReasons = Object.entries(skipped);
+    fact(
+      elements.factSkipped,
+      skippedReasons.length === 0
+        ? 'nothing'
+        : skippedReasons.map(([reason, count]) => `${reason} ×${count}`).join(', '),
+    );
     // Text extraction can fail for a page the renderer draws perfectly well —
     // composite fonts without ToUnicode, for one — so it gets its own report
     // instead of taking the render down with it.
-    let extraction = '';
+    let notes = [];
+    if (skippedReasons.length > 0) {
+      notes.push(
+        `the page is blank where it used ${skippedReasons
+          .map(([reason]) => reason.replace(/^font:/, 'the font '))
+          .join(', ')}`,
+      );
+    }
     try {
       const text = (state.document.text(state.page) || '').trim();
       elements.text.textContent = text.length > 0 ? text.slice(0, 800) : '(no extractable text)';
     } catch (error) {
-      extraction = ' — text extraction unavailable: ';
-      elements.text.textContent = `${extraction.trim()}
-${error.message || error}`;
+      elements.text.textContent = `text extraction unavailable\n${error.message || error}`;
+      notes.push('its text cannot be extracted');
     }
     status(
       `${state.name}: PDF ${state.document.version()}, ${pages} page(s), ` +
         `rendered page ${state.page + 1} in ${elapsed.toFixed(1)} ms` +
-        (extraction ? extraction.slice(3) : ''),
+        (notes.length > 0 ? ` — ${notes.join('; ')}` : ''),
     );
   } catch (error) {
     status(`${state.name}: ${error.message || error}`, true);

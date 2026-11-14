@@ -409,18 +409,63 @@ async function main() {
       JSON.stringify(download),
     );
 
+    // A page the renderer cannot draw is reported: it is blank, and the panel
+    // and status say which font was skipped instead of leaving a white page.
+    const skipped = await evaluate(`
+      const canvas = document.querySelector('#canvas');
+      while (Number(document.querySelector('#pageInfo').textContent.split('/')[0].trim()) > 8) {
+        document.querySelector('#prev').click();
+        await new Promise((done) => setTimeout(done, 120));
+      }
+      while (Number(document.querySelector('#pageInfo').textContent.split('/')[0].trim()) < 8) {
+        document.querySelector('#next').click();
+        await new Promise((done) => setTimeout(done, 120));
+      }
+      await new Promise((done) => requestAnimationFrame(done));
+      return {
+        page: document.querySelector('#pageInfo').textContent,
+        skipped: document.querySelector('#factSkipped').textContent,
+        status: document.querySelector('#status').textContent,
+      };
+    `);
+    check(
+      skipped.page.startsWith('8 /') && /Type0/.test(skipped.skipped),
+      'a page with an unsupported font says which font it skipped',
+      JSON.stringify(skipped),
+    );
+    check(
+      /blank where it used/i.test(skipped.status),
+      'the status explains why such a page is blank',
+      skipped.status.slice(0, 140),
+    );
+
     // A page whose text cannot be extracted still renders: the status must not
     // claim the render failed, and the text panel must say why it is empty.
     const extraction = await evaluate(`
+      // Page 10 draws (composite font) but has no extractable text.
+      while (Number(document.querySelector('#pageInfo').textContent.split('/')[0].trim()) < 10) {
+        document.querySelector('#next').click();
+        await new Promise((done) => setTimeout(done, 150));
+      }
+      await new Promise((done) => requestAnimationFrame(done));
       return {
         status: document.querySelector('#status').textContent,
         failed: document.querySelector('#status').classList.contains('error'),
         text: document.querySelector('#text').textContent,
         page: document.querySelector('#pageInfo').textContent,
+        ink: (() => {
+          const canvas = document.querySelector('#canvas');
+          const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+          let count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) count += 1;
+          }
+          return count;
+        })(),
       };
     `);
     check(
-      !extraction.failed && extraction.page.startsWith('10 /'),
+      !extraction.failed && extraction.page.startsWith('10 /') && extraction.ink > 100,
       'a page with no extractable text still renders, without an error status',
       JSON.stringify(extraction),
     );
