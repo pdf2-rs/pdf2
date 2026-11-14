@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  gate:
+    name: Gate (fmt, clippy, test, docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Every cargo invocation below names its toolchain with `+…` on purpose:
+      # `rust-toolchain.toml` pins stable for local work, and an explicit
+      # `+toolchain` argument outranks that file, so CI keeps testing exactly
+      # the toolchains this workflow lists.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # These are the objective file's own checks, run verbatim.
+      - name: Format
+        run: cargo +stable fmt --all --check
+
+      - name: Clippy
+        run: cargo +stable clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo +stable test
+
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo +stable doc --no-deps
+
+  test:
+    name: Test (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.87 is the declared MSRV (`rust-version` in Cargo.toml).
+        toolchain: ["1.87", beta]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust ${{ matrix.toolchain }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.toolchain }}
+
+      - name: Test
+        run: cargo +${{ matrix.toolchain }} test
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Catches whatever would only break on upload: a missing README include,
+      # a file the tests need but the package drops, metadata cargo rejects.
+      - name: Build the packaged crate
+        run: |
+          cargo +stable package --list
+          cargo +stable package

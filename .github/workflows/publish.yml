@@ -1,0 +1,91 @@
+name: Publish
+
+# Publishes to crates.io with trusted publishing: the job proves its identity to
+# crates.io over OIDC, receives a short-lived token, and uploads. No crates.io
+# API token is stored in GitHub secrets.
+#
+# Setup (one time, see docs/RELEASING.md):
+#   crates.io -> pdf2 -> Settings -> Trusted Publishing -> Add -> GitHub
+#     repository owner: pdf2-rs
+#     repository name:  pdf2
+#     workflow file:    publish.yml
+#     environment:      release
+#   GitHub -> Settings -> Environments -> release (optionally with reviewers)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify the package without uploading"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: crates.io
+    runs-on: ubuntu-latest
+    # Matches the environment in the crates.io trusted publisher configuration.
+    # Protection rules here (required reviewers, deployment branches) apply
+    # before a token is even requested.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # required for the OIDC exchange with crates.io
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: The tag must match Cargo.toml and sit on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          version="$(cargo +stable metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          tag="${GITHUB_REF_NAME#v}"
+          echo "tag v$tag, Cargo.toml version $version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version"
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $GITHUB_REF_NAME is not on main"
+            exit 1
+          fi
+
+      - name: Test before publishing
+        run: cargo +stable test
+
+      - name: Exchange the OIDC token for a crates.io token
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Tag pushes publish; manual runs default to a dry run.
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            cargo +stable publish --dry-run
+          else
+            cargo +stable publish
+          fi
