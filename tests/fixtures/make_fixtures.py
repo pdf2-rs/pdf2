@@ -670,6 +670,10 @@ def truetype_font():
 
 CALIBRATION_EMBEDDED_TEXT = b"BT /F1 40 Tf 20 150 Td (ABA) Tj ET\n"
 
+# Two-byte codes: Identity-H maps code to CID, and /CIDToGIDMap maps CID to glyph
+# id. CID 1 is glyph 1 (`A`) and CID 2 is glyph 2 (`B`); page 11 swaps them.
+CALIBRATION_CID_TEXT = b"BT /F1 40 Tf 20 150 Td <000100020001> Tj ET\n"
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -693,8 +697,8 @@ def make_calibration():
     writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
     writer.obj(
         2,
-        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 20 0 R 22 0 R 28 0 R]"
-        b" /Count 9 >>",
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 20 0 R 22 0 R 28 0 R"
+        b" 33 0 R 39 0 R] /Count 11 >>",
     )
 
     def page(number, media, content, resources=b"", rotate=None):
@@ -810,6 +814,47 @@ def make_calibration():
         font_program,
         compress=True,
     )
+
+    # Pages 10 and 11: composite fonts over the same program. The first maps CID
+    # to glyph id by identity, so it draws A B A; the second's /CIDToGIDMap swaps
+    # the two glyphs and draws B A B, which no fallback could fake.
+    page(33, b"0 0 300 200", CALIBRATION_CID_TEXT, b"/Font << /F1 35 0 R >>")
+    writer.obj(
+        35,
+        b"<< /Type /Font /Subtype /Type0 /BaseFont /Pdf2Fixture"
+        b" /Encoding /Identity-H /DescendantFonts [36 0 R] >>",
+    )
+    writer.obj(
+        36,
+        b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Pdf2Fixture"
+        b" /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity)"
+        b" /Supplement 0 >> /FontDescriptor 37 0 R"
+        b" /CIDToGIDMap /Identity /DW 1000 /W [1 [600 600]] >>",
+    )
+    writer.obj(
+        37,
+        b"<< /Type /FontDescriptor /FontName /Pdf2Fixture /Flags 32"
+        b" /FontBBox [0 -200 600 750] /ItalicAngle 0 /Ascent 800"
+        b" /Descent -200 /CapHeight 700 /StemV 80 /MissingWidth 600"
+        b" /FontFile2 38 0 R >>",
+    )
+    writer.stream(38, b"/Length1 %d" % len(font_program), font_program, compress=True)
+
+    page(39, b"0 0 300 200", CALIBRATION_CID_TEXT, b"/Font << /F1 41 0 R >>")
+    writer.obj(
+        41,
+        b"<< /Type /Font /Subtype /Type0 /BaseFont /Pdf2Fixture"
+        b" /Encoding /Identity-H /DescendantFonts [42 0 R] >>",
+    )
+    writer.obj(
+        42,
+        b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Pdf2Fixture"
+        b" /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity)"
+        b" /Supplement 0 >> /FontDescriptor 37 0 R"
+        b" /CIDToGIDMap 43 0 R /DW 1000 /W [1 [600 600]] >>",
+    )
+    # CID 0 -> glyph 0, CID 1 -> glyph 2 (B), CID 2 -> glyph 1 (A).
+    writer.stream(43, b"", bytes((0, 0, 0, 2, 0, 1)), compress=False)
     writer.obj(
         27,
         b"<< /Type /Font /Subtype /Type0 /BaseFont /NotoSansCJK"

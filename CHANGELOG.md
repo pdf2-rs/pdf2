@@ -4,6 +4,25 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-11-14
+
+Composite (Type 0) fonts render: two-byte codes from an Identity CMap, CIDs
+mapped to glyph ids through `/CIDToGIDMap` (identity or a stream), advances from
+`/W` with `/DW` as the default, and glyph outlines from the embedded TrueType
+program. This is the font family most CJK and many modern Latin documents use,
+and it used to be reported as unsupported.
+
+The fixture carries the proof rather than a promise: the generator writes a real
+TrueType program whose `A` is a box and whose `B` is the same box with a hole, one
+page embeds it as a simple font, and two more draw `A B A` from two-byte codes —
+the last one through a `/CIDToGIDMap` stream that swaps the glyphs, so the same
+codes draw `B A B`.
+
+Still unsupported, and now reported by reason: `/CIDFontType0` (CFF programs),
+CMap streams other than Identity, and composite fonts with no embedded program.
+Text *extraction* from composite fonts needs `ToUnicode` CMaps and is the next
+step.
+
 ## [1.0.2] — 2026-11-14
 
 Text gets the document's own metrics, and fonts that cannot be drawn are said out

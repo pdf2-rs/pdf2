@@ -20,7 +20,11 @@
 //!    distance between two identical glyphs is the space advance;
 //! 8. a Type 0 font, which must be reported rather than painted;
 //! 9. an embedded TrueType program written by the generator, whose `A` is a box
-//!    and whose `B` is a box with a hole — shapes the bitmap fallback has not.
+//!    and whose `B` is a box with a hole — shapes the bitmap fallback has not;
+//! 10. a Type 0 (CID) font over that program with Identity-H and `/CIDToGIDMap`
+//!     `/Identity`, drawing `A B A` from two-byte codes;
+//! 11. the same with a `/CIDToGIDMap` stream that swaps the two glyphs, so the
+//!     same codes draw `B A B`.
 //!
 //! Every assertion states where the pixel comes from. A golden PNG pins the
 //! whole raster as a regression net, but it cannot tell a right answer from a
@@ -358,10 +362,12 @@ fn widths_from_the_font_dictionary_set_the_advance() {
 }
 
 #[test]
-fn a_type_0_font_is_reported_instead_of_painted_with_fallback_glyphs() {
+fn a_type_0_font_without_a_program_is_reported_not_painted() {
     let page = render(7);
+    // The page's font is a CIDFontType2 with no /FontFile2 and no ToUnicode:
+    // there is nothing to draw the codes with, so the reason is reported.
     assert_eq!(
-        page.report.unsupported.get("font:Type0"),
+        page.report.unsupported.get("font:Type0-no-program"),
         Some(&1),
         "{:?}",
         page.report
@@ -406,6 +412,44 @@ fn an_embedded_truetype_program_is_drawn_from_its_own_outlines() {
 }
 
 #[test]
+fn composite_codes_map_to_cids_and_cids_to_glyph_ids() {
+    // Page 10 is a Type 0 font: `/Encoding /Identity-H` means the hex string
+    // <0001 0002 0001> is CIDs 1, 2, 1, and `/CIDToGIDMap /Identity` draws
+    // glyphs 1, 2, 1 — the `A B A` of page 9, reached without a cmap.
+    let page = render(9);
+    assert_eq!((page.canvas.width(), page.canvas.height()), (300, 200));
+    expect_at(&page, 30, 35, BLACK, "A: the filled box");
+    expect_at(&page, 48, 35, BLACK, "B: the wall of the ring");
+    expect_at(&page, 55, 35, WHITE, "B: the hole");
+    expect_at(&page, 75, 35, BLACK, "the second A");
+    let runs = ink_runs(&page, 0, 22, 300, 50);
+    assert_eq!(runs, vec![(22, 42), (46, 66), (70, 90)], "{runs:?}");
+    assert_eq!(
+        ink(&page, 0, 0, 300, 200),
+        2 * (20 * 28) + (20 * 28 - 8 * 8)
+    );
+    assert_eq!(page.report.unsupported_total(), 0, "{}", page.report);
+}
+
+#[test]
+fn a_cid_to_gid_map_stream_decides_which_glyph_a_cid_draws() {
+    // Page 11 is the same font with `/CIDToGIDMap` as a stream that maps
+    // CID 1 -> glyph 2 and CID 2 -> glyph 1, so the same codes draw B A B. The
+    // holes are what makes this unambiguous: no fallback glyph has one, and the
+    // only way for them to move is for the map to have been read.
+    let page = render(10);
+    expect_at(&page, 24, 35, BLACK, "B first: the wall");
+    expect_at(&page, 32, 35, WHITE, "B first: the hole");
+    expect_at(&page, 50, 35, BLACK, "A in the middle");
+    expect_at(&page, 74, 35, BLACK, "B last: the wall");
+    expect_at(&page, 80, 35, WHITE, "B last: the hole");
+    let runs = ink_runs(&page, 0, 22, 300, 50);
+    assert_eq!(runs, vec![(22, 42), (46, 66), (70, 90)], "{runs:?}");
+    assert_eq!(ink(&page, 0, 0, 300, 200), 2 * (20 * 28 - 8 * 8) + 20 * 28);
+    assert_eq!(page.report.unsupported_total(), 0, "{}", page.report);
+}
+
+#[test]
 fn every_calibration_page_uses_only_supported_operators() {
     for page in 0..6 {
         let rendered = render(page);
@@ -421,7 +465,7 @@ fn every_calibration_page_uses_only_supported_operators() {
 
 #[test]
 fn the_committed_goldens_match_the_renderer() {
-    for page in 0..9 {
+    for page in 0..11 {
         let rendered = render(page);
         let png = encode_png(&rendered.canvas);
         let golden_path = repo(&format!(
