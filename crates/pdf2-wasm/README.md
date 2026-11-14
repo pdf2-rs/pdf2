@@ -1,15 +1,15 @@
-# pdf2-wasm
+# pdf2
 
 PDF 2.0 in the browser: open, inspect and render PDF files with the [`pdf2`]
 crate compiled to WebAssembly. No dependencies, no server, and the bytes never
 leave the page.
 
 ```sh
-npm install pdf2-wasm
+npm install pdf2
 ```
 
 ```js
-import init, { open } from 'pdf2-wasm';
+import init, { open } from 'pdf2';
 
 await init(); // fetches and instantiates pdf2_wasm_bg.wasm
 const response = await fetch('file.pdf');
@@ -51,9 +51,10 @@ faked. [`docs/RENDERING.md`][rendering] has the clause-by-clause matrix.
 
 ## Packages
 
-- npm: `pdf2-wasm` — this package: `pdf2_wasm.js`, `pdf2_wasm.d.ts`,
+- npm: `pdf2` — this package: `pdf2_wasm.js`, `pdf2_wasm.d.ts`,
   `pdf2_wasm_bg.wasm`, README and the two licences, nothing else.
 - crates.io: [`pdf2-wasm`][crate] — the Rust crate it is built from.
+- npm, former name: `pdf2-wasm` is deprecated and points here.
 - Demo: <https://pdf2-rs.github.io/pdf2/> renders the crate's own fixtures, with
   page navigation, zoom and a password field for the encrypted sample.
 

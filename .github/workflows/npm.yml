@@ -1,10 +1,10 @@
 name: Publish to npm
 
-# Publishes the `pdf2-wasm` npm package built from the wasm-bindgen web output.
+# Publishes the `pdf2` npm package built from the wasm-bindgen web output.
 #
 # Authentication, in order of preference:
 #   1. npm trusted publishing (OIDC): configure the trusted publisher for
-#      `pdf2-wasm` on npmjs.com with repository `pdf2-rs/pdf2`, workflow
+#      `pdf2` on npmjs.com with repository `pdf2-rs/pdf2`, workflow
 #      `npm.yml` and environment `release`. The run then needs no token and
 #      provenance is generated automatically.
 #
@@ -117,9 +117,9 @@ jobs:
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
-          if npm view "pdf2-wasm@${version}" version >/dev/null 2>&1; then
+          if npm view "pdf2@${version}" version >/dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "pdf2-wasm ${version} is already on npm"
+            echo "pdf2 ${version} is already on npm"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -165,14 +165,14 @@ jobs:
           crate="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/pdf2-wasm/Cargo.toml | head -1)"
           body="$(mktemp)"
           {
-            printf 'The npm package `pdf2-wasm` %s is published, built from the\n' "$version"
+            printf 'The npm package `pdf2` %s is published, built from the\n' "$version"
             printf '`pdf2-wasm` crate %s at this commit.\n\n' "$crate"
-            printf -- '- npm: `npm install pdf2-wasm@%s`\n' "$version"
-            printf -- '- package: https://www.npmjs.com/package/pdf2-wasm/v/%s\n' "$version"
+            printf -- '- npm: `npm install pdf2@%s`\n' "$version"
+            printf -- '- package: https://www.npmjs.com/package/pdf2/v/%s\n' "$version"
             printf -- '- demo: https://pdf2-rs.github.io/pdf2/\n'
             printf -- '- provenance: signed by GitHub Actions, visible on the package page\n'
           } > "$body"
-          args=(--title "pdf2-wasm $version (npm)" --notes-file "$body" --latest=false)
+          args=(--title "pdf2 $version (npm)" --notes-file "$body" --latest=false)
           case "$version" in
             *-*) args+=(--prerelease) ;;
           esac
