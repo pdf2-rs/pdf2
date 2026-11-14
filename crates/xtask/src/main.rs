@@ -232,6 +232,33 @@ fn wasm_package() -> Result<(), String> {
             &format!("crates/pdf2-wasm/demo/pkg/{file}"),
         )?;
     }
+    // The demo's samples are the crate's own fixtures, copied rather than kept:
+    // a committed copy went stale the moment the fixture grew pages, and the
+    // page numbers in the feature list began to point past the end of it.
+    for (from, to) in [
+        (
+            "tests/fixtures/text.pdf",
+            "crates/pdf2-wasm/demo/samples/text.pdf",
+        ),
+        (
+            "tests/fixtures/paths.pdf",
+            "crates/pdf2-wasm/demo/samples/paths.pdf",
+        ),
+        (
+            "tests/fixtures/images.pdf",
+            "crates/pdf2-wasm/demo/samples/images.pdf",
+        ),
+        (
+            "tests/fixtures/calibration.pdf",
+            "crates/pdf2-wasm/demo/samples/calibration.pdf",
+        ),
+        (
+            "tests/fixtures/encrypted-r6.pdf",
+            "crates/pdf2-wasm/demo/samples/encrypted.pdf",
+        ),
+    ] {
+        copy(from, to)?;
+    }
     run("node", &["--no-warnings", "crates/pdf2-wasm/check.mjs"])
 }
 
