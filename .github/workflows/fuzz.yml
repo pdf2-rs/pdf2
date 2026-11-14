@@ -5,6 +5,11 @@ on:
     # Every night; each target gets an hour on its own runner.
     - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Seconds per target (the nightly run uses 3600)"
+        required: false
+        default: "120"
 
 permissions:
   contents: read
@@ -41,7 +46,9 @@ jobs:
             cargo +nightly install cargo-fuzz --version 0.13.2 --locked
           fi
 
-      - name: Fuzz for an hour
+      - name: Fuzz
+        env:
+          SECONDS_TO_FUZZ: ${{ inputs.seconds || '3600' }}
         run: |
           cargo +nightly fuzz run ${{ matrix.target }} -- \
-            -max_total_time=3600 -rss_limit_mb=4096 -print_final_stats=1
+            -max_total_time="${SECONDS_TO_FUZZ}" -rss_limit_mb=4096 -print_final_stats=1
