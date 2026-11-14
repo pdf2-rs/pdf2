@@ -123,6 +123,7 @@
         .layout { grid-template-columns: minmax(0, 1fr); }
       }
       .viewer {
+        position: relative;
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -131,9 +132,13 @@
         min-height: 22rem;
       }
       .viewer.dragging { outline: 2px dashed var(--accent); outline-offset: -8px; }
+      /* `justify-content: center` in a scroll container puts the overflow on
+         both sides, and the left half cannot be scrolled to. The canvas is
+         centred by its own auto margins instead, which never go negative. */
       .canvas-wrap {
         display: flex;
-        justify-content: center;
+        justify-content: flex-start;
+        align-items: flex-start;
         overflow: auto;
         max-height: 78vh;
       }
@@ -146,6 +151,32 @@
         border-radius: 4px;
         flex: none;
         display: block;
+        margin: auto;
+      }
+
+      /* A thumbnail with the visible region drawn on it: drag it to move. */
+      .minimap {
+        position: absolute;
+        right: 0.75rem;
+        bottom: 0.75rem;
+        padding: 4px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        box-shadow: var(--shadow);
+        cursor: crosshair;
+        display: none;
+        touch-action: none;
+      }
+      .minimap.visible { display: block; }
+      .minimap-inner { position: relative; line-height: 0; }
+      .minimap canvas { margin: 0; border: none; border-radius: 0; box-shadow: none; }
+      .minimap-viewport {
+        position: absolute;
+        border: 1.5px solid var(--accent);
+        border-radius: 2px;
+        background: rgba(120, 160, 255, 0.18);
+        pointer-events: none;
       }
       aside {
         background: var(--panel);
@@ -264,7 +295,8 @@
           <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
           <span id="zoomInfo">fit</span>
           <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
-          <button id="fit" type="button">Fit</button>
+          <button id="fit" type="button" title="Fit the width">Fit</button>
+          <button id="fitPage" type="button" title="Fit the whole page">Page</button>
         </div>
         <button id="download" type="button" disabled>Download</button>
       </section>
@@ -273,6 +305,12 @@
         <section class="viewer" id="viewer" aria-label="Page view">
           <div class="canvas-wrap" id="canvasWrap">
             <canvas id="canvas" width="0" height="0"></canvas>
+          </div>
+          <div class="minimap" id="minimapBox" aria-hidden="true">
+            <div class="minimap-inner" id="minimapInner">
+              <canvas id="minimap" width="0" height="0"></canvas>
+              <div class="minimap-viewport" id="minimapViewport"></div>
+            </div>
           </div>
         </section>
 

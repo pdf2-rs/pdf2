@@ -7,7 +7,8 @@ const SAMPLES = [
   { file: 'samples/paths.pdf', title: 'Paths, fills, dashes' },
   { file: 'samples/images.pdf', title: 'Images and text' },
   { file: 'samples/calibration.pdf', title: 'Calibration, 6 pages' },
-  { file: 'samples/encrypted.pdf', title: 'AES-256 encrypted (password: user)', password: 'user' },
+  // Deliberately no password: the point of this sample is the password field.
+  { file: 'samples/encrypted.pdf', title: 'AES-256 encrypted (password: user)' },
 ];
 
 // Each entry names a sample (index into SAMPLES) and the page it starts on, so a
@@ -59,6 +60,11 @@ const elements = {
   text: document.querySelector('#text'),
   download: document.querySelector('#download'),
   features: document.querySelector('#features'),
+  fitPage: document.querySelector('#fitPage'),
+  minimapBox: document.querySelector('#minimapBox'),
+  minimapInner: document.querySelector('#minimapInner'),
+  minimap: document.querySelector('#minimap'),
+  minimapViewport: document.querySelector('#minimapViewport'),
 };
 
 const state = {
@@ -68,6 +74,9 @@ const state = {
   name: '–',
   page: 0,
   sampleIndex: null,
+  // The document waiting for a password, if any: retrying must not reopen
+  // whatever happened to be loaded before.
+  pending: null,
   zoom: 'fit',
   renderToken: 0,
 };
@@ -82,12 +91,66 @@ function clampPage(index) {
   return Math.max(0, Math.min(index, pages - 1));
 }
 
-function scaleFor(pageWidth) {
-  if (state.zoom !== 'fit') {
+const MINIMAP_WIDTH = 108;
+
+function scaleFor(pageWidth, pageHeight) {
+  if (typeof state.zoom === 'number') {
     return state.zoom;
   }
-  const available = Math.max(elements.canvasWrap.clientWidth - 4, 120);
-  return available / pageWidth;
+  const wrap = elements.canvasWrap;
+  const availableWidth = Math.max(wrap.clientWidth - 4, 120);
+  const availableHeight = Math.max(wrap.clientHeight - 4, 120);
+  const byWidth = availableWidth / pageWidth;
+  if (state.zoom === 'page') {
+    return Math.min(byWidth, availableHeight / pageHeight);
+  }
+  return byWidth;
+}
+
+/// The thumbnail is only useful when the page does not fit, so it hides itself
+/// when everything is visible, and its rectangle tracks the scroll position.
+function renderMinimap() {
+  const document_ = state.document;
+  if (!document_) {
+    elements.minimapBox.classList.remove('visible');
+    return;
+  }
+  const [width, height] = document_.pageSize(state.page);
+  const scale = MINIMAP_WIDTH / width;
+  const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
+  document_.renderPageToCanvas(state.page, scale * dpr, elements.minimap);
+  elements.minimap.style.width = `${Math.round(width * scale)}px`;
+  elements.minimap.style.height = `${Math.round(height * scale)}px`;
+  const canvas = elements.canvas;
+  const wrap = elements.canvasWrap;
+  const overflows =
+    canvas.offsetWidth > wrap.clientWidth + 1 || canvas.offsetHeight > wrap.clientHeight + 1;
+  elements.minimapBox.classList.toggle('visible', overflows);
+  updateViewport();
+}
+
+function updateViewport() {
+  if (!elements.minimapBox.classList.contains('visible')) {
+    return;
+  }
+  const canvas = elements.canvas;
+  const wrap = elements.canvasWrap;
+  const page = canvas.getBoundingClientRect();
+  const view = wrap.getBoundingClientRect();
+  if (page.width === 0 || page.height === 0) {
+    return;
+  }
+  const left = Math.max(0, view.left - page.left);
+  const top = Math.max(0, view.top - page.top);
+  const right = Math.min(page.width, view.right - page.left);
+  const bottom = Math.min(page.height, view.bottom - page.top);
+  const width = elements.minimap.clientWidth;
+  const height = elements.minimap.clientHeight;
+  const box = elements.minimapViewport;
+  box.style.left = `${(left / page.width) * width}px`;
+  box.style.top = `${(top / page.height) * height}px`;
+  box.style.width = `${(Math.max(0, right - left) / page.width) * width}px`;
+  box.style.height = `${(Math.max(0, bottom - top) / page.height) * height}px`;
 }
 
 function fact(element, value) {
@@ -101,7 +164,7 @@ async function render() {
   const token = ++state.renderToken;
   try {
     const [width, height] = state.document.pageSize(state.page);
-    const base = scaleFor(width);
+    const base = scaleFor(width, height);
     const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
     const started = performance.now();
     state.document.renderPageToCanvas(state.page, base * dpr, elements.canvas);
@@ -113,17 +176,30 @@ async function render() {
     elements.canvas.style.height = `${Math.round(height * base)}px`;
     const pages = state.document.pageCount();
     elements.pageInfo.textContent = `${state.page + 1} / ${pages}`;
-    elements.zoomInfo.textContent = state.zoom === 'fit' ? 'fit' : `${Math.round(base * 100)}%`;
+    elements.zoomInfo.textContent =
+      typeof state.zoom === 'number' ? `${Math.round(base * 100)}%` : state.zoom;
+    renderMinimap();
     elements.prev.disabled = state.page === 0;
     elements.next.disabled = state.page >= pages - 1;
     fact(elements.factPages, String(pages));
     fact(elements.factSize, `${Math.round(width)} × ${Math.round(height)} pt`);
     fact(elements.factTime, `${elapsed.toFixed(1)} ms at ${base.toFixed(2)}×`);
-    const text = (state.document.text(state.page) || '').trim();
-    elements.text.textContent = text.length > 0 ? text.slice(0, 800) : '(no extractable text)';
+    // Text extraction can fail for a page the renderer draws perfectly well —
+    // composite fonts without ToUnicode, for one — so it gets its own report
+    // instead of taking the render down with it.
+    let extraction = '';
+    try {
+      const text = (state.document.text(state.page) || '').trim();
+      elements.text.textContent = text.length > 0 ? text.slice(0, 800) : '(no extractable text)';
+    } catch (error) {
+      extraction = ' — text extraction unavailable: ';
+      elements.text.textContent = `${extraction.trim()}
+${error.message || error}`;
+    }
     status(
       `${state.name}: PDF ${state.document.version()}, ${pages} page(s), ` +
-        `rendered page ${state.page + 1} in ${elapsed.toFixed(1)} ms`,
+        `rendered page ${state.page + 1} in ${elapsed.toFixed(1)} ms` +
+        (extraction ? extraction.slice(3) : ''),
     );
   } catch (error) {
     status(`${state.name}: ${error.message || error}`, true);
@@ -155,6 +231,7 @@ function selectSource(sampleIndex, label) {
 }
 
 async function showDocument(bytes, name, password, source) {
+  state.pending = null;
   try {
     state.document = open(bytes, password ?? null);
     state.bytes = bytes;
@@ -175,6 +252,7 @@ async function showDocument(bytes, name, password, source) {
     elements.download.disabled = true;
     if (looksEncrypted(error) && !password) {
       state.sampleIndex = source.sampleIndex ?? null;
+      state.pending = { bytes, name, source };
       selectSource(source.sampleIndex ?? null, name);
       elements.passwordRow.classList.add('visible');
       elements.password.focus();
@@ -202,8 +280,8 @@ function zoomTo(scale) {
 }
 
 function zoomBy(direction) {
-  const [width] = state.document ? state.document.pageSize(state.page) : [612];
-  const current = scaleFor(width);
+  const [width, height] = state.document ? state.document.pageSize(state.page) : [612, 792];
+  const current = scaleFor(width, height);
   const candidates = ZOOM_STEPS.filter((step) =>
     direction > 0 ? step > current + 0.01 : step < current - 0.01,
   );
@@ -287,12 +365,50 @@ elements.next.addEventListener('click', () => setPage(state.page + 1));
 elements.zoomIn.addEventListener('click', () => zoomBy(1));
 elements.zoomOut.addEventListener('click', () => zoomBy(-1));
 elements.fit.addEventListener('click', () => zoomTo('fit'));
+elements.fitPage.addEventListener('click', () => zoomTo('page'));
+
+elements.canvasWrap.addEventListener('scroll', updateViewport, { passive: true });
+
+let draggingMinimap = false;
+function gotoMinimap(event) {
+  const canvas = elements.canvas;
+  const wrap = elements.canvasWrap;
+  const inner = elements.minimapInner.getBoundingClientRect();
+  if (inner.width === 0 || inner.height === 0) {
+    return;
+  }
+  const fx = Math.min(1, Math.max(0, (event.clientX - inner.left) / inner.width));
+  const fy = Math.min(1, Math.max(0, (event.clientY - inner.top) / inner.height));
+  const page = canvas.getBoundingClientRect();
+  const view = wrap.getBoundingClientRect();
+  // Move the point under the cursor to the middle of the viewer.
+  wrap.scrollLeft += page.left + fx * page.width - (view.left + wrap.clientWidth / 2);
+  wrap.scrollTop += page.top + fy * page.height - (view.top + wrap.clientHeight / 2);
+  updateViewport();
+}
+
+elements.minimapInner.addEventListener('pointerdown', (event) => {
+  draggingMinimap = true;
+  elements.minimapInner.setPointerCapture(event.pointerId);
+  gotoMinimap(event);
+});
+elements.minimapInner.addEventListener('pointermove', (event) => {
+  if (draggingMinimap) {
+    gotoMinimap(event);
+  }
+});
+elements.minimapInner.addEventListener('pointerup', (event) => {
+  draggingMinimap = false;
+  elements.minimapInner.releasePointerCapture(event.pointerId);
+});
+elements.minimapInner.addEventListener('pointercancel', () => {
+  draggingMinimap = false;
+});
 
 elements.password.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && state.bytes) {
-    showDocument(state.bytes, state.name, elements.password.value, {
-      sampleIndex: state.sampleIndex,
-    });
+  if (event.key === 'Enter' && state.pending) {
+    const pending = state.pending;
+    showDocument(pending.bytes, pending.name, elements.password.value, pending.source);
   }
 });
 
@@ -310,6 +426,8 @@ window.addEventListener('keydown', (event) => {
     zoomBy(-1);
   } else if (event.key === 'f') {
     zoomTo('fit');
+  } else if (event.key === 'p') {
+    zoomTo('page');
   }
 });
 
@@ -335,7 +453,11 @@ window.addEventListener('drop', (event) => {
 
 let resizeTimer = null;
 new ResizeObserver(() => {
-  if (state.zoom !== 'fit' || !state.document) {
+  if (!state.document) {
+    return;
+  }
+  if (typeof state.zoom === 'number') {
+    updateViewport();
     return;
   }
   clearTimeout(resizeTimer);
