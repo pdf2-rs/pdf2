@@ -1,0 +1,47 @@
+name: Fuzz
+
+on:
+  schedule:
+    # Every night; each target gets an hour on its own runner.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [parse_objects, xref, filters, content, decrypt]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: fuzz-${{ matrix.target }}
+
+      - name: Cache cargo-fuzz
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-cli-0.13.2
+
+      - name: Install cargo-fuzz
+        run: |
+          if ! command -v cargo-fuzz >/dev/null; then
+            cargo +nightly install cargo-fuzz --version 0.13.2 --locked
+          fi
+
+      - name: Fuzz for an hour
+        run: |
+          cargo +nightly fuzz run ${{ matrix.target }} -- \
+            -max_total_time=3600 -rss_limit_mb=4096 -print_final_stats=1

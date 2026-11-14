@@ -196,6 +196,24 @@ jobs:
       - name: API smoke test and size budget
         run: node --no-warnings crates/pdf2-wasm/check.mjs
 
+  deny:
+    name: Licences and advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  semver:
+    name: Semver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: pdf2
+
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest

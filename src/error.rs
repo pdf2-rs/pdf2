@@ -22,32 +22,44 @@ pub enum Error {
     /// The input ended in the middle of a construct.
     ///
     /// `what` names the construct being read, for example `"number"`.
-    UnexpectedEof { what: &'static str },
+    UnexpectedEof {
+        /// The construct being read, for example `"number"`.
+        what: &'static str,
+    },
 
     /// A byte that cannot start the expected construct was found.
     ///
     /// `offset` is the position of `byte` within the input being read.
     UnexpectedByte {
+        /// The offending byte.
         byte: u8,
+        /// Where it was found.
         offset: usize,
+        /// The construct being read, for example `"name"`.
         what: &'static str,
     },
 
     /// A numeric token could not be parsed.
-    ///
-    /// `text` holds the offending token as it appeared in the input.
-    InvalidNumber { text: String },
+    InvalidNumber {
+        /// The offending token, as it appeared in the input.
+        text: String,
+    },
 
     /// The input is structurally wrong in a way particular to `what`.
     ///
     /// `offset` is where the problem was noticed, if it is known.
     Malformed {
+        /// The construct that is wrong, for example `"xref table"`.
         what: &'static str,
+        /// Where the problem was noticed, when that is known.
         offset: Option<usize>,
     },
 
     /// Reading or writing a file failed.
-    Io { message: String },
+    Io {
+        /// The operating system's message.
+        message: String,
+    },
 }
 
 impl Error {

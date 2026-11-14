@@ -1,0 +1,51 @@
+[package]
+name = "pdf2-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pdf2 = { path = ".." }
+
+[[bin]]
+name = "parse_objects"
+path = "fuzz_targets/parse_objects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xref"
+path = "fuzz_targets/xref.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "filters"
+path = "fuzz_targets/filters.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content"
+path = "fuzz_targets/content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decrypt"
+path = "fuzz_targets/decrypt.rs"
+test = false
+doc = false
+bench = false
+
+# Kept out of the main workspace so `cargo test --workspace` does not build the
+# fuzz binaries; `cargo fuzz` drives this package directly.
+[workspace]

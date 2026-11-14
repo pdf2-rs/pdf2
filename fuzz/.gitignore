@@ -1,0 +1,5 @@
+# Build output and generated corpus entries; the curated seeds are committed.
+target/
+artifacts/
+corpus/*/*
+!corpus/*/seed-*

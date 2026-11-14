@@ -1,0 +1,27 @@
+# cargo-deny configuration: licences and advisories for the whole workspace.
+[graph]
+targets = []
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+# Everything in the tree is permissive; copyleft licences are not accepted.
+allow = [
+    "MIT",
+    "Unlicense",
+    "Apache-2.0",
+    "Zlib",
+    "0BSD",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
