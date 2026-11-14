@@ -20,7 +20,7 @@ documented behaviour.
   and image XObjects, pinned by golden images.
 - `pdf2-cli` 1.0.0 — `info`, `pages`, `text`, `check` with `--json`.
 - `pdf2-wasm` 1.0.0 — the same library and renderer in the browser, with a
-  GitHub Pages demo.
+  GitHub Pages demo; also on npm as `pdf2-wasm` (`npm install pdf2-wasm`).
 
 ### Compatibility
 

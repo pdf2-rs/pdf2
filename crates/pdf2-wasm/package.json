@@ -13,7 +13,7 @@
   "homepage": "https://pdf2-rs.github.io/pdf2/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pdf2-rs/pdf2"
+    "url": "git+https://github.com/pdf2-rs/pdf2.git"
   },
   "keywords": ["pdf", "pdf2", "wasm", "render"],
   "publishConfig": {

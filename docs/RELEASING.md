@@ -75,7 +75,11 @@ exists at the required version. The order is `pdf2` → `pdf2-render` →
 `.github/workflows/npm.yml` builds, tests and publishes it:
 
 - **First publish, by hand** — npm only accepts a trusted publisher once the
-  package exists. Run it locally with an npm login (or `NPM_TOKEN`):
+  package exists. `pdf2-wasm` 1.0.0 was published this way: an owner
+  web-2FA login, where npm stages the version behind a `0.0.0-stage`
+  placeholder until the browser flow completes (the placeholder stays in the
+  version list without a dist-tag and is harmless). Run it locally with an npm
+  login (or `NPM_TOKEN`):
 
   ```sh
   cargo build -p pdf2-wasm --release --target wasm32-unknown-unknown
