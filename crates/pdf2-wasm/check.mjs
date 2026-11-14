@@ -93,6 +93,16 @@ expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_G
       `the demo sample ${sample} is committed`,
     );
   }
+  // The sample select is the visible record of what is loaded; clearing it after
+  // a successful open made the choice vanish the moment it worked.
+  expect(
+    !/elements\.sample\.value = ''/.test(script),
+    'the demo does not clear the sample selection after opening',
+  );
+  expect(
+    (script.match(/selectSource\(/g) || []).length >= 2,
+    'the demo selects the sample the user chose',
+  );
   const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((match) => match[1]));
   const wanted = [...script.matchAll(/querySelector\('#([^']+)'\)/g)].map((match) => match[1]);
   for (const id of wanted) {

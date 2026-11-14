@@ -43,6 +43,7 @@ const state = {
   password: null,
   name: '–',
   page: 0,
+  sampleIndex: null,
   zoom: 'fit',
   renderToken: 0,
 };
@@ -109,15 +110,36 @@ function looksEncrypted(error) {
   return /password|encrypt|decrypt|security/i.test(String(error.message || error));
 }
 
-async function showDocument(bytes, name, password) {
+// The select is the visible record of what is loaded: the chosen sample keeps
+// its own option, and a dropped file gets an option of its own so the control
+// never shows something that is not on screen.
+function selectSource(sampleIndex, label) {
+  const custom = elements.sample.querySelector('option[data-custom]');
+  if (custom) {
+    custom.remove();
+  }
+  if (sampleIndex !== null) {
+    elements.sample.value = String(sampleIndex);
+    return;
+  }
+  const option = document.createElement('option');
+  option.value = 'custom';
+  option.dataset.custom = 'true';
+  option.textContent = label;
+  elements.sample.prepend(option);
+  elements.sample.value = 'custom';
+}
+
+async function showDocument(bytes, name, password, source) {
   try {
     state.document = open(bytes, password ?? null);
     state.bytes = bytes;
     state.name = name;
     state.password = password ?? null;
     state.page = 0;
+    state.sampleIndex = source.sampleIndex ?? null;
     elements.passwordRow.classList.remove('visible');
-    elements.sample.value = '';
+    selectSource(source.sampleIndex ?? null, name);
     fact(elements.factName, name);
     fact(elements.factVersion, state.document.version());
     fact(elements.factEncrypted, state.document.isEncrypted() ? 'yes' : 'no');
@@ -125,6 +147,8 @@ async function showDocument(bytes, name, password) {
     await render();
   } catch (error) {
     if (looksEncrypted(error) && !password) {
+      state.sampleIndex = source.sampleIndex ?? null;
+      selectSource(source.sampleIndex ?? null, name);
       elements.passwordRow.classList.add('visible');
       elements.password.focus();
       status(`${name}: encrypted — enter the password to open it`, true);
@@ -169,7 +193,9 @@ async function loadSample(index) {
   }
   const response = await fetch(sample.file);
   const bytes = new Uint8Array(await response.arrayBuffer());
-  await showDocument(bytes, sample.file.split('/').pop(), sample.password ?? null);
+  await showDocument(bytes, sample.file.split('/').pop(), sample.password ?? null, {
+    sampleIndex: index,
+  });
 }
 
 function fileChosen(file) {
@@ -177,7 +203,7 @@ function fileChosen(file) {
     return;
   }
   const reader = new FileReader();
-  reader.onload = () => showDocument(new Uint8Array(reader.result), file.name, null);
+  reader.onload = () => showDocument(new Uint8Array(reader.result), file.name, null, {});
   reader.readAsArrayBuffer(file);
 }
 
@@ -189,12 +215,13 @@ for (const [index, sample] of SAMPLES.entries()) {
 }
 const placeholder = document.createElement('option');
 placeholder.value = '';
-placeholder.hidden = true;
+placeholder.textContent = 'Bundled samples…';
 elements.sample.prepend(placeholder);
 
 elements.sample.addEventListener('change', (event) => {
-  if (event.target.value !== '') {
-    loadSample(Number(event.target.value));
+  const value = event.target.value;
+  if (value !== '' && value !== 'custom') {
+    loadSample(Number(value));
   }
 });
 
@@ -208,7 +235,9 @@ elements.fit.addEventListener('click', () => zoomTo('fit'));
 
 elements.password.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && state.bytes) {
-    showDocument(state.bytes, state.name, elements.password.value);
+    showDocument(state.bytes, state.name, elements.password.value, {
+      sampleIndex: state.sampleIndex,
+    });
   }
 });
 
