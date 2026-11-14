@@ -86,21 +86,152 @@ const BUILTIN_HEIGHT: u8 = 7;
 /// without a pattern is drawn as a notdef box.
 fn builtin_glyph(character: char) -> Option<Glyph> {
     let code = u8::try_from(u32::from(character)).ok()?;
-    let rows = if character == ' ' {
-        [0_u8; BUILTIN_HEIGHT as usize]
-    } else if let Some(rows) = glyph_rows(code) {
-        rows
-    } else if character == '\u{2022}' {
-        [0, 0, 0b00100, 0b01110, 0b00100, 0, 0]
-    } else if let Some(upper) = upper(character) {
-        glyph_rows(upper as u8).unwrap_or(notdef_rows())
-    } else {
-        notdef_rows()
-    };
+    if character == ' ' {
+        return Some(Glyph {
+            contours: Vec::new(),
+            advance: BUILTIN_ADVANCE,
+        });
+    }
+    if let Some(rows) = glyph_rows(code) {
+        return Some(Glyph {
+            contours: rows_to_contours(&rows),
+            advance: BUILTIN_ADVANCE,
+        });
+    }
+    if character == '\u{2022}' {
+        return Some(Glyph {
+            contours: rows_to_contours(&[0, 0, 0b00100, 0b01110, 0b00100, 0, 0]),
+            advance: BUILTIN_ADVANCE,
+        });
+    }
+    // Latin-1 text is the common case for base-14 fonts, so an accented letter
+    // is drawn as its unaccented base plus the mark rather than as .notdef.
+    if let Some((base, accent)) = decompose(character) {
+        let rows = glyph_rows(u8::try_from(u32::from(base)).unwrap_or(b'?'))
+            .or_else(|| upper(base).and_then(|upper| glyph_rows(upper as u8)))
+            .unwrap_or_else(notdef_rows);
+        let mut contours = rows_to_contours(&rows);
+        contours.extend(
+            accent
+                .cells()
+                .iter()
+                .map(|&(column, layer)| mark_cell(column, layer)),
+        );
+        return Some(Glyph {
+            contours,
+            advance: BUILTIN_ADVANCE,
+        });
+    }
+    if character == '\u{00F8}' || character == '\u{00D8}' {
+        // `ø` is `o` with a slash through it, which no mark above the box can
+        // show, so the slash goes across the glyph body instead.
+        let mut contours = rows_to_contours(&glyph_rows(b'O').unwrap_or_else(notdef_rows));
+        contours.extend(
+            [(0, 5), (1, 4), (2, 3), (3, 2), (4, 1)]
+                .iter()
+                .map(|&(column, layer)| mark_cell(column, layer)),
+        );
+        return Some(Glyph {
+            contours,
+            advance: BUILTIN_ADVANCE,
+        });
+    }
+    let rows = upper(character)
+        .and_then(|upper| glyph_rows(upper as u8))
+        .unwrap_or_else(notdef_rows);
     Some(Glyph {
         contours: rows_to_contours(&rows),
         advance: BUILTIN_ADVANCE,
     })
+}
+
+/// A mark that can sit on a 5×7 base letter: above the glyph box (layers 0 and
+/// up) or below the baseline (negative layers, used by the cedilla).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Accent {
+    Acute,
+    Grave,
+    Circumflex,
+    Diaeresis,
+    Tilde,
+    Ring,
+    Cedilla,
+}
+
+impl Accent {
+    /// Cell coordinates: `column` across the five-column box, `layer` up from
+    /// the top of the glyph (layer 0 starts at 7/9 em) or, when negative, down
+    /// from the baseline.
+    fn cells(self) -> &'static [(u8, i8)] {
+        match self {
+            Self::Acute => &[(2, 0), (3, 0), (3, 1)],
+            Self::Grave => &[(2, 1), (3, 1), (3, 0)],
+            Self::Circumflex => &[(1, 0), (2, 1), (3, 0)],
+            Self::Diaeresis => &[(1, 1), (3, 1)],
+            Self::Tilde => &[(1, 1), (2, 0), (3, 1)],
+            Self::Ring => &[(1, 0), (2, 1), (3, 0), (2, 0)],
+            Self::Cedilla => &[(2, -1), (3, -1), (3, -2)],
+        }
+    }
+}
+
+/// One cell of a mark, as a rectangle in em units.
+fn mark_cell(column: u8, layer: i8) -> Vec<Point> {
+    let x0 = f64::from(column) * BUILTIN_CELL;
+    let x1 = x0 + BUILTIN_CELL;
+    let (bottom, top) = if layer < 0 {
+        (
+            f64::from(layer) * BUILTIN_CELL,
+            f64::from(layer + 1) * BUILTIN_CELL,
+        )
+    } else {
+        (
+            f64::from(BUILTIN_HEIGHT + layer as u8) * BUILTIN_CELL,
+            f64::from(BUILTIN_HEIGHT + layer as u8 + 1) * BUILTIN_CELL,
+        )
+    };
+    vec![
+        Point::new(x0, bottom),
+        Point::new(x1, bottom),
+        Point::new(x1, top),
+        Point::new(x0, top),
+    ]
+}
+
+/// The base letter and mark for a precomposed Latin-1 / Latin Extended-A
+/// character the 5×7 alphabet does not carry itself.
+fn decompose(character: char) -> Option<(char, Accent)> {
+    let (base, accent) = match character {
+        'á' | 'Á' => ('a', Accent::Acute),
+        'é' | 'É' => ('e', Accent::Acute),
+        'í' | 'Í' => ('i', Accent::Acute),
+        'ó' | 'Ó' => ('o', Accent::Acute),
+        'ú' | 'Ú' => ('u', Accent::Acute),
+        'ý' | 'Ý' => ('y', Accent::Acute),
+        'à' | 'À' => ('a', Accent::Grave),
+        'è' | 'È' => ('e', Accent::Grave),
+        'ì' | 'Ì' => ('i', Accent::Grave),
+        'ò' | 'Ò' => ('o', Accent::Grave),
+        'ù' | 'Ù' => ('u', Accent::Grave),
+        'â' | 'Â' => ('a', Accent::Circumflex),
+        'ê' | 'Ê' => ('e', Accent::Circumflex),
+        'î' | 'Î' => ('i', Accent::Circumflex),
+        'ô' | 'Ô' => ('o', Accent::Circumflex),
+        'û' | 'Û' => ('u', Accent::Circumflex),
+        'ä' | 'Ä' => ('a', Accent::Diaeresis),
+        'ë' | 'Ë' => ('e', Accent::Diaeresis),
+        'ï' | 'Ï' => ('i', Accent::Diaeresis),
+        'ö' | 'Ö' => ('o', Accent::Diaeresis),
+        'ü' | 'Ü' => ('u', Accent::Diaeresis),
+        'ÿ' | 'Ÿ' => ('y', Accent::Diaeresis),
+        'ã' | 'Ã' => ('a', Accent::Tilde),
+        'õ' | 'Õ' => ('o', Accent::Tilde),
+        'ñ' | 'Ñ' => ('n', Accent::Tilde),
+        'å' | 'Å' => ('a', Accent::Ring),
+        'ç' | 'Ç' => ('c', Accent::Cedilla),
+        _ => return None,
+    };
+    Some((base, accent))
 }
 
 fn upper(character: char) -> Option<char> {
@@ -402,6 +533,55 @@ mod tests {
     fn a_broken_font_program_is_rejected() {
         assert!(Font::true_type(Encoding::standard(), vec![0, 1, 2, 3]).is_none());
         assert!(Font::true_type(Encoding::standard(), Vec::new()).is_none());
+    }
+
+    #[test]
+    fn accented_latin_composes_instead_of_drawing_notdef() {
+        let font = Font::builtin(Encoding::win_ansi());
+        // code, the ASCII base the accent is composed onto, and the number of
+        // mark cells the accent contributes.
+        for (code, base, marks) in [
+            (0xE9_u8, b'E', 3), // é, acute
+            (0xF1, b'N', 3),    // ñ, tilde
+            (0xFC, b'U', 2),    // ü, diaeresis
+            (0xE7, b'C', 3),    // ç, cedilla
+            (0xE5, b'A', 4),    // å, ring
+            (0xE2, b'A', 3),    // â, circumflex
+        ] {
+            let glyph = font.glyph(code).expect("a composed glyph");
+            let plain = font.glyph(base).expect("the base letter");
+            assert_eq!(
+                glyph.contours.len(),
+                plain.contours.len() + marks,
+                "{} on {}",
+                code as char,
+                base as char
+            );
+            assert_ne!(glyph.contours, plain.contours);
+        }
+        // Anything the table does not name still falls back to .notdef, and
+        // that is a hollow box, not a panic.
+        let other = font.glyph(0xA4).expect("undefined code");
+        assert_eq!(other.contours.len(), 20, "the notdef box");
+    }
+
+    #[test]
+    fn marks_sit_outside_the_glyph_box_and_cedillas_below_the_baseline() {
+        let font = Font::builtin(Encoding::win_ansi());
+        let acute = font.glyph(0xE9).expect("é");
+        let top = acute
+            .contours
+            .iter()
+            .flatten()
+            .fold(f64::MIN, |max, point| max.max(point.y));
+        assert!((7.0 / 9.0..=1.0).contains(&top), "accent tops out at {top}");
+        let cedilla = font.glyph(0xE7).expect("ç");
+        let bottom = cedilla
+            .contours
+            .iter()
+            .flatten()
+            .fold(f64::MAX, |min, point| min.min(point.y));
+        assert!(bottom < 0.0, "the cedilla hangs to {bottom}");
     }
 
     #[test]

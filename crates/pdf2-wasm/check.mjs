@@ -77,4 +77,27 @@ for (const file of files) {
 console.log(`size total: ${total} gzip (budget ${BUDGET_GZIP})`);
 expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_GZIP} budget`);
 
+// The demo is part of the artefact: every sample it names must exist, and every
+// element it reaches for must be in the page. A missing file or a renamed id
+// would only show up as a blank page in a browser.
+{
+  const { readdirSync } = require('node:fs');
+  const demo = join(here, 'demo');
+  const page = readFileSync(join(demo, 'index.html'), 'utf8');
+  const script = readFileSync(join(demo, 'app.js'), 'utf8');
+  const samples = [...script.matchAll(/file: '(samples\/[^']+)'/g)].map((match) => match[1]);
+  expect(samples.length > 0, 'the demo names at least one sample');
+  for (const sample of samples) {
+    expect(
+      readdirSync(join(demo, 'samples')).includes(sample.split('/').pop()),
+      `the demo sample ${sample} is committed`,
+    );
+  }
+  const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((match) => match[1]));
+  const wanted = [...script.matchAll(/querySelector\('#([^']+)'\)/g)].map((match) => match[1]);
+  for (const id of wanted) {
+    expect(ids.has(id), `the demo's #${id} exists in index.html`);
+  }
+}
+
 console.log('wasm package: all checks passed');

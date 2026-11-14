@@ -80,6 +80,16 @@ real bugs:
    box canvas. The renderer now honours 90/180/270; `page-tree.pdf` page 2
    (which inherits `/Rotate 90`) exposed the change in the older golden test.
 
+## The built-in text fallback
+
+A base-14 font with no embedded program is drawn with a 5×7 bitmap alphabet:
+ASCII letters, digits and punctuation, plus Latin-1 accents composed onto their
+base letter (`é` is `E` with an acute above the glyph box, `ç` is `C` with a
+cedilla below the baseline, `ø` is `O` with a slash across it). Anything outside
+that set — `ß`, `æ`, Cyrillic, CJK — is drawn as a `.notdef` box, which is the
+standard way to say "this glyph is not here". Embedding a real font remains the
+honest fix, and is what the fallback exists to avoid for simple documents.
+
 ## Still unproven
 
 The renderer does not implement these, so no fixture can prove them and content
