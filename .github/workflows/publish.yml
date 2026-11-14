@@ -45,8 +45,11 @@ on:
 permissions:
   contents: read
 
+# One queue per tag: pushing several per-crate tags at once must not cancel the
+# pending runs (a shared `publish` group does exactly that), while a re-run of
+# the same tag still waits for the previous attempt.
 concurrency:
-  group: publish
+  group: publish-${{ github.ref_name }}
   cancel-in-progress: false
 
 env:
