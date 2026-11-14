@@ -93,6 +93,29 @@ pub fn render_page_number(
     render_page(document, &page, options)
 }
 
+/// `/Widths` of a simple font, in 1/1000 em, with the descriptor's
+/// `/MissingWidth` for codes the array does not cover (9.2.4).
+#[derive(Debug, Clone, Default, PartialEq)]
+struct SimpleWidths {
+    first: i64,
+    widths: Vec<f64>,
+    missing: f64,
+}
+
+impl SimpleWidths {
+    fn advance(&self, code: u8) -> f64 {
+        let code = i64::from(code);
+        let index = code - self.first;
+        if index >= 0 {
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            if let Some(width) = self.widths.get(index as usize) {
+                return width / 1000.0;
+            }
+        }
+        self.missing / 1000.0
+    }
+}
+
 /// Rasterise one page.
 pub fn render_page(
     document: &Document,
@@ -160,6 +183,7 @@ struct State {
     font: Option<Font>,
     font_size: f64,
     miter_limit: f64,
+    widths: Option<SimpleWidths>,
     char_spacing: f64,
     word_spacing: f64,
     horizontal_scale: f64,
@@ -182,6 +206,7 @@ impl State {
             font: None,
             font_size: 0.0,
             miter_limit: 10.0,
+            widths: None,
             char_spacing: 0.0,
             word_spacing: 0.0,
             horizontal_scale: 1.0,
@@ -378,7 +403,9 @@ impl Walker<'_> {
                     _ => return Err(crate::Error::malformed("/Tf needs a font name")),
                 };
                 self.state.font_size = number(operands, 1);
-                self.state.font = self.load_font(&name);
+                let (font, widths) = self.load_font(&name);
+                self.state.font = font;
+                self.state.widths = widths;
             }
             b"Td" | b"TD" => {
                 let tx = number(operands, 0);
@@ -554,7 +581,12 @@ impl Walker<'_> {
                     );
                 }
             }
-            let mut advance = font.advance(code) * self.state.font_size + self.state.char_spacing;
+            let em = self
+                .state
+                .widths
+                .as_ref()
+                .map_or_else(|| font.advance(code), |widths| widths.advance(code));
+            let mut advance = em * self.state.font_size + self.state.char_spacing;
             if code == b' ' {
                 advance += self.state.word_spacing;
             }
@@ -604,7 +636,22 @@ impl Walker<'_> {
         Ok(())
     }
 
-    fn load_font(&mut self, name: &[u8]) -> Option<Font> {
+    fn load_font(&mut self, name: &[u8]) -> (Option<Font>, Option<SimpleWidths>) {
+        let Some((font, widths, unsupported)) = self.font_entry(name) else {
+            return (None, None);
+        };
+        if let Some(kind) = unsupported {
+            self.report.note(kind.as_bytes());
+        }
+        (font, widths)
+    }
+
+    /// The font dictionary behind a resource name, its widths and, when the
+    /// family is not one this renderer draws, the name to report.
+    fn font_entry(
+        &mut self,
+        name: &[u8],
+    ) -> Option<(Option<Font>, Option<SimpleWidths>, Option<&'static str>)> {
         let resources = self.resources.clone()?;
         let fonts = match resolve(self.document, resources.get(b"Font")) {
             Ok(Object::Dictionary(fonts)) => fonts,
@@ -615,10 +662,31 @@ impl Walker<'_> {
         let Object::Dictionary(font) = font_object else {
             return None;
         };
+        let subtype = match font.get(b"Subtype") {
+            Some(Object::Name(name)) => name.clone(),
+            _ => Vec::new(),
+        };
+        // Type 0 (CID), Type 3 and embedded Type 1/CFF programs are not drawn
+        // yet; report them by name instead of painting fallback glyphs as if
+        // they were the document's font.
+        match subtype.as_slice() {
+            b"Type0" => return Some((None, None, Some("font:Type0"))),
+            b"Type3" => return Some((None, None, Some("font:Type3"))),
+            _ => {}
+        }
         let encoding = self.encoding_for(&font);
+        let widths = self.widths_for(&font);
         if let Some(descriptor) = font.get(b"FontDescriptor") {
             let descriptor = resolve(self.document, Some(descriptor)).ok()?;
             if let Object::Dictionary(descriptor) = descriptor {
+                for (key, kind) in [
+                    (&b"FontFile3"[..], "font:FontFile3"),
+                    (&b"FontFile"[..], "font:FontFile"),
+                ] {
+                    if descriptor.get(key).is_some() {
+                        return Some((Some(Font::builtin(encoding)), widths, Some(kind)));
+                    }
+                }
                 if let Some(font_file) = descriptor.get(b"FontFile2") {
                     let data = match font_file {
                         Object::Reference(id) => self.document.stream_data(*id).ok(),
@@ -626,13 +694,47 @@ impl Walker<'_> {
                     };
                     if let Some(data) = data {
                         if let Some(font) = Font::true_type(encoding.clone(), data) {
-                            return Some(font);
+                            return Some((Some(font), widths, None));
                         }
                     }
                 }
             }
         }
-        Some(Font::builtin(encoding))
+        Some((Some(Font::builtin(encoding)), widths, None))
+    }
+
+    /// `/Widths` plus the descriptor's `/MissingWidth`, when the font states
+    /// them. A base-14 font usually does not, and then the glyph's own advance
+    /// is the best available answer.
+    fn widths_for(&self, font: &Dictionary) -> Option<SimpleWidths> {
+        let first = font.get(b"FirstChar").and_then(Object::as_integer)?;
+        let Object::Array(items) = resolve(self.document, font.get(b"Widths")).ok()? else {
+            return None;
+        };
+        let widths: Vec<f64> = items
+            .iter()
+            .map(|item| {
+                resolve(self.document, Some(item))
+                    .ok()
+                    .and_then(|item| item.as_real())
+            })
+            .map(|width| width.unwrap_or(0.0))
+            .collect();
+        let missing = font
+            .get(b"FontDescriptor")
+            .and_then(|descriptor| resolve(self.document, Some(descriptor)).ok())
+            .and_then(|descriptor| match descriptor {
+                Object::Dictionary(descriptor) => {
+                    descriptor.get(b"MissingWidth").and_then(Object::as_real)
+                }
+                _ => None,
+            })
+            .unwrap_or(0.0);
+        Some(SimpleWidths {
+            first,
+            widths,
+            missing,
+        })
     }
 
     fn encoding_for(&self, font: &Dictionary) -> Encoding {

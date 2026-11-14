@@ -15,7 +15,10 @@
 //! 4. page boxes — a `/MediaBox` with a non-zero origin;
 //! 5. `/Rotate 90`;
 //! 6. text metrics — horizontal scaling and word spacing measured against the
-//!    same string at 100%.
+//!    same string at 100%;
+//! 7. `/Widths` — three fonts that differ only in the width table, so the
+//!    distance between two identical glyphs is the space advance;
+//! 8. a Type 0 font, which must be reported rather than painted.
 //!
 //! Every assertion states where the pixel comes from. A golden PNG pins the
 //! whole raster as a regression net, but it cannot tell a right answer from a
@@ -69,6 +72,20 @@ fn ink(rendered: &RenderedPage, x0: u32, y0: u32, x1: u32, y1: u32) -> usize {
         }
     }
     count
+}
+
+/// Runs of inked columns in a band, left to right.
+fn ink_runs(rendered: &RenderedPage, x0: u32, y0: u32, x1: u32, y1: u32) -> Vec<(u32, u32)> {
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for x in x0..x1 {
+        let inked = (y0..y1).any(|y| pixel(rendered, x, y) != WHITE);
+        match (inked, runs.last_mut()) {
+            (true, Some(last)) if last.1 == x => last.1 = x + 1,
+            (true, _) => runs.push((x, x + 1)),
+            (false, _) => {}
+        }
+    }
+    runs
 }
 
 /// Rightmost inked column in a band, or `None` when the band is empty.
@@ -316,6 +333,45 @@ fn horizontal_scaling_and_word_spacing_change_the_run_by_the_factor() {
 }
 
 #[test]
+fn widths_from_the_font_dictionary_set_the_advance() {
+    // "I I" at 20 pt on three fonts that differ only in /Widths. The second
+    // glyph starts after `I` plus the space, so the distance is the two widths
+    // in 1/1000 em: (333 + 250), (333 + 750), and for the third font both `Z`
+    // and the space are outside the array and take /MissingWidth 900.
+    let page = render(6);
+    assert_eq!((page.canvas.width(), page.canvas.height()), (300, 200));
+    for (band, expected) in [
+        ((40, 55), (333.0 + 250.0) / 1000.0 * 20.0),
+        ((90, 105), (333.0 + 750.0) / 1000.0 * 20.0),
+        ((140, 155), (900.0 + 900.0) / 1000.0 * 20.0),
+    ] {
+        let runs = ink_runs(&page, 0, band.0, 300, band.1);
+        assert_eq!(runs.len(), 2, "two glyphs in band {band:?}: {runs:?}");
+        let advance = f64::from(runs[1].0) - f64::from(runs[0].0);
+        assert!(
+            (advance - expected).abs() <= 1.5,
+            "band {band:?}: the second glyph starts {advance} px after the first, expected {expected}"
+        );
+    }
+}
+
+#[test]
+fn a_type_0_font_is_reported_instead_of_painted_with_fallback_glyphs() {
+    let page = render(7);
+    assert_eq!(
+        page.report.unsupported.get("font:Type0"),
+        Some(&1),
+        "{:?}",
+        page.report
+    );
+    assert_eq!(
+        ink(&page, 0, 0, 300, 200),
+        0,
+        "nothing is painted for a font the renderer cannot draw"
+    );
+}
+
+#[test]
 fn every_calibration_page_uses_only_supported_operators() {
     for page in 0..6 {
         let rendered = render(page);
@@ -331,7 +387,7 @@ fn every_calibration_page_uses_only_supported_operators() {
 
 #[test]
 fn the_committed_goldens_match_the_renderer() {
-    for page in 0..6 {
+    for page in 0..8 {
         let rendered = render(page);
         let png = encode_png(&rendered.canvas);
         let golden_path = repo(&format!(

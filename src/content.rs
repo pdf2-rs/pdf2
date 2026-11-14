@@ -250,9 +250,8 @@ impl<'a> TextInterpreter<'a> {
         };
         if let Some(Object::Name(subtype)) = dict.get(b"Subtype") {
             if subtype == b"Type0" {
-                return Err(Error::Malformed {
-                    what: "composite (Type0) fonts are not supported yet",
-                    offset: None,
+                return Err(Error::Unsupported {
+                    what: "composite (Type0) fonts",
                 });
             }
         }

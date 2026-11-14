@@ -1,6 +1,6 @@
 [package]
 name = "pdf2-wasm"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 rust-version = "1.87"
 description = "WebAssembly bindings for pdf2: open, inspect and render PDF 2.0 pages in the browser."
@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pdf2 = { path = "../..", version = "1.0.0" }
-pdf2-render = { path = "../pdf2-render", version = "1.0.1" }
+pdf2-render = { path = "../pdf2-render", version = "1.0.2" }
 # Pinned to the wasm-bindgen CLI version used locally and in CI: the bindgen
 # schema is not compatible across versions.
 wasm-bindgen = "=0.2.127"

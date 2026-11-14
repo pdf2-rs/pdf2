@@ -60,6 +60,19 @@ pub enum Error {
         /// The operating system's message.
         message: String,
     },
+
+    /// A construct this version does not implement yet.
+    ///
+    /// Unlike [`Error::Malformed`], the file is not wrong: the reader simply
+    /// does not support the feature, and callers may choose to skip it.
+    ///
+    /// The variant is last on purpose: inserting one earlier would shift the
+    /// implicit discriminants of every variant after it, which `cargo
+    /// semver-checks` rightly treats as a breaking change for a public enum.
+    Unsupported {
+        /// What is missing, for example `"composite (Type0) fonts"`.
+        what: &'static str,
+    },
 }
 
 impl Error {
@@ -90,6 +103,7 @@ impl fmt::Display for Error {
                 offset: Some(offset),
             } => write!(f, "malformed {what} at offset {offset}"),
             Self::Malformed { what, offset: None } => write!(f, "malformed {what}"),
+            Self::Unsupported { what } => write!(f, "unsupported: {what}"),
             Self::Io { message } => write!(f, "i/o error: {message}"),
         }
     }
@@ -125,6 +139,14 @@ mod tests {
             "malformed xref table at offset 12"
         );
         assert_eq!(Error::malformed("stream").to_string(), "malformed stream");
+        assert_eq!(
+            Error::Unsupported {
+                what: "composite (Type0) fonts"
+            }
+            .to_string(),
+            "unsupported: composite (Type0) fonts",
+            "a valid construct this version cannot read is not called malformed"
+        );
     }
 
     #[test]
