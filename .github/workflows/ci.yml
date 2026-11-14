@@ -94,3 +94,22 @@ jobs:
           cargo +stable package -p pdf2 --list
           cargo +stable package -p pdf2
           cargo +stable package -p pdf2-cli
+
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Deterministic metrics (allocation counts and bytes) are gated against
+      # the committed baseline on every platform; throughput is gated only for
+      # a platform that has a baseline entry of its own.
+      - name: Measure and compare with the committed baseline
+        run: cargo +stable run --release -p pdf2-bench -- --check

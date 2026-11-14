@@ -32,7 +32,7 @@ Cargo.toml                 # [package] pdf2 + [workspace] members = ["crates/pdf
 crates/pdf2-cli            # info, pages, text, check
 crates/pdf2-render         # rasterizer: paths, clips, images, text outlines
 crates/pdf2-wasm           # wasm-bindgen wrapper + demo (npm package)
-crates/pdf2-bench          # benchmark binary + corpus runner
+crates/pdf2-bench          # benchmark binary + corpus runner (no dependencies)
 crates/pdf2-fuzz           # cargo-fuzz targets (not published)
 xtask                      # corpus, size budgets, semver checks, release glue
 ```

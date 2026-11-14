@@ -180,6 +180,11 @@ the encryption pair by `cargo run --example make_encrypted_fixture`, because no
 external PDF tool is available to produce them. Both generators are deterministic:
 re-running them reproduces every byte.
 
+Benchmarks and the memory numbers live in `crates/pdf2-bench`, gated in CI
+against [`docs/performance-baseline.json`](docs/performance-baseline.json) —
+method, reference numbers and budgets are in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
 `tests/robustness.rs` is the single corpus that opens every fixture from every
 truncation, from sampled byte mutations and from single-byte deletions, and then
 exercises pages, metadata, content decoding and text extraction on anything that
