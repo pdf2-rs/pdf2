@@ -251,7 +251,9 @@ for the one-time crates.io configuration and the tag-and-push flow.
 
 The way from here to 1.0 — proof-of-use tools, `no_std` and wasm targets, a
 rendering crate and a wasm package, with the gates between alpha, beta, rc and
-1.0 — is planned in [docs/ROADMAP.md](docs/ROADMAP.md).
+1.0 — is planned in [docs/ROADMAP.md](docs/ROADMAP.md). Upgrading from
+`0.2.0-alpha.1` needs nothing beyond the version bump, but the feature flags are
+worth knowing: see [docs/MIGRATING.md](docs/MIGRATING.md).
 
 ## Legal
 
