@@ -69,7 +69,7 @@ exists at the required version. The order is `pdf2` → `pdf2-render` →
 
 Both publish workflows create the GitHub release for their tag in a `GitHub
 release` job: the notes are the CHANGELOG section for that version plus the
-registry links, npm releases are titled `pdf2 <version> (npm)`, and
+registry links, npm releases are titled `pdf2-wasm <version> (npm)`, and
 `-rc`/`-alpha` versions are marked pre-release. Nothing needs to be typed by
 hand; `gh release list` should show a release for every tag. Older tags cannot run the job — a tag executes the workflow file from the
 tagged commit — so they are backfilled by dispatching the same workflow with
@@ -85,15 +85,15 @@ for the release checklist and the tag namespaces.
 
 ### The npm package
 
-`crates/pdf2-wasm/package.json` describes the npm package (`pdf2`, formerly
-`pdf2-wasm`, homepage the Pages demo). Its four files are the wasm-bindgen
+`crates/pdf2-wasm/package.json` describes the npm package (`pdf2-wasm`, version
+1.0.0, homepage the Pages demo). Its four files are the wasm-bindgen
 `--target web` output in `crates/pdf2-wasm/demo/pkg/` plus the README, and
 `crates/pdf2-wasm/check.mjs` smoke-tests them and enforces the size budget.
 
 `.github/workflows/npm.yml` builds, tests and publishes it:
 
 - **First publish, by hand** — npm only accepts a trusted publisher once the
-  package exists. `pdf2-wasm` 1.0.0 and `pdf2` 1.0.6 were published this way: an owner
+  package exists. `pdf2-wasm` 1.0.0 was published this way: an owner
   web-2FA login, where npm stages the version behind a `0.0.0-stage`
   placeholder until the browser flow completes (the placeholder stays in the
   version list without a dist-tag and is harmless). Run it locally with an npm
@@ -111,7 +111,7 @@ for the release checklist and the tag namespaces.
 
 - **Trusted publishing (OIDC) — configured and proven.** The trusted publisher
   on npmjs.com is `pdf2-rs/pdf2`, workflow `npm.yml`, environment `release`.
-  the package was published by tag with no token: npm logged
+  `pdf2-wasm` 1.0.1 was published this way: no token, and npm logged
   `Signed provenance statement with source and build information from GitHub
   Actions` with a transparency-log entry, so `npm audit signatures` and the
   package page verify where the tarball came from. The workflow installs

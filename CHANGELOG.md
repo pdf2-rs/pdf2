@@ -37,9 +37,6 @@ loud instead of being approximated:
 - `tests/fixtures/calibration.pdf` gained a `/Widths` page and an unsupported
   font page, both pinned by probes and goldens; `docs/RENDERING.md` has the
   support matrix.
-- The npm package is published as **`pdf2`** (1.0.6) rather than `pdf2-wasm`:
-  `import init, { open } from 'pdf2'`. The old name is deprecated and points
-  here; the crate keeps its name.
 - npm `pdf2-wasm` 1.0.4 is published as a package root — wasm, glue, TypeScript
   declarations, manifest, README and licences — instead of a `demo/` subtree,
   and ships both licence texts.
