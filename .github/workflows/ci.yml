@@ -171,7 +171,7 @@ jobs:
           key: wasm-package
 
       - name: Cache wasm-bindgen-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/wasm-bindgen
           key: wasm-bindgen-cli-0.2.127
@@ -208,9 +208,14 @@ jobs:
   semver:
     name: Semver
     runs-on: ubuntu-latest
+    # The action's own bundle still requires Node's deprecated `punycode`
+    # module; the warning is about its dependencies, not about this repository,
+    # so the one code is disabled rather than every Node warning.
+    env:
+      NODE_OPTIONS: --disable-warning=DEP0040
     steps:
       - uses: actions/checkout@v6
-      - uses: obi1kenobi/cargo-semver-checks-action@v2
+      - uses: obi1kenobi/cargo-semver-checks-action@v2.9
         with:
           package: pdf2
 

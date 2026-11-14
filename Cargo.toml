@@ -5,7 +5,7 @@ authors = ["Alexander Korolev <alexander.korolev.germany@gmail.com>"]
 edition = "2021"
 categories = ["parser-implementations", "text-processing"]
 description = "A PDF 2.0 (ISO 32000-2) reader, writer and text extractor."
-homepage = "https://github.com/pdf2-rs/pdf2"
+homepage = "https://pdf2-rs.github.io/pdf2/"
 keywords = ["pdf", "pdf2", "parser", "writer", "iso32000"]
 # Verified by the `1.87` job in .github/workflows/ci.yml.
 rust-version = "1.87"

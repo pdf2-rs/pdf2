@@ -35,7 +35,7 @@ jobs:
           key: fuzz-${{ matrix.target }}
 
       - name: Cache cargo-fuzz
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-fuzz
           key: cargo-fuzz-cli-0.13.2
