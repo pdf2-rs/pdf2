@@ -6,6 +6,7 @@
 //! `/BaseEncoding` and `/Differences`, and glyph-name lookup for the
 //! differences array.
 
+use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::error::{Error, Result};

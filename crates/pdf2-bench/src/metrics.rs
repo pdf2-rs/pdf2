@@ -141,7 +141,7 @@ fn allocation_pass(group: &Group) -> Result<(u64, u64, u64), String> {
 /// Run `operation` `runs` times and return the median duration per operation.
 ///
 /// Fast operations are batched: after one calibration run the operation is
-/// repeated enough times to make each sample last at least [`MIN_SAMPLE`]
+/// repeated enough times to make each sample last at least `MIN_SAMPLE`
 /// seconds, and the elapsed time is divided back down. Without that, opening a
 /// 500-byte fixture would be a few microseconds and the median would swing
 /// with scheduler noise.

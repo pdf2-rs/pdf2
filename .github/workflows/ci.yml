@@ -52,7 +52,7 @@ jobs:
       - name: Docs
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo +stable doc --workspace --no-deps
+        run: cargo +stable doc --workspace --no-deps --lib
 
   test:
     name: Test (${{ matrix.toolchain }})
