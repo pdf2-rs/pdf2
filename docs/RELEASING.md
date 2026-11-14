@@ -99,6 +99,11 @@ Releases run on a `wasm-v*` tag whose version matches `package.json` and which
 is on `main`; a manual dispatch defaults to `dry_run`, and a version already on
 npm is skipped.
 
+The npm version tracks the crate version, but a packaging-only change (manifest
+metadata, README) is released as an npm patch without a new crate: `1.0.1` was
+the canonical `git+…` repository URL that npm had been rewriting at publish
+time.
+
 ## Cutting a release
 
 Tags are **per crate**, because each crate has its own version:
