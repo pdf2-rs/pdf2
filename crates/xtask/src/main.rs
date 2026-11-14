@@ -30,6 +30,7 @@ fn main() -> ExitCode {
         "docs" => step("docs"),
         "no-std" => no_std(),
         "wasm" => wasm(),
+        "wasm-package" => wasm_package(),
         "bench" => bench(),
         "fixtures" => fixtures(),
         "bless" => bless(),
@@ -60,6 +61,8 @@ Usage:
   cargo xtask docs      rustdoc over the workspace, warnings denied
   cargo xtask no-std    build and lint the library without std
   cargo xtask wasm      build the wasm modules, smoke test, check size budgets
+  cargo xtask wasm-package
+                        build the npm package into crates/pdf2-wasm/pkg
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
   cargo xtask bless     re-render the committed golden PNGs
@@ -171,6 +174,14 @@ fn wasm() -> Result<(), String> {
         "node",
         &["--no-warnings", "crates/pdf2-wasm-smoke/smoke.mjs"],
     )?;
+    wasm_package()
+}
+
+/// Build what npm publishes: the bindgen web output at the package root, with
+/// the manifest, README and licences beside it, and no demo directory. The demo
+/// site gets its own copy of the two files it needs to load.
+fn wasm_package() -> Result<(), String> {
+    const WASM: &str = "target/wasm32-unknown-unknown/release/pdf2_wasm.wasm";
     run(
         "cargo",
         &[
@@ -182,7 +193,7 @@ fn wasm() -> Result<(), String> {
             "wasm32-unknown-unknown",
         ],
     )?;
-    let wasm = "target/wasm32-unknown-unknown/release/pdf2_wasm.wasm";
+    // Node glue, for the API smoke test only; not part of the package.
     run(
         "wasm-bindgen",
         &[
@@ -190,21 +201,48 @@ fn wasm() -> Result<(), String> {
             "nodejs",
             "--out-dir",
             "crates/pdf2-wasm/pkg-node",
-            wasm,
+            WASM,
         ],
     )?;
+    // The published package: TypeScript declarations included.
     run(
         "wasm-bindgen",
-        &[
-            "--target",
-            "web",
-            "--no-typescript",
-            "--out-dir",
-            "crates/pdf2-wasm/demo/pkg",
-            wasm,
-        ],
+        &["--target", "web", "--out-dir", "crates/pdf2-wasm/pkg", WASM],
     )?;
+    for (from, to) in [
+        (
+            "crates/pdf2-wasm/package.json",
+            "crates/pdf2-wasm/pkg/package.json",
+        ),
+        (
+            "crates/pdf2-wasm/README.md",
+            "crates/pdf2-wasm/pkg/README.md",
+        ),
+        ("LICENSE-MIT", "crates/pdf2-wasm/pkg/LICENSE-MIT"),
+        (
+            "LICENSE-UNLICENSE",
+            "crates/pdf2-wasm/pkg/LICENSE-UNLICENSE",
+        ),
+    ] {
+        copy(from, to)?;
+    }
+    for file in ["pdf2_wasm.js", "pdf2_wasm_bg.wasm"] {
+        copy(
+            &format!("crates/pdf2-wasm/pkg/{file}"),
+            &format!("crates/pdf2-wasm/demo/pkg/{file}"),
+        )?;
+    }
     run("node", &["--no-warnings", "crates/pdf2-wasm/check.mjs"])
+}
+
+fn copy(from: &str, to: &str) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(to).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", parent.display()))?;
+    }
+    std::fs::copy(from, to)
+        .map(|_| ())
+        .map_err(|error| format!("copying {from} to {to}: {error}"))
 }
 
 fn bench() -> Result<(), String> {

@@ -10,6 +10,8 @@ RALPH_PROGRESS.md
 rounds-history.*.jsonl
 /rounds
 
-# wasm-bindgen output (built by CI and the demo workflow)
+# wasm-bindgen output: the published package, the Node glue for its smoke test,
+# and the demo site's copy (all built by CI and the demo workflow)
+crates/pdf2-wasm/pkg/
 crates/pdf2-wasm/pkg-node/
 crates/pdf2-wasm/demo/pkg/

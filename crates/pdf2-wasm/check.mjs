@@ -14,6 +14,8 @@ import { gzipSync } from 'node:zlib';
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..');
 const fixtures = join(repo, 'tests', 'fixtures');
+// What npm publishes, built by `cargo xtask wasm-package`.
+const pkg = join(here, 'pkg');
 const require = createRequire(import.meta.url);
 // The crate's package.json says `"type": "module"` for the npm build; the
 // wasm-bindgen nodejs glue is CommonJS, so give its directory its own scope.
@@ -60,13 +62,42 @@ try {
 }
 expect(rejected, 'a wrong password throws');
 
+// The npm package is what is published, so its contents are checked, not just
+// the demo's: the bindgen output at the root, with the manifest, README and
+// licences beside it, TypeScript declarations included, and no demo directory.
+{
+  const { readdirSync } = require('node:fs');
+  const manifest = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
+  expect(manifest.main === './pdf2_wasm.js', `main is ${manifest.main}`);
+  expect(manifest.types === './pdf2_wasm.d.ts', `types is ${manifest.types}`);
+  expect(manifest.type === 'module', 'the package is ESM');
+  const shipped = readdirSync(pkg).filter((name) => name !== 'package.json');
+  for (const name of [
+    'pdf2_wasm.js',
+    'pdf2_wasm.d.ts',
+    'pdf2_wasm_bg.wasm',
+    'pdf2_wasm_bg.wasm.d.ts',
+    'README.md',
+    'LICENSE-MIT',
+    'LICENSE-UNLICENSE',
+  ]) {
+    expect(shipped.includes(name), `the package ships ${name}`);
+  }
+  expect(!shipped.includes('demo'), 'the package has no demo directory');
+  for (const entry of manifest.files) {
+    expect(!entry.includes('demo/'), `the manifest does not list ${entry}`);
+    expect(shipped.includes(entry), `the manifest lists ${entry}, which exists`);
+  }
+  const listed = new Set(['package.json', ...manifest.files]);
+  for (const name of shipped) {
+    expect(listed.has(name), `${name} is listed in the manifest files`);
+  }
+}
+
 // Size budget: the wasm-bindgen output that ships to the browser, gzipped.
 // Budgets are documented in docs/PERFORMANCE.md; change both together.
 const BUDGET_GZIP = 260 * 1024;
-const files = [
-  join(here, 'demo', 'pkg', 'pdf2_wasm_bg.wasm'),
-  join(here, 'demo', 'pkg', 'pdf2_wasm.js'),
-];
+const files = [join(pkg, 'pdf2_wasm_bg.wasm'), join(pkg, 'pdf2_wasm.js')];
 let total = 0;
 for (const file of files) {
   const raw = readFileSync(file);
@@ -77,8 +108,9 @@ for (const file of files) {
 console.log(`size total: ${total} gzip (budget ${BUDGET_GZIP})`);
 expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_GZIP} budget`);
 
-// The demo is part of the artefact: every sample it names must exist, and every
-// element it reaches for must be in the page. A missing file or a renamed id
+// The demo is a site, not part of the package: every sample it names must
+// exist, every element it reaches for must be in the page, and the two files it
+// loads must have been copied there beside it. A missing file or a renamed id
 // would only show up as a blank page in a browser.
 {
   const { readdirSync } = require('node:fs');
@@ -104,6 +136,10 @@ expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_G
     'the demo selects the sample the user chose',
   );
   const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((match) => match[1]));
+  const demoPkg = readdirSync(join(demo, 'pkg'));
+  for (const name of ['pdf2_wasm.js', 'pdf2_wasm_bg.wasm']) {
+    expect(demoPkg.includes(name), `the demo loads its own copy of ${name}`);
+  }
   const wanted = [...script.matchAll(/querySelector\('#([^']+)'\)/g)].map((match) => match[1]);
   for (const id of wanted) {
     expect(ids.has(id), `the demo's #${id} exists in index.html`);

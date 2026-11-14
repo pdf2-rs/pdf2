@@ -1,27 +1,51 @@
 {
   "name": "pdf2-wasm",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "PDF 2.0 in the browser: open, inspect and render with the pdf2 crate compiled to WebAssembly.",
   "license": "Unlicense OR MIT",
   "type": "module",
-  "main": "demo/pkg/pdf2_wasm.js",
+  "main": "./pdf2_wasm.js",
+  "module": "./pdf2_wasm.js",
+  "types": "./pdf2_wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./pdf2_wasm.d.ts",
+      "import": "./pdf2_wasm.js",
+      "default": "./pdf2_wasm.js"
+    },
+    "./pdf2_wasm_bg.wasm": "./pdf2_wasm_bg.wasm"
+  },
   "files": [
-    "demo/pkg/pdf2_wasm.js",
-    "demo/pkg/pdf2_wasm_bg.wasm",
-    "README.md"
+    "pdf2_wasm.js",
+    "pdf2_wasm.d.ts",
+    "pdf2_wasm_bg.wasm",
+    "pdf2_wasm_bg.wasm.d.ts",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-UNLICENSE"
   ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "homepage": "https://pdf2-rs.github.io/pdf2/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pdf2-rs/pdf2.git"
   },
+  "bugs": {
+    "url": "https://github.com/pdf2-rs/pdf2/issues"
+  },
   "keywords": [
     "pdf",
     "pdf2",
     "wasm",
-    "render"
+    "webassembly",
+    "render",
+    "browser"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }

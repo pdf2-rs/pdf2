@@ -15,7 +15,7 @@ paths and 1.0's layout depend on them.
 | `pdf2` (root) | library semver, currently 1.x | crates.io |
 | `crates/pdf2-render` | independent, currently 1.0.x | crates.io |
 | `crates/pdf2-cli` | independent, currently 1.0.x | crates.io |
-| `crates/pdf2-wasm` | independent, currently 1.0.x | crates.io **and** npm (`pdf2-wasm`) |
+| `crates/pdf2-wasm` | independent, currently 1.0.x | crates.io (crate) **and** npm (`pdf2-wasm`, versioned separately) |
 | `crates/pdf2-bench` | `publish = false` | nothing |
 | `crates/pdf2-wasm-smoke` | `publish = false` | nothing |
 | `crates/xtask` | `publish = false` | nothing |
@@ -217,9 +217,14 @@ generated automatically. Tags are **`npm-v<version>`**, where the version is
 - A rebuild-only release (renderer fixes, manifest metadata) bumps only
   `package.json` and uses `npm-v*`; the crates keep their versions. `wasm-v*`
   belongs to the crate — do not reuse it for npm.
-- The tarball is four files from `crates/pdf2-wasm/demo/pkg/`, which is
-  generated and git-ignored: never publish from a clean clone without building
-  it first (the workflow builds it).
+- The tarball is a package root, not a subtree of the repository: the bindgen
+  output (`pdf2_wasm.js`, `pdf2_wasm.d.ts`, `pdf2_wasm_bg.wasm`,
+  `pdf2_wasm_bg.wasm.d.ts`) with `package.json`, `README.md` and both licences
+  beside it — eight files, no `demo/` path, no build leftovers. It is built by
+  `cargo xtask wasm-package` into `crates/pdf2-wasm/pkg/` (git-ignored), which
+  is also the directory npm publishes from; the demo site gets its own copy of
+  the two files it loads. `check.mjs` fails if the package grows anything the
+  manifest does not list, or lists anything that is not there.
 
 ### Release checklist
 

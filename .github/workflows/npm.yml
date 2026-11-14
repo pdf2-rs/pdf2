@@ -106,20 +106,14 @@ jobs:
             exit 1
           }
 
-      - name: Build the package
-        run: |
-          cargo +stable build -p pdf2-wasm --release --target wasm32-unknown-unknown
-          wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
-            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
-          wasm-bindgen --target nodejs --out-dir crates/pdf2-wasm/pkg-node \
-            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
-
-      - name: API smoke test and size budget
-        run: node --no-warnings crates/pdf2-wasm/check.mjs
+      # The same chore CI runs: it builds the package root, checks its contents,
+      # the API and the size budget, and copies what the demo needs.
+      - name: Build the package and check it
+        run: cargo +stable run -q -p xtask -- wasm-package
 
       - name: Already published?
         id: published
-        working-directory: crates/pdf2-wasm
+        working-directory: crates/pdf2-wasm/pkg
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
@@ -132,7 +126,7 @@ jobs:
 
       - name: Publish
         if: steps.published.outputs.skip != 'true'
-        working-directory: crates/pdf2-wasm
+        working-directory: crates/pdf2-wasm/pkg
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
