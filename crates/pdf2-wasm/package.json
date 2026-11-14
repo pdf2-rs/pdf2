@@ -1,6 +1,6 @@
 {
-  "name": "pdf2-wasm",
-  "version": "1.0.5",
+  "name": "pdf2",
+  "version": "1.0.6",
   "description": "PDF 2.0 in the browser: open, inspect and render with the pdf2 crate compiled to WebAssembly.",
   "license": "Unlicense OR MIT",
   "type": "module",
