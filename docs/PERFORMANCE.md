@@ -86,6 +86,29 @@ What the numbers say:
 - Per-page allocations are flat at ~92 allocations per generated page, which is
   the number to watch when touching the object model.
 
+## Wasm sizes
+
+The smoke crate measures two wasm artifacts and fails when they grow past the
+documented budget (`crates/pdf2-wasm-smoke/smoke.mjs`, run by CI):
+
+```sh
+cargo build -p pdf2-wasm-smoke --release --target wasm32-unknown-unknown --lib
+cargo build -p pdf2-wasm-smoke --release --target wasm32-wasip1 --bin pdf2-wasi-smoke
+node --no-warnings crates/pdf2-wasm-smoke/smoke.mjs
+```
+
+| Artifact | Raw | Gzip | Gzip budget |
+| --- | --- | --- | --- |
+| browser module (`wasm32-unknown-unknown`, release) | 325 973 B | 120 232 B | 150 KiB |
+| WASI binary (`wasm32-wasip1`, release) | 384 483 B | 139 435 B | 175 KiB |
+
+Measured 2026-11-14 with `rustc 1.99.1` and the release profile. `twiggy top`
+shows where the bytes go — the largest single contributors after the name and
+`.rodata` sections are `sha2::sha512::compress512` (11.2 KB), `miniz_oxide`
+inflate (9.4 KB), `sha2::sha256::compress256` (7.9 KB) and
+`TextInterpreter::run` (7.1 KB). The budgets leave ~25% headroom, so a normal
+refactor fits; a deliberate jump means updating the budget and saying why.
+
 ## Budgets
 
 - Allocation counts and bytes: **no growth** is expected; anything above 10% is
@@ -94,6 +117,8 @@ What the numbers say:
 - Throughput: within 10% of the committed baseline for a platform that has one.
 - Peak RSS: recorded for observation; the allocation counts are the enforced
   memory metric.
+- Wasm: gzip size of both artifacts within the table above, checked on every CI
+  run.
 
 ## Updating the baseline
 

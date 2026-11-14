@@ -91,6 +91,12 @@ points; everything the parser, filters, document model, text extraction and
 AES-256 decryption need lives in `core` and `alloc`. CI builds both targets for
 `x86_64-unknown-linux-gnu` and `thumbv7em-none-eabihf`.
 
+WebAssembly is tested the same way: `crates/pdf2-wasm-smoke` builds a browser
+module (`wasm32-unknown-unknown`) driven from Node through a small C ABI, and a
+WASI binary (`wasm32-wasip1`) that reads a fixture through `std::fs`; CI runs
+both and fails if their gzip size passes the budget in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
 ## Layout
 
 The repository is a Cargo workspace: `pdf2` is the root package (the library in

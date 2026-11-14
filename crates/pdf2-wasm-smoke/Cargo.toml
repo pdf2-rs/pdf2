@@ -1,0 +1,21 @@
+[package]
+name = "pdf2-wasm-smoke"
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.87"
+description = "Wasm smoke tests for the pdf2 crate; not published."
+license = "Unlicense OR MIT"
+repository = "https://github.com/pdf2-rs/pdf2"
+publish = false
+
+# A browser-target module (`wasm32-unknown-unknown`) driven from Node through a
+# tiny C ABI, and a WASI binary (`wasm32-wasip1`) that reads a fixture.
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "pdf2-wasi-smoke"
+path = "src/bin/wasi.rs"
+
+[dependencies]
+pdf2 = { path = "../..", version = "0.2.0-alpha.1" }
