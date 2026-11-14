@@ -1,0 +1,150 @@
+{
+  "tier": "A",
+  "upstream": {
+    "repo": "https://github.com/mozilla/pdf.js",
+    "commit": "d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a",
+    "path": "test/pdfs"
+  },
+  "licence": "Apache-2.0 (see LICENSES/Apache-2.0.txt)",
+  "attribution": "Files from the Mozilla pdf.js test suite, reproduced under the Apache License 2.0.",
+  "files": [
+    {
+      "name": "90ms_rksj_h_sample.pdf",
+      "sha256": "d50ad3b93685e9d6061f5cc9957c49ca232a0dd0771aad71e4a615f87f2674be",
+      "bytes": 1039,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/90ms_rksj_h_sample.pdf"
+    },
+    {
+      "name": "ArabicCIDTrueType.pdf",
+      "sha256": "1cad1de912ba29f89a6d8b08bc5b0f84382874ffedab2c8f9e05ef608c265bb1",
+      "bytes": 39370,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/ArabicCIDTrueType.pdf"
+    },
+    {
+      "name": "ContentStreamCycleType3insideType3.pdf",
+      "sha256": "131aec277c444c985d502e5f589f37735d275a8ea247c1beedba0781fbe99d40",
+      "bytes": 2440,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/ContentStreamCycleType3insideType3.pdf"
+    },
+    {
+      "name": "Embedded_font.pdf",
+      "sha256": "4b7588e070cd37c7cfa2ce0a493ba9ec6d57fb36a2ca3c6ab50c74a7818a2f9a",
+      "bytes": 3323,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/Embedded_font.pdf"
+    },
+    {
+      "name": "IdentityToUnicodeMap_charCodeOf.pdf",
+      "sha256": "81243ff4cca5f7898688008224247d88534cd03e76ac3cbbdc38f925cfbee18f",
+      "bytes": 651,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/IdentityToUnicodeMap_charCodeOf.pdf"
+    },
+    {
+      "name": "ShowText-ShadingPattern.pdf",
+      "sha256": "13ac785e8445fbf01d5a8200e0e899daa204cdbe723b02f38f8af61ac48707bb",
+      "bytes": 4671,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/ShowText-ShadingPattern.pdf"
+    },
+    {
+      "name": "TrueType_without_cmap.pdf",
+      "sha256": "3e111eef52ce9c0d0b1da043290df4b49a5670c89891fcb3db6962edb12e35aa",
+      "bytes": 3989,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/TrueType_without_cmap.pdf"
+    },
+    {
+      "name": "Type3WordSpacing.pdf",
+      "sha256": "8ac40dc49d40af8b5a50b442ced56b8db962c961a779a0284cd3a6207adc0bb7",
+      "bytes": 2693,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/Type3WordSpacing.pdf"
+    },
+    {
+      "name": "alphatrans.pdf",
+      "sha256": "234c0ab8e9458f4d17133b08d2b66170eeb92be2a80e1508aa5117a2bf568f63",
+      "bytes": 16910,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/alphatrans.pdf"
+    },
+    {
+      "name": "arial_unicode_ab_cidfont.pdf",
+      "sha256": "049a4330710d8470896061acf7ee486735e94cef2769f6cc13fec3cb13bb65aa",
+      "bytes": 13110,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/arial_unicode_ab_cidfont.pdf"
+    },
+    {
+      "name": "arial_unicode_en_cidfont.pdf",
+      "sha256": "1c4a08108d8074f543c04e9b2ea2b93a842e2b29eb05ee9d99766f430fd365ab",
+      "bytes": 15779,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/arial_unicode_en_cidfont.pdf"
+    },
+    {
+      "name": "axial_shading_many_inputs.pdf",
+      "sha256": "4d86a414969c1c849e6866193c2c41653463d694a02ffc91b0ba663a7d107ee8",
+      "bytes": 3336,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/axial_shading_many_inputs.pdf"
+    },
+    {
+      "name": "blendmode.pdf",
+      "sha256": "39ce34c2d32738c7c94970fd76559ecb9efd671f5ab99e515a853674e7a824ce",
+      "bytes": 50567,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/blendmode.pdf"
+    },
+    {
+      "name": "bug_jpx.pdf",
+      "sha256": "4010d808557a72278368c05518367735ed186cbdd04974b8506275f9ac40f999",
+      "bytes": 5451,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/bug_jpx.pdf"
+    },
+    {
+      "name": "ccitt_EndOfBlock_false.pdf",
+      "sha256": "f2289b94e7e3f05f9e37754c399d3f525edf9444fb32c3279959cf64b575fe62",
+      "bytes": 3256,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/ccitt_EndOfBlock_false.pdf"
+    },
+    {
+      "name": "cid_cff.pdf",
+      "sha256": "d894d356411217414fd9040d3d038612e1f4a1598936b2385a76458dd6d64d38",
+      "bytes": 19970,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/cid_cff.pdf"
+    },
+    {
+      "name": "cidfont_cmap_overflow.pdf",
+      "sha256": "ecb07ca4b3c6a9fd408db07c29c7e4426fb1bd6ee9e2bbdfa4997b65be602c13",
+      "bytes": 94168,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/cidfont_cmap_overflow.pdf"
+    },
+    {
+      "name": "cmykjpeg.pdf",
+      "sha256": "659d6b19912f63db988b0b26b9bde0e6d8100667ef162051a4a84ea8e5b90272",
+      "bytes": 374080,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/cmykjpeg.pdf"
+    },
+    {
+      "name": "colorkeymask.pdf",
+      "sha256": "655a470881a3bc4fac682abe88522c86c11ff41d08ecf94fae2f53ecd0c2d27c",
+      "bytes": 161533,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/colorkeymask.pdf"
+    },
+    {
+      "name": "encrypted-attachment.pdf",
+      "sha256": "0f44da5152adf8cafcd7b0057d840310d78e17d033ee5414da0881b6dcd130ab",
+      "bytes": 2719,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/encrypted-attachment.pdf"
+    },
+    {
+      "name": "function_based_shading.pdf",
+      "sha256": "21a0d4951f2d45f86d90dd9bac824805b54b2bd2fefe6efad763d227d484ed64",
+      "bytes": 3869,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/function_based_shading.pdf"
+    },
+    {
+      "name": "function_based_shading_cmyk.pdf",
+      "sha256": "c624d33b595af80746dd96f6440d335a30b1bee3e484d9b0b2cfb0cd54c62be3",
+      "bytes": 3266,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/function_based_shading_cmyk.pdf"
+    },
+    {
+      "name": "issue18768_type3_wide_glyph.pdf",
+      "sha256": "8a37dd638b73c2124c2f8b92b77d8cdb95c6f1a9e509d374ff2925fa70a70eee",
+      "bytes": 1059,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/issue18768_type3_wide_glyph.pdf"
+    }
+  ]
+}

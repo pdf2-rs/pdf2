@@ -11,6 +11,8 @@ keywords = ["pdf", "pdf2", "parser", "writer", "iso32000"]
 rust-version = "1.87"
 license = "Unlicense OR MIT"
 readme = "README.md"
+# The corpus is evidence, not shipped code: it must never travel in the crate.
+exclude = ["corpus"]
 repository = "https://github.com/pdf2-rs/pdf2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
