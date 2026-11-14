@@ -77,20 +77,38 @@ crates.io does it.
 
 ## Cutting a release
 
-1. Bump the version in `Cargo.toml` and add the entry to `CHANGELOG.md`. Every
-   version already on crates.io is taken, so the release must use a new number
-   (`0.2.0-alpha.2`, `0.2.0`, …).
+Tags are **per crate**, because each crate has its own version:
+
+| Tag | Publishes |
+| --- | --- |
+| `pdf2-v0.2.0-alpha.3` | `pdf2` |
+| `render-v0.1.0` | `pdf2-render` (and needs the matching `pdf2` first) |
+| `cli-v0.1.0` | `pdf2-cli` |
+| `wasm-v0.1.0` | `pdf2-wasm` |
+
+1. Bump that crate's version and add the entry to `CHANGELOG.md`. Every version
+   already on crates.io is taken, so the release must use a new number.
 2. Commit on `main` and wait for CI to be green.
-3. Tag and push the tag:
+3. Tag and push:
 
    ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag pdf2-v0.2.0-alpha.3
+   git push origin pdf2-v0.2.0-alpha.3
    ```
 
-4. The `Publish` workflow checks that the tag matches `Cargo.toml` and that the
-   commit is on `main`, runs the test suite, then uploads the crate.
+4. `Publish` checks that the tag matches the crate's manifest version and that
+   the commit is on `main`, runs the workspace tests, exchanges an OIDC token and
+   publishes. A crate whose version is already on crates.io is skipped, so a
+   re-run is harmless.
 5. Create the GitHub release from the tag (optional).
+
+### Publishing the whole train
+
+Actions → **Publish** → *Run workflow*: `crate: all` walks the crates in
+dependency order (`pdf2` → `pdf2-render` → `pdf2-cli` / `pdf2-wasm`), skipping
+every version that already exists. `dry_run` defaults to `true`, which runs
+`cargo publish --dry-run` for the whole plan and uploads nothing; uncheck it to
+publish. A single crate can be selected the same way.
 
 ## Dry runs
 

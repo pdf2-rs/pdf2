@@ -1,11 +1,22 @@
 name: Publish
 
-# Publishes to crates.io with trusted publishing: the job proves its identity to
-# crates.io over OIDC, receives a short-lived token, and uploads. No crates.io
-# API token is stored in GitHub secrets.
+# Publishes workspace crates to crates.io with trusted publishing: the job
+# proves its identity over OIDC, receives a short-lived token, and uploads. No
+# crates.io API token is stored in GitHub secrets.
 #
-# Setup (one time, see docs/RELEASING.md):
-#   crates.io -> pdf2 -> Settings -> Trusted Publishing -> Add -> GitHub
+# Tags are per crate, and crates are always uploaded in dependency order
+# (`pdf2` → `pdf2-render` → `pdf2-cli` / `pdf2-wasm`):
+#
+#   pdf2-v0.2.0-alpha.3
+#   render-v0.1.0
+#   cli-v0.1.0
+#   wasm-v0.1.0
+#
+# A manual run can publish the whole train (`crate: all`), which skips every
+# crate whose version is already on crates.io.
+#
+# Setup (one time, per crate, see docs/RELEASING.md):
+#   crates.io -> <crate> -> Settings -> Trusted Publishing -> Add -> GitHub
 #     repository owner: pdf2-rs
 #     repository name:  pdf2
 #     workflow file:    publish.yml
@@ -14,11 +25,20 @@ name: Publish
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "pdf2-v*"
+      - "render-v*"
+      - "cli-v*"
+      - "wasm-v*"
   workflow_dispatch:
     inputs:
+      crate:
+        description: "Which crates to publish, always in dependency order"
+        type: choice
+        options: [all, pdf2, render, cli, wasm]
+        default: all
       dry_run:
-        description: "Build and verify the package without uploading"
+        description: "Build and verify the packages without uploading"
         type: boolean
         default: true
 
@@ -29,11 +49,15 @@ concurrency:
   group: publish
   cancel-in-progress: false
 
+env:
+  # Tag prefix -> crate name, in dependency order.
+  PUBLISH_ORDER: "pdf2:pdf2 render:pdf2-render cli:pdf2-cli wasm:pdf2-wasm"
+
 jobs:
   publish:
     name: crates.io
     runs-on: ubuntu-latest
-    # Matches the environment in the crates.io trusted publisher configuration.
+    # Matches the environment in every crate's trusted publisher configuration.
     # Protection rules here (required reviewers, deployment branches) apply
     # before a token is even requested.
     environment: release
@@ -51,40 +75,75 @@ jobs:
         with:
           toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
-
-      - name: The tag must match Cargo.toml and sit on main
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Check the tag or the manual selection
+        id: plan
         run: |
           set -euo pipefail
-          version="$(cargo +stable metadata --no-deps --format-version 1 | python3 -c 'import json, sys; packages = json.load(sys.stdin)["packages"]; print(next(p["version"] for p in packages if p["name"] == "pdf2"))')"
-          tag="${GITHUB_REF_NAME#v}"
-          echo "tag v$tag, Cargo.toml version $version"
-          if [ "$tag" != "$version" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match version $version"
-            exit 1
-          fi
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::tag $GITHUB_REF_NAME is not on main"
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            selection="${{ inputs.crate }}"
+            if [ "$selection" = "all" ]; then
+              echo "crates=${PUBLISH_ORDER}" >> "$GITHUB_OUTPUT"
+            else
+              entry="$(printf '%s\n' "$PUBLISH_ORDER" | tr ' ' '\n' | grep "^${selection}:")"
+              echo "crates=${entry}" >> "$GITHUB_OUTPUT"
+            fi
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          tag="${GITHUB_REF_NAME}"
+          prefix="${tag%%-v*}"
+          crate="$(printf '%s\n' "$PUBLISH_ORDER" | tr ' ' '\n' | grep "^${prefix}:" | cut -d: -f2)"
+          if [ -z "$crate" ]; then
+            echo "::error::tag $tag does not name a known crate prefix"
             exit 1
           fi
+          version="${tag#*-v}"
+          # `cargo pkgid` prints path#version; the version is after the `#`.
+          declared="$(cargo pkgid -p "${crate}" | sed 's/.*#//')"
+          if [ "$version" != "$declared" ]; then
+            echo "::error::tag $tag does not match $crate version $declared"
+            exit 1
+          fi
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::tag $tag is not on main"
+            exit 1
+          }
+          echo "crates=${prefix}:${crate}" >> "$GITHUB_OUTPUT"
+          echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          echo "publishing $crate $version from $tag"
 
       - name: Test before publishing
         run: cargo +stable test --workspace
 
       - name: Exchange the OIDC token for a crates.io token
+        if: steps.plan.outputs.dry_run != 'true'
         id: auth
         uses: rust-lang/crates-io-auth-action@v1
 
-      - name: Publish
+      - name: Publish in dependency order
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           set -euo pipefail
-          # Tag pushes publish; manual runs default to a dry run.
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            cargo +stable publish --dry-run
-          else
-            cargo +stable publish
-          fi
+          dry_run="${{ steps.plan.outputs.dry_run }}"
+          for entry in ${{ steps.plan.outputs.crates }}; do
+            crate="${entry#*:}"
+            version="$(cargo pkgid -p "${crate}" | sed 's/.*#//')"
+            status="$(curl -s -o /dev/null -w "%{http_code}" -A "pdf2-release" \
+              "https://crates.io/api/v1/crates/${crate}/${version}")"
+            # A dry run verifies packaging even for versions already released,
+            # so only a real run skips them.
+            if [ "$dry_run" != "true" ] && [ "$status" = "200" ]; then
+              echo "skip ${crate} ${version}: already on crates.io"
+              continue
+            fi
+            echo "publishing ${crate} ${version}"
+            if [ "$dry_run" = "true" ]; then
+              cargo +stable publish --dry-run -p "${crate}"
+            else
+              cargo +stable publish -p "${crate}"
+            fi
+          done
