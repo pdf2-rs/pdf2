@@ -98,14 +98,16 @@ exists at the required version. The order is `pdf2` → `pdf2-render` →
 - **Or a token** — add an `NPM_TOKEN` repository secret (automation token); the
   workflow passes it as `NODE_AUTH_TOKEN` and publishes with `--provenance`.
 
-Releases run on a `wasm-v*` tag whose version matches `package.json` and which
-is on `main`; a manual dispatch defaults to `dry_run`, and a version already on
-npm is skipped.
+Releases run on an `npm-v*` tag whose version matches `package.json` and which
+is on `main` (`wasm-v*` stays reserved for the crates.io release of the same
+crate, and the two versions may differ); a manual dispatch defaults to
+`dry_run`, and a version already on npm is skipped.
 
 The npm version tracks the crate version, but a packaging-only change (manifest
-metadata, README) is released as an npm patch without a new crate: `1.0.1` was
-the canonical `git+…` repository URL that npm had been rewriting at publish
-time.
+metadata, README) or a renderer fix that only needs a rebuilt wasm is released
+as an npm patch without a new crate: `1.0.1` was the canonical `git+…`
+repository URL npm had been rewriting, and `1.0.2` carries the renderer fixes
+from `pdf2-render` 1.0.1.
 
 ## Cutting a release
 

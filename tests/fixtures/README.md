@@ -31,6 +31,7 @@ Rules for every file in this directory:
 | `plain-twin.pdf` | the same document in the clear, for text comparison | `tests/encryption.rs` |
 | `images.pdf` | two `/Image` XObjects (8×8 RGB, Flate; one with `/Interpolate true`) plus a line of text, for the renderer's image and font paths | `crates/pdf2-render/tests/golden.rs` |
 | `paths.pdf` | 200×200 page of paths, clips, transforms and dashes (plus one line of text) for the renderer's golden image | `crates/pdf2-render/tests/golden.rs` |
+| `calibration.pdf` | six pages whose right pixels follow from ISO 32000: colour conversion, caps and joins, dash phase, both fill rules, a Bézier circle of known area, image blocks and `/Decode`, a quarter-turn image, a shifted media box, `/Rotate 90`, text scaling and word spacing | `crates/pdf2-render/tests/calibration.rs` (see `docs/RENDERING.md`) |
 | `page-tree.pdf` | three pages (5, 6, 7) under a nested tree: root `/MediaBox` + `/Resources`, node `/Rotate 90`, page overrides for `/MediaBox`, `/CropBox` and `/Rotate`, plus an XMP `/Metadata` stream | `tests/pages.rs` |
 
 Seven of the plain fixtures are produced by `tests/fixtures/make_fixtures.py`,

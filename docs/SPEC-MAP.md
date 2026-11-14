@@ -69,7 +69,8 @@ round from the objective file that will deliver it.
 ## Painting, outside the library
 
 `pdf2-render` walks the content stream with `pdf2::Parser` and paints it. The
-clauses it covers:
+clauses it covers (see [RENDERING.md](RENDERING.md) for the fixture that proves
+each one, and for what is still unimplemented):
 
 | Clause | Name | Module | Status |
 | --- | --- | --- | --- |

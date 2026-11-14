@@ -7,6 +7,9 @@ name: Publish to npm
 #      `pdf2-wasm` on npmjs.com with repository `pdf2-rs/pdf2`, workflow
 #      `npm.yml` and environment `release`. The run then needs no token and
 #      provenance is generated automatically.
+#
+# Tags are `npm-v<version>`, where the version is `package.json`'s and may be
+# ahead of the crate's (a packaging-only release bumps only the package).
 #   2. `NPM_TOKEN` repository secret (an npm automation token), used as
 #      `NODE_AUTH_TOKEN` by setup-node.
 # The very first version of a package has to be published by hand: npm only
@@ -15,7 +18,9 @@ name: Publish to npm
 on:
   push:
     tags:
-      - "wasm-v*"
+      # The npm package has its own tag namespace: `wasm-v*` belongs to the
+      # crates.io release of `pdf2-wasm`, and the two versions can differ.
+      - "npm-v*"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -85,7 +90,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           version="$(node -p "require('./crates/pdf2-wasm/package.json').version")"
-          tag="${GITHUB_REF_NAME#wasm-v}"
+          tag="${GITHUB_REF_NAME#npm-v}"
           echo "tag wasm-v$tag, package.json version $version"
           if [ "$tag" != "$version" ]; then
             echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version"
