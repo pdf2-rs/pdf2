@@ -7,7 +7,7 @@ its renderer: open a PDF 2.0 file in the browser, read its facts and paint a pag
 import init, { open } from "pdf2-wasm";
 
 await init();
-const response = await fetch("sample.pdf");
+const response = await fetch("samples/text.pdf");
 const doc = open(new Uint8Array(await response.arrayBuffer()), null);
 console.log(doc.version(), doc.pageCount(), doc.pageSize(0));
 console.log(doc.text(0));
@@ -54,8 +54,12 @@ plus its JS glue; the current build is about 199 KiB gzipped).
 
 ## Demo
 
-`demo/` is a static page: it renders the bundled `sample.pdf` on load and lets
-you pick another file locally (nothing is uploaded). Build `demo/pkg/` as above
+`demo/` is a static page: it renders a bundled sample on load, offers the crate's
+own fixtures as samples (text, paths, images, the six-page calibration file and
+an AES-256 encrypted file whose password is `user`), and lets you drop any PDF
+in — nothing is uploaded. Pages, zoom (fit or 50–300%), keyboard navigation and
+the extracted text of the current page are part of the demo rather than the
+library. Build `demo/pkg/` as above
 and serve the directory:
 
 ```sh
