@@ -28,19 +28,19 @@ runs in.
 ## Target workspace
 
 ```
-Cargo.toml                 # [workspace] members = crates/*
-crates/pdf2                # the library (today's src/, tests/, fixtures)
-crates/pdf2-cli            # info, text, toc, check, render, extract-images
+Cargo.toml                 # [package] pdf2 + [workspace] members = ["crates/pdf2-cli", …]
+crates/pdf2-cli            # info, pages, text, check
 crates/pdf2-render         # rasterizer: paths, clips, images, text outlines
 crates/pdf2-wasm           # wasm-bindgen wrapper + demo (npm package)
-crates/pdf2-bench          # criterion benches + corpus runner
+crates/pdf2-bench          # benchmark binary + corpus runner
 crates/pdf2-fuzz           # cargo-fuzz targets (not published)
 xtask                      # corpus, size budgets, semver checks, release glue
 ```
 
-The library keeps its path (`src/lib.rs` moves to `crates/pdf2/src/lib.rs`), so
-`pdf2` stays one crate on crates.io. The workspace shares fixtures, CI and a
-single `rust-toolchain.toml`.
+The library stays at the repository root — `src/`, `tests/` and the fixtures do
+not move, so `pdf2` remains one crate on crates.io and the published paths keep
+working — while the repository root is also the workspace root. Tools live under
+`crates/`, sharing the fixtures, CI and the single `rust-toolchain.toml`.
 
 ## Deliverables
 
@@ -94,11 +94,11 @@ reports for the wasm package.
 
 ### Phase A — proof of use and a baseline (0.3.0-alpha.2)
 
-- Convert the repository to the workspace above; the library version bumps, its
-  tests and fixtures move unchanged.
-- `pdf2-cli` 0.1.0: `info`, `text`, `toc`, `check`, `render`, `extract-images`,
-  `--json` everywhere. Errors are exit codes, never panics. It reads the
-  committed fixtures in tests and a corpus directory when given one.
+- Convert the repository to the workspace above; the library stays the root
+  package, its tests and fixtures unchanged.
+- `pdf2-cli` 0.1.0: `info`, `pages`, `text`, `check`, `--json` everywhere.
+  Errors are exit codes, never panics. It reads the committed fixtures in tests
+  and a corpus directory when given one.
 - `pdf2-bench` + `docs/PERFORMANCE.md`: parse throughput, text extraction,
   memory (peak RSS and allocation counts through a counting global allocator),
   and the command line that produced every number.
@@ -238,9 +238,9 @@ flag, and none of them blocks 1.0.
 
 ## Next actions
 
-1. Convert to the workspace and move the library into `crates/pdf2`
-   (version 0.3.0-alpha.2).
-2. Land `pdf2-cli` with `info`/`text`/`toc`/`check`, then the benchmark harness
-   and the first `docs/PERFORMANCE.md`.
+1. Convert to the workspace with the library as the root package, so no source
+   moves.
+2. Land `pdf2-cli` with `info`, then `pages`/`text`/`check`, then the benchmark
+   harness and the first `docs/PERFORMANCE.md`.
 3. Feature-gate `std`, swap `flate2` for `miniz_oxide`, and add the `alloc` and
    wasm targets to CI.

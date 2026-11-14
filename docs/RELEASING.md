@@ -28,6 +28,26 @@ The crate already exists on crates.io (0.1.0 from April 2023, then the
    `.github/workflows/publish.yml` uses `rust-lang/crates-io-auth-action@v1`,
    which fills `CARGO_REGISTRY_TOKEN` for the single publish step.
 
+## Workspace crates
+
+`pdf2` is the root package and the tools live under `crates/`. Each crate is
+published on its own, and **the first version of every new crate must be
+published by hand**: crates.io only accepts a trusted-publisher configuration
+for a crate that already exists.
+
+1. Commit first — `cargo publish` refuses to run from a dirty tree.
+2. `cargo publish -p pdf2-cli` (uses the token in `~/.cargo/credentials`, or
+   `CARGO_REGISTRY_TOKEN`).
+3. crates.io → that crate → Settings → Trusted Publishing → GitHub, with the
+   same owner (`pdf2-rs`), repository (`pdf2`), workflow (`publish.yml`) and
+   environment (`release`) as the library.
+4. Later versions can be published by the workflow; moving the workspace
+   publish order and per-crate tags into `publish.yml` is Q10 in
+   `rounds/ROADMAP.md`.
+
+`pdf2-cli` 0.1.0-alpha.1 was published this way on 2026-11-14, after being
+packaged and checked with `cargo package -p pdf2-cli`.
+
 ## Cutting a release
 
 1. Bump the version in `Cargo.toml` and add the entry to `CHANGELOG.md`. Every

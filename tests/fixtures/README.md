@@ -21,7 +21,7 @@ Rules for every file in this directory:
 
 | File | Structure | Loaded by |
 | --- | --- | --- |
-| `classic-xref.pdf` | `%PDF-2.0`, catalog/pages/page in one classic table, then an incremental update that adds a content stream and repaints page 3 | `tests/document.rs` |
+| `classic-xref.pdf` | `%PDF-2.0`, catalog/pages/page in one classic table, then an incremental update that adds a content stream and repaints page 3 with the `/Resources` that stream needs | `tests/document.rs`, `tests/cli.rs` |
 | `classic-twin.pdf` | the same object graph as `xref-stream.pdf`, written with a classic table | `tests/xref_streams.rs`, `tests/content.rs` |
 | `xref-stream.pdf` | cross-reference is a `/Type /XRef` stream; objects 1–3 sit in `/ObjStm` 5, object 4 is a plain stream | `tests/xref_streams.rs` |
 | `xref-stream-prev.pdf` | same file plus an incremental update: object 4 replaced, second xref stream with `/Prev` | `tests/xref_streams.rs` |
@@ -31,10 +31,11 @@ Rules for every file in this directory:
 | `plain-twin.pdf` | the same document in the clear, for text comparison | `tests/encryption.rs` |
 | `page-tree.pdf` | three pages (5, 6, 7) under a nested tree: root `/MediaBox` + `/Resources`, node `/Rotate 90`, page overrides for `/MediaBox`, `/CropBox` and `/Rotate`, plus an XMP `/Metadata` stream | `tests/pages.rs` |
 
-`classic-xref.pdf` is plain ASCII and was written by hand (its offsets are
-visible in the table). Six are produced by `tests/fixtures/make_fixtures.py`, which computes every
-offset and compresses the streams with `zlib` — the same DEFLATE format
-`flate2` reads, so the fixtures do not depend on any PDF library.
+Seven of the plain fixtures are produced by `tests/fixtures/make_fixtures.py`,
+which computes every offset (and compresses the streams with `zlib`, the same
+DEFLATE format `flate2` reads), so the fixtures do not depend on any PDF
+library. They stay small enough to read in an editor: `classic-xref.pdf` in
+particular is plain ASCII with its offsets visible in the table.
 
 The encryption pair comes from `cargo run --example make_encrypted_fixture`
 (`examples/make_encrypted_fixture.rs`): no `qpdf`, `mutool` or `gs` is installed

@@ -8,3 +8,4 @@ we-are-going-to-implement-*.md
 RALPH_PROGRESS.md
 .rounds-state.*.json
 rounds-history.*.jsonl
+/rounds

@@ -316,9 +316,49 @@ def make_text():
     write("text.pdf", bytes(writer.out))
 
 
+CLASSIC_CONTENT = b"BT /F1 24 Tf 72 700 Td (Incremental) Tj ET"
+
+
+def make_classic_xref():
+    """A classic table plus an incremental update that repaints page 3.
+
+    The update gives the page a `/Resources` entry for `/F1`, so the content
+    stream it points at is interpretable: the first section stays byte-for-byte
+    what it always was, which keeps the `/Prev 186` offset valid.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>")
+    first_xref = len(writer.out)
+    writer.out += b"xref\n0 4\n"
+    writer.out += b"0000000000 65535 f \n"
+    for number in (1, 2, 3):
+        writer.out += b"%010d 00000 n \n" % writer.offsets[number]
+    writer.out += b"trailer\n<< /Size 4 /Root 1 0 R >>\n"
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % first_xref
+    assert first_xref == 186, first_xref
+
+    writer.stream(4, b"", CLASSIC_CONTENT)
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+        b" /Resources << /Font << /F1 << /Type /Font /Subtype /Type1"
+        b" /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> >> >> >>",
+    )
+    second_xref = len(writer.out)
+    writer.out += b"xref\n3 2\n"
+    for number in (3, 4):
+        writer.out += b"%010d 00000 n \n" % writer.offsets[number]
+    writer.out += b"trailer\n<< /Size 5 /Root 1 0 R /Prev %d >>\n" % first_xref
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % second_xref
+    write("classic-xref.pdf", bytes(writer.out))
+
+
 if __name__ == "__main__":
     make_xref_stream_pdf()
     make_classic_twin()
     make_hybrid()
     make_page_tree()
     make_text()
+    make_classic_xref()
