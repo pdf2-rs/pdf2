@@ -194,6 +194,13 @@ expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_G
     );
   }
 
+  // A sample title with a page count in it is a fact that goes stale the next
+  // time the fixture grows: the panel reports the real number instead.
+  const titles = [...script.matchAll(/title: '([^']+)'/g)].map((match) => match[1]);
+  for (const title of titles) {
+    expect(!/\d+\s+pages?/.test(title), `the sample title "${title}" carries no page count`);
+  }
+
   const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((match) => match[1]));
   const demoPkg = readdirSync(join(demo, 'pkg'));
   for (const name of ['pdf2_wasm.js', 'pdf2_wasm_bg.wasm']) {

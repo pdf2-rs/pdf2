@@ -20,7 +20,8 @@
 //!    distance between two identical glyphs is the space advance;
 //! 8. a Type 0 font, which must be reported rather than painted;
 //! 9. an embedded TrueType program written by the generator, whose `A` is a box
-//!    and whose `B` is a box with a hole — shapes the bitmap fallback has not;
+//!    and whose `B` is the same letter with a second hole — shapes the bitmap
+//!    fallback has not;
 //! 10. a Type 0 (CID) font over that program with Identity-H and `/CIDToGIDMap`
 //!     `/Identity`, drawing `A B A` from two-byte codes;
 //! 11. the same with a `/CIDToGIDMap` stream that swaps the two glyphs, so the
@@ -381,33 +382,24 @@ fn a_type_0_font_without_a_program_is_reported_not_painted() {
 
 #[test]
 fn an_embedded_truetype_program_is_drawn_from_its_own_outlines() {
-    // Page 9 embeds a font this repository generates: `A` is a filled box from
-    // (50, 0) to (550, 700) in a 1000-unit em, `B` the same box with a hole from
-    // (200, 250) to (400, 450). At 40 pt on baseline y = 150 device y is 50, so
-    // `A` covers x 22–42 and y 22–50 and `B`'s hole sits at x 52–60, y 32–40.
+    // Page 9 embeds a font this repository generates: the renderer's 5×7
+    // alphabet at 100 units per cell. At 40 pt a cell is 4 px, the three glyphs
+    // start at x 22, 46 and 70, and `A` — a 5×7 letter with a closed hole —
+    // occupies y 22–50 above the baseline at device y 50.
     let page = render(8);
     assert_eq!((page.canvas.width(), page.canvas.height()), (300, 200));
-    expect_at(&page, 30, 35, BLACK, "A: the middle of the filled box");
-    expect_at(&page, 48, 35, BLACK, "B: the left wall of the ring");
-    expect_at(
-        &page,
-        55,
-        35,
-        WHITE,
-        "B: the hole, which no fallback glyph has",
-    );
-    expect_at(&page, 75, 35, BLACK, "the second A");
+    expect_at(&page, 30, 24, BLACK, "A: the top bar");
+    expect_at(&page, 30, 30, WHITE, "A: the hole under the bar");
+    expect_at(&page, 30, 36, BLACK, "A: the crossbar");
+    expect_at(&page, 54, 30, WHITE, "B: the upper hole");
+    expect_at(&page, 54, 44, WHITE, "B: the lower hole");
     let runs = ink_runs(&page, 0, 22, 300, 50);
     assert_eq!(runs.len(), 3, "three glyphs: {runs:?}");
     assert_eq!(runs[0], (22, 42), "A spans 20 px at 40 pt");
-    assert_eq!(runs[1], (46, 66), "B is the same box, one advance later");
+    assert_eq!(runs[1], (46, 66), "B is the same width, one advance later");
     assert_eq!(runs[2], (70, 90), "the last A");
-    // Two whole boxes and one with its 8×8 hole cut out.
-    assert_eq!(
-        ink(&page, 0, 0, 300, 200),
-        2 * (20 * 28) + (20 * 28 - 8 * 8),
-        "ink area"
-    );
+    // 18 cells for A and 20 for B, 16 px each: the areas are arithmetic.
+    assert_eq!(ink(&page, 0, 0, 300, 200), (18 + 20 + 18) * 16, "ink area");
     assert_eq!(page.report.unsupported_total(), 0, "{}", page.report);
 }
 
@@ -418,16 +410,12 @@ fn composite_codes_map_to_cids_and_cids_to_glyph_ids() {
     // glyphs 1, 2, 1 — the `A B A` of page 9, reached without a cmap.
     let page = render(9);
     assert_eq!((page.canvas.width(), page.canvas.height()), (300, 200));
-    expect_at(&page, 30, 35, BLACK, "A: the filled box");
-    expect_at(&page, 48, 35, BLACK, "B: the wall of the ring");
-    expect_at(&page, 55, 35, WHITE, "B: the hole");
-    expect_at(&page, 75, 35, BLACK, "the second A");
+    expect_at(&page, 30, 30, WHITE, "A: the hole");
+    expect_at(&page, 54, 30, WHITE, "B: the upper hole");
+    expect_at(&page, 54, 44, WHITE, "B: the lower hole");
     let runs = ink_runs(&page, 0, 22, 300, 50);
     assert_eq!(runs, vec![(22, 42), (46, 66), (70, 90)], "{runs:?}");
-    assert_eq!(
-        ink(&page, 0, 0, 300, 200),
-        2 * (20 * 28) + (20 * 28 - 8 * 8)
-    );
+    assert_eq!(ink(&page, 0, 0, 300, 200), (18 + 20 + 18) * 16);
     assert_eq!(page.report.unsupported_total(), 0, "{}", page.report);
 }
 
@@ -435,17 +423,17 @@ fn composite_codes_map_to_cids_and_cids_to_glyph_ids() {
 fn a_cid_to_gid_map_stream_decides_which_glyph_a_cid_draws() {
     // Page 11 is the same font with `/CIDToGIDMap` as a stream that maps
     // CID 1 -> glyph 2 and CID 2 -> glyph 1, so the same codes draw B A B. The
-    // holes are what makes this unambiguous: no fallback glyph has one, and the
+    // holes are what makes this unambiguous: no fallback glyph has them, and the
     // only way for them to move is for the map to have been read.
     let page = render(10);
-    expect_at(&page, 24, 35, BLACK, "B first: the wall");
-    expect_at(&page, 32, 35, WHITE, "B first: the hole");
-    expect_at(&page, 50, 35, BLACK, "A in the middle");
-    expect_at(&page, 74, 35, BLACK, "B last: the wall");
-    expect_at(&page, 80, 35, WHITE, "B last: the hole");
+    expect_at(&page, 30, 30, WHITE, "B first: the upper hole");
+    expect_at(&page, 30, 44, WHITE, "B first: the lower hole");
+    expect_at(&page, 54, 36, BLACK, "A in the middle: the crossbar");
+    expect_at(&page, 78, 30, WHITE, "B last: the upper hole");
+    expect_at(&page, 78, 44, WHITE, "B last: the lower hole");
     let runs = ink_runs(&page, 0, 22, 300, 50);
     assert_eq!(runs, vec![(22, 42), (46, 66), (70, 90)], "{runs:?}");
-    assert_eq!(ink(&page, 0, 0, 300, 200), 2 * (20 * 28 - 8 * 8) + 20 * 28);
+    assert_eq!(ink(&page, 0, 0, 300, 200), (20 + 18 + 20) * 16);
     assert_eq!(page.report.unsupported_total(), 0, "{}", page.report);
 }
 
