@@ -1,6 +1,6 @@
 [package]
 name = "pdf2-wasm-smoke"
-version = "0.1.0-rc.1"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.87"
 description = "Wasm smoke tests for the pdf2 crate; not published."
@@ -18,4 +18,4 @@ name = "pdf2-wasi-smoke"
 path = "src/bin/wasi.rs"
 
 [dependencies]
-pdf2 = { path = "../..", version = "0.7.0-rc.1" }
+pdf2 = { path = "../..", version = "1.0.0" }

@@ -1,6 +1,6 @@
 [package]
 name = "pdf2-bench"
-version = "0.1.0-rc.1"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.87"
 description = "Benchmarks and the performance baseline for the pdf2 crate."
@@ -13,4 +13,4 @@ name = "pdf2-bench"
 path = "src/main.rs"
 
 [dependencies]
-pdf2 = { path = "../..", version = "0.7.0-rc.1" }
+pdf2 = { path = "../..", version = "1.0.0" }

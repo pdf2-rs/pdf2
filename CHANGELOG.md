@@ -4,7 +4,32 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0-rc.1] — unreleased
+## [1.0.0] — 2026-11-14
+
+The 1.0 release. The public API is frozen: `1.x` changes no signatures and no
+documented behaviour.
+
+### Contents
+
+- `pdf2` 1.0.0 — PDF 2.0 reader and writer: classic and stream cross-references,
+  object streams, Flate/LZW/ASCII/RunLength filters with predictors, the
+  document model with inherited page attributes and XMP metadata, text
+  extraction for simple fonts, the writer (`Document::new()` … `save()`), and
+  AES-256 `/V 5 /R 6` decryption.
+- `pdf2-render` 1.0.0 — paths, fills, strokes, dashes, clips, transforms, text
+  and image XObjects, pinned by golden images.
+- `pdf2-cli` 1.0.0 — `info`, `pages`, `text`, `check` with `--json`.
+- `pdf2-wasm` 1.0.0 — the same library and renderer in the browser, with a
+  GitHub Pages demo.
+
+### Compatibility
+
+The API, the fixture corpus and the renderer goldens are unchanged since
+`0.7.0-rc.1`. Semver from here covers the public API and the file-format
+behaviour documented in `docs/SPEC-MAP.md`; see the README's compatibility
+policy for what it does not cover.
+
+## [0.7.0-rc.1] — 2026-11-14
 
 First release candidate. **The public API is frozen from this release**: after
 it, only bug fixes and internal changes until 1.0.0.
@@ -102,3 +127,4 @@ and the public API may change before 0.2.0.
 [0.2.0-alpha.1]: https://crates.io/crates/pdf2/0.2.0-alpha.1
 [0.2.0-alpha.2]: https://crates.io/crates/pdf2/0.2.0-alpha.2
 [0.7.0-rc.1]: https://crates.io/crates/pdf2/0.7.0-rc.1
+[1.0.0]: https://crates.io/crates/pdf2/1.0.0
