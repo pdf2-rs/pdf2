@@ -65,6 +65,15 @@ A crate that depends on another cannot be published until that dependency
 exists at the required version. The order is `pdf2` → `pdf2-render` →
 `pdf2-cli` / `pdf2-wasm`.
 
+### After tagging
+
+Both publish workflows create the GitHub release for their tag in a `GitHub
+release` job: the notes are the CHANGELOG section for that version plus the
+registry links, npm releases are titled `pdf2-wasm <version> (npm)`, and
+`-rc`/`-alpha` versions are marked pre-release. Nothing needs to be typed by
+hand; `gh release list` should show a release for every tag. Older tags without
+one are backfilled with `gh release create <tag> --notes-file <file>`.
+
 ### Before tagging
 
 Run `cargo gate --full`: it is the Gate job plus the `no_std` builds, the wasm
