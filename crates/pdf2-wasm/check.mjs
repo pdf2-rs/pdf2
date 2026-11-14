@@ -150,6 +150,50 @@ expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_G
     (script.match(/selectSource\(/g) || []).length >= 2,
     'the demo selects the sample the user chose',
   );
+  // The samples are copies of the crate's fixtures: a committed copy went stale
+  // once the fixture grew pages, and the feature list began to point past the
+  // end of the file. Compare the bytes instead of trusting the copy.
+  const sources = {
+    'samples/text.pdf': 'text.pdf',
+    'samples/paths.pdf': 'paths.pdf',
+    'samples/images.pdf': 'images.pdf',
+    'samples/calibration.pdf': 'calibration.pdf',
+    'samples/encrypted.pdf': 'encrypted-r6.pdf',
+  };
+  for (const [sample, source] of Object.entries(sources)) {
+    const copied = readFileSync(join(demo, sample));
+    const fixture = readFileSync(join(fixtures, source));
+    expect(
+      copied.equals(fixture),
+      `${sample} is the current tests/fixtures/${source}`,
+    );
+  }
+  // And every page the feature list advertises has to exist in its sample.
+  const featurePages = [...script.matchAll(/sample: (\d+), page: (\d+)/g)].map(
+    (match) => ({ sample: Number(match[1]), page: Number(match[2]) }),
+  );
+  expect(featurePages.length > 10, 'the feature list is populated');
+  const files = [...script.matchAll(/file: '(samples\/[^']+)'/g)].map((match) => match[1]);
+  for (const feature of featurePages) {
+    const bytes = readFileSync(join(demo, files[feature.sample]));
+    let pages;
+    try {
+      pages = wasm.open(bytes, undefined).pageCount();
+    } catch (error) {
+      // The encrypted sample needs a password; the feature list only ever
+      // points at its first page.
+      expect(
+        /password/.test(String(error.message || error)) && feature.page === 0,
+        `${files[feature.sample]}: ${error.message || error}`,
+      );
+      continue;
+    }
+    expect(
+      feature.page < pages,
+      `${files[feature.sample]} has page ${feature.page + 1} of ${pages}`,
+    );
+  }
+
   const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((match) => match[1]));
   const demoPkg = readdirSync(join(demo, 'pkg'));
   for (const name of ['pdf2_wasm.js', 'pdf2_wasm_bg.wasm']) {
