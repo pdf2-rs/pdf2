@@ -67,13 +67,13 @@ Measured 2026-11-14 with the committed baseline, release profile,
 
 | Group | `read_mb_s` | `pages_s` | `text_pages_s` | allocations | alloc bytes |
 | --- | --- | --- | --- | --- | --- |
-| fixtures (8 files) | 64.4 | 120 259 | 99 338 | 2 044 | 690 519 |
-| pages-1 | 55.5 | 63 145 | 58 272 | 236 | 173 340 |
-| pages-100 | 31.5 | 422 591 | 292 068 | 9 381 | 1 161 176 |
-| pages-1000 | 30.5 | 427 974 | 295 883 | 92 210 | 10 624 288 |
-| stream-1mb | 586.5 | 8 347 | 578 | 270 | 14 853 017 |
+| fixtures (8 files) | 71.0 | 139 795 | 110 953 | 1 990 | 229 835 |
+| pages-1 | 68.8 | 79 892 | 74 378 | 223 | 41 072 |
+| pages-100 | 29.3 | 418 630 | 294 729 | 9 459 | 1 050 024 |
+| pages-1000 | 29.4 | 422 065 | 297 480 | 93 317 | 10 129 018 |
+| stream-1mb | 581.1 | 8 206 | 575 | 257 | 14 720 753 |
 
-Peak RSS for the whole run: 18 064 KiB.
+Peak RSS for the whole run: 16 000 KiB.
 
 What the numbers say:
 

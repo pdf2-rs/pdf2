@@ -4,10 +4,12 @@
 //! is expected to panic on malformed input, which is what M10 of the project
 //! plan pins down with a corpus of truncated and mutated files.
 
-use std::fmt;
+use alloc::string::String;
+
+use core::fmt;
 
 /// Result type used throughout the crate.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// Every failure mode the crate reports.
 ///
@@ -81,8 +83,9 @@ impl fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Self::Io {

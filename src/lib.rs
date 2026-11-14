@@ -5,6 +5,9 @@
 //! through `Document::open`.
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 pub mod content;
 pub mod crypto;

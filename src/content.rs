@@ -13,7 +13,11 @@
 //! line breaks come from text-positioning operators and spaces from the text
 //! itself or from large `TJ` adjustments.
 
-use std::collections::HashMap;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use alloc::collections::BTreeMap;
 
 use crate::document::Document;
 use crate::error::{Error, Result};
@@ -46,7 +50,7 @@ impl Font {
 struct TextInterpreter<'a> {
     document: &'a Document,
     resources: Option<Dictionary>,
-    fonts: HashMap<Vec<u8>, Font>,
+    fonts: BTreeMap<Vec<u8>, Font>,
     font: Option<Font>,
     leading: f64,
     /// Current text line origin, in text space.
@@ -62,7 +66,7 @@ impl<'a> TextInterpreter<'a> {
         Self {
             document,
             resources,
-            fonts: HashMap::new(),
+            fonts: BTreeMap::new(),
             font: None,
             leading: 0.0,
             line_x: 0.0,
@@ -190,7 +194,7 @@ impl<'a> TextInterpreter<'a> {
     fn show(&mut self, bytes: &[u8]) {
         if self
             .last_y
-            .is_none_or(|y| (y - self.line_y).abs() > LINE_TOLERANCE)
+            .is_none_or(|y| difference(y, self.line_y) > LINE_TOLERANCE)
         {
             if !self.output.is_empty() && !self.output.ends_with('\n') {
                 self.output.push('\n');
@@ -348,6 +352,15 @@ fn find_operator(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     None
 }
 
+/// `|left - right|` without the `std`-only `f64::abs`.
+fn difference(left: f64, right: f64) -> f64 {
+    if left >= right {
+        left - right
+    } else {
+        right - left
+    }
+}
+
 fn number(operand: Option<&Object>) -> f64 {
     match operand {
         Some(Object::Integer(value)) => *value as f64,
@@ -443,7 +456,7 @@ fn glyph_to_char(name: &[u8]) -> Option<char> {
     if name.len() == 1 {
         return Some(char::from(name[0]));
     }
-    let name = std::str::from_utf8(name).ok()?;
+    let name = core::str::from_utf8(name).ok()?;
     let named = match name {
         "space" => ' ',
         "exclam" => '!',

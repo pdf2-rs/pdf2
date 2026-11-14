@@ -5,16 +5,10 @@
 //! dependencies (`flate2`) or by small encoders below — no external tool is
 //! involved, which is the only way to prove the decoders in this environment.
 
-use std::io::Write;
-
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
 use pdf2::{Document, Error, Object, ObjectId};
 
 fn deflate(data: &[u8]) -> Vec<u8> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(data).expect("compress");
-    encoder.finish().expect("finish")
+    miniz_oxide::deflate::compress_to_vec_zlib(data, 6)
 }
 
 fn ascii85(data: &[u8]) -> Vec<u8> {

@@ -5,7 +5,9 @@
 //! `stream` … `endstream` payload. The cross-reference machinery that finds
 //! those offsets is layered on top in Q3.
 
-use std::collections::VecDeque;
+use alloc::vec::Vec;
+
+use alloc::collections::VecDeque;
 
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, Token};
@@ -21,7 +23,7 @@ pub const MAX_DEPTH: usize = 128;
 /// table — so [`crate::Document`] supplies this when it parses a stream whose
 /// `/Length` is `n g R`. Without a resolver the payload is delimited by
 /// scanning for `endstream` instead.
-pub trait LengthResolver: std::fmt::Debug {
+pub trait LengthResolver: core::fmt::Debug {
     /// The byte length of the object `id` points at.
     fn resolve_length(&self, id: ObjectId) -> Result<usize>;
 }

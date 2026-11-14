@@ -5,6 +5,9 @@
 //! same tokens serve [`crate::parser`], the content-stream reader and the
 //! cross-reference reader.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::error::{Error, Result};
 use crate::object::PdfString;
 
@@ -391,7 +394,7 @@ fn parse_number(text: &[u8]) -> Result<Token> {
     let invalid = || Error::InvalidNumber {
         text: String::from_utf8_lossy(text).into_owned(),
     };
-    let text_str = std::str::from_utf8(text).map_err(|_| invalid())?;
+    let text_str = core::str::from_utf8(text).map_err(|_| invalid())?;
     let has_dot = text.contains(&b'.');
     let mut dots = 0;
     for (index, byte) in text.iter().enumerate() {

@@ -79,9 +79,10 @@ Dependency work required for `alloc`:
   `miniz_oxide::inflate::decompress_to_vec*` and
   `miniz_oxide::deflate::compress_to_vec_zlib`, which are `core + alloc`.
   This also removes a dependency.
-- **`std::collections::HashMap` → `hashbrown`** (or `alloc::collections::BTreeMap`
-  where ordering is fine). `RefCell`, `fmt`, `str::from_utf8` already come from
-  `core`/`alloc`.
+- **Collections move to `alloc`.** `HashMap`/`HashSet` became `BTreeMap`/`BTreeSet`
+  from `alloc::collections`, `VecDeque`/`BTreeMap` follow, so the `no_std` build
+  needs no new dependency (lookups are `O(log n)` on a few thousand entries).
+  `RefCell`, `fmt`, `str::from_utf8` already come from `core`/`alloc`.
 - **`std::fs` / `std::path` behind `std`**, as are the `Io` error variant and
   `save_to_path`; `Error` keeps one `#[cfg(feature = "std")]` variant.
 - `aes`, `cbc`, `sha2` are already `no_std`-clean.

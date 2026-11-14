@@ -10,7 +10,10 @@
 //! silently hide pages. Pages are counted by walking the tree (§7.7.3.2 says a
 //! conforming reader shall not rely on `/Count`).
 
-use std::collections::HashSet;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use alloc::collections::BTreeSet;
 
 use crate::document::Document;
 use crate::error::{Error, Result};
@@ -40,10 +43,10 @@ impl Rect {
     /// A rectangle from its four coordinates.
     pub fn new(x0: f64, y0: f64, x1: f64, y1: f64) -> Self {
         Self {
-            x0: x0.min(x1),
-            y0: y0.min(y1),
-            x1: x0.max(x1),
-            y1: y0.max(y1),
+            x0: if x0 <= x1 { x0 } else { x1 },
+            y0: if y0 <= y1 { y0 } else { y1 },
+            x1: if x1 >= x0 { x1 } else { x0 },
+            y1: if y1 >= y0 { y1 } else { y0 },
         }
     }
 
@@ -139,7 +142,7 @@ impl Document {
             offset: None,
         })?;
         let mut pages = Vec::new();
-        let mut visited = HashSet::new();
+        let mut visited = BTreeSet::new();
         self.collect_pages(root, &Inherited::default(), 0, &mut visited, &mut pages)?;
         Ok(pages)
     }
@@ -201,7 +204,7 @@ impl Document {
         node: &Object,
         inherited: &Inherited,
         depth: usize,
-        visited: &mut HashSet<ObjectId>,
+        visited: &mut BTreeSet<ObjectId>,
         pages: &mut Vec<Page>,
     ) -> Result<()> {
         if depth > MAX_PAGE_TREE_DEPTH {

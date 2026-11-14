@@ -11,12 +11,11 @@
 //! cross-reference stream correct; `save()` output is verified by reading the
 //! file back with [`crate::Document::open`].
 
-use std::collections::BTreeMap;
-use std::io::Write;
-use std::path::Path;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
+use alloc::collections::BTreeMap;
 
 use crate::document::Document;
 use crate::error::{Error, Result};
@@ -214,7 +213,7 @@ impl DocumentBuilder {
         object_stream_dict.insert("Filter", Object::name("FlateDecode"));
         top_level.push((
             object_stream_number,
-            Stream::new(object_stream_dict, deflate(&object_stream_data)?),
+            Stream::new(object_stream_dict, deflate(&object_stream_data)),
         ));
         top_level.sort_by_key(|(number, _)| *number);
 
@@ -240,7 +239,7 @@ impl DocumentBuilder {
             object_stream_number,
             xref_offset,
         );
-        let compressed_rows = deflate(&rows)?;
+        let compressed_rows = deflate(&rows);
         let mut xref_dict = Dictionary::new();
         xref_dict.insert("Type", Object::name("XRef"));
         xref_dict.insert("Size", Object::Integer(i64::from(size)));
@@ -262,7 +261,8 @@ impl DocumentBuilder {
     }
 
     /// Write the document to a file.
-    pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
+    #[cfg(feature = "std")]
+    pub fn save_to_path(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         std::fs::write(path, self.save()?)?;
         Ok(())
     }
@@ -368,14 +368,8 @@ fn push_field(out: &mut Vec<u8>, value: u64, width: u8) {
     out.extend_from_slice(&bytes[bytes.len() - width..]);
 }
 
-fn deflate(data: &[u8]) -> Result<Vec<u8>> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(data).map_err(|error| Error::Io {
-        message: error.to_string(),
-    })?;
-    encoder.finish().map_err(|error| Error::Io {
-        message: error.to_string(),
-    })
+fn deflate(data: &[u8]) -> Vec<u8> {
+    miniz_oxide::deflate::compress_to_vec_zlib(data, 6)
 }
 
 /// A rectangle as the four-number array PDF expects.
@@ -389,7 +383,7 @@ fn rect_object(rect: Rect) -> Object {
 }
 
 fn number_object(value: f64) -> Object {
-    if value.fract() == 0.0 && value.abs() < 9.0e15 && value.is_finite() {
+    if value.is_finite() && value > -9.0e15 && value < 9.0e15 && value as i64 as f64 == value {
         Object::Integer(value as i64)
     } else if value.is_finite() {
         Object::Real(value)
@@ -461,7 +455,7 @@ mod tests {
         let (data, first, index) = pack_object_stream(&objects);
         assert_eq!(index, vec![(1, 0), (2, 1), (3, 2)]);
         // Every header pair is two integers separated by spaces.
-        let header = std::str::from_utf8(&data[..first]).expect("ascii header");
+        let header = core::str::from_utf8(&data[..first]).expect("ascii header");
         let numbers: Vec<u32> = header
             .split_whitespace()
             .step_by(2)

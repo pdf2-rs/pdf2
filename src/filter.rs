@@ -5,7 +5,8 @@
 //! filter can be tested without a document. Resolving indirect `/Filter`,
 //! `/DecodeParms` or `/Length` entries is [`crate::Document`]'s job.
 
-use std::io::Read;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::error::{Error, Result};
 use crate::lexer::{hex_value, is_whitespace};
@@ -239,20 +240,13 @@ impl Predictor {
 
 fn flate_decode(data: &[u8]) -> Result<Vec<u8>> {
     // PDF Flate streams are zlib-wrapped, but some writers emit raw DEFLATE.
-    let mut out = Vec::new();
-    let mut zlib = flate2::read::ZlibDecoder::new(data);
-    if zlib.read_to_end(&mut out).is_ok() {
+    if let Ok(out) = miniz_oxide::inflate::decompress_to_vec_zlib(data) {
         return Ok(out);
     }
-    out.clear();
-    let mut deflate = flate2::read::DeflateDecoder::new(data);
-    deflate
-        .read_to_end(&mut out)
-        .map_err(|_| Error::Malformed {
-            what: "FlateDecode payload",
-            offset: None,
-        })?;
-    Ok(out)
+    miniz_oxide::inflate::decompress_to_vec(data).map_err(|_| Error::Malformed {
+        what: "FlateDecode payload",
+        offset: None,
+    })
 }
 
 fn early_change(parms: Option<&Dictionary>) -> Result<bool> {
@@ -689,7 +683,7 @@ mod tests {
         hex.as_bytes()
             .chunks(2)
             .map(|pair| {
-                u8::from_str_radix(std::str::from_utf8(pair).expect("hex"), 16).expect("hex")
+                u8::from_str_radix(core::str::from_utf8(pair).expect("hex"), 16).expect("hex")
             })
             .collect()
     }

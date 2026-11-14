@@ -6,7 +6,12 @@
 //! M2 requires: the tokenizer added in Q2 parses exactly the bytes produced
 //! below, so `parse → write` and `write → parse` both preserve bytes.
 
-use std::fmt;
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
+use core::fmt;
 
 /// An indirect object number together with its generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -127,7 +132,7 @@ impl Dictionary {
     pub fn insert(&mut self, name: impl Into<Vec<u8>>, value: Object) -> Option<Object> {
         let name = name.into();
         if let Some((_, slot)) = self.entries.iter_mut().find(|(key, _)| *key == name) {
-            return Some(std::mem::replace(slot, value));
+            return Some(core::mem::replace(slot, value));
         }
         self.entries.push((name, value));
         None

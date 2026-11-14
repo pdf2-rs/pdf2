@@ -13,6 +13,8 @@
 //! - Password verification uses Algorithm 2.B — a 64-round minimum key stretch
 //!   over SHA-256/384/512 and AES-128-CBC — implemented in [`hash_r6`].
 
+use alloc::vec::Vec;
+
 use aes::cipher::{
     block_padding::NoPadding, BlockDecrypt, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit,
 };
@@ -484,7 +486,7 @@ mod nist {
         text.as_bytes()
             .chunks(2)
             .map(|pair| {
-                u8::from_str_radix(std::str::from_utf8(pair).expect("hex"), 16).expect("hex")
+                u8::from_str_radix(core::str::from_utf8(pair).expect("hex"), 16).expect("hex")
             })
             .collect()
     }

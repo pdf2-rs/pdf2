@@ -15,11 +15,21 @@ repository = "https://github.com/pdf2-rs/pdf2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["std"]
+# File-system convenience APIs (`Document::open_path`, `save_to_path`) and the
+# `std::io::Error` conversion. Everything else works without `std`.
+std = []
+# The `no_std` build: core + alloc, no file system, no standard library.
+alloc = []
+
 [dependencies]
-aes = "0.8.4"
-cbc = "0.1.2"
-flate2 = "1.1.11"
-sha2 = "0.10.9"
+aes = { version = "0.8.4", default-features = false }
+cbc = { version = "0.1.2", default-features = false, features = ["block-padding"] }
+# Inflate/deflate without std; replaces `flate2`, whose read/write adapters
+# need `std::io`.
+miniz_oxide = "0.9"
+sha2 = { version = "0.10.9", default-features = false }
 
 # The repository root is both the `pdf2` package and the workspace root, so the
 # library keeps its paths and no source has to move. Tools live under crates/.

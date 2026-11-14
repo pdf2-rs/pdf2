@@ -7,9 +7,13 @@
 //! stay put, and an object is parsed (and cached) the first time somebody asks
 //! for it. Objects stored in `/ObjStm` streams are extracted on first use.
 
-use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use alloc::collections::{BTreeMap, BTreeSet};
+use core::cell::{Cell, RefCell};
 
 use crate::crypto::Encryption;
 use crate::error::{Error, Result};
@@ -52,10 +56,10 @@ pub struct Document {
     data: Vec<u8>,
     version: String,
     trailer: Dictionary,
-    xref: HashMap<u32, XrefEntry>,
-    cache: RefCell<HashMap<ObjectId, Object>>,
+    xref: BTreeMap<u32, XrefEntry>,
+    cache: RefCell<BTreeMap<ObjectId, Object>>,
     /// Object numbers held by each object stream, in index order.
-    object_streams: RefCell<HashMap<u32, Vec<u32>>>,
+    object_streams: RefCell<BTreeMap<u32, Vec<u32>>>,
     /// The open security handler, when the document is encrypted.
     encryption: Option<Encryption>,
     /// The number of the `/Encrypt` dictionary, which is never decrypted.
@@ -95,8 +99,8 @@ impl Document {
             version,
             trailer,
             xref,
-            cache: RefCell::new(HashMap::new()),
-            object_streams: RefCell::new(HashMap::new()),
+            cache: RefCell::new(BTreeMap::new()),
+            object_streams: RefCell::new(BTreeMap::new()),
             encryption: None,
             encrypt_number: None,
             depth: Cell::new(0),
@@ -129,12 +133,17 @@ impl Document {
     }
 
     /// Open a PDF from a file path.
-    pub fn open_path(path: impl AsRef<Path>) -> Result<Self> {
+    #[cfg(feature = "std")]
+    pub fn open_path(path: impl AsRef<std::path::Path>) -> Result<Self> {
         Self::open(std::fs::read(path)?)
     }
 
     /// Open a PDF from a file path with a password.
-    pub fn open_path_with_password(path: impl AsRef<Path>, password: &[u8]) -> Result<Self> {
+    #[cfg(feature = "std")]
+    pub fn open_path_with_password(
+        path: impl AsRef<std::path::Path>,
+        password: &[u8],
+    ) -> Result<Self> {
         Self::open_with_password(std::fs::read(path)?, password)
     }
 
@@ -467,7 +476,7 @@ fn header_version(data: &[u8]) -> Result<String> {
         .position(|byte| *byte == b'\r' || *byte == b'\n')
         .unwrap_or(rest.len())
         .min(8);
-    let version = std::str::from_utf8(&rest[..end]).map_err(|_| Error::Malformed {
+    let version = core::str::from_utf8(&rest[..end]).map_err(|_| Error::Malformed {
         what: "header version is not ASCII",
         offset: Some(start),
     })?;
@@ -516,7 +525,7 @@ fn startxref_offset(data: &[u8]) -> Result<usize> {
             .position(|byte| !byte.is_ascii_digit())
             .unwrap_or(rest.len() - digits_start);
     let text =
-        std::str::from_utf8(&rest[digits_start..digits_end]).map_err(|_| Error::Malformed {
+        core::str::from_utf8(&rest[digits_start..digits_end]).map_err(|_| Error::Malformed {
             what: "startxref offset is not a number",
             offset: Some(at),
         })?;
@@ -537,11 +546,11 @@ fn startxref_offset(data: &[u8]) -> Result<usize> {
 ///
 /// The newest entry for an object number wins: an incremental update re-points
 /// objects and the older sections only fill in the numbers it does not mention.
-fn read_xref_chain(data: &[u8]) -> Result<(HashMap<u32, XrefEntry>, Dictionary)> {
+fn read_xref_chain(data: &[u8]) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)> {
     let mut offset = startxref_offset(data)?;
-    let mut merged = HashMap::new();
+    let mut merged = BTreeMap::new();
     let mut newest_trailer: Option<Dictionary> = None;
-    let mut visited = HashSet::new();
+    let mut visited = BTreeSet::new();
     for _ in 0..MAX_XREF_SECTIONS {
         if !visited.insert(offset) {
             return Err(Error::Malformed {
@@ -618,7 +627,10 @@ fn read_xref_chain(data: &[u8]) -> Result<(HashMap<u32, XrefEntry>, Dictionary)>
 /// A section is either a classic `xref` table or a `/Type /XRef` stream; the
 /// first token decides which, because both are reached the same way from
 /// `startxref`, `/Prev` and `/XRefStm`.
-fn parse_xref_section(data: &[u8], offset: usize) -> Result<(HashMap<u32, XrefEntry>, Dictionary)> {
+fn parse_xref_section(
+    data: &[u8],
+    offset: usize,
+) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)> {
     let slice = data.get(offset..).ok_or(Error::Malformed {
         what: "cross-reference offset is past the end of the file",
         offset: Some(offset),
@@ -639,9 +651,9 @@ fn parse_xref_table(
     slice_source: &[u8],
     offset: usize,
     mut parser: Parser<'_>,
-) -> Result<(HashMap<u32, XrefEntry>, Dictionary)> {
+) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)> {
     let slice = slice_source;
-    let mut entries = HashMap::new();
+    let mut entries = BTreeMap::new();
     loop {
         match parser.peek_token()? {
             Token::Keyword(keyword) if keyword == b"trailer" => {
@@ -736,7 +748,7 @@ fn parse_xref_table(
 }
 
 /// Read a `/Type /XRef` cross-reference stream at `offset` (§7.5.8).
-fn parse_xref_stream(data: &[u8], offset: usize) -> Result<(HashMap<u32, XrefEntry>, Dictionary)> {
+fn parse_xref_stream(data: &[u8], offset: usize) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)> {
     let slice = data.get(offset..).ok_or(Error::Malformed {
         what: "cross-reference stream offset is past the end of the file",
         offset: Some(offset),
@@ -769,7 +781,7 @@ fn parse_xref_stream(data: &[u8], offset: usize) -> Result<(HashMap<u32, XrefEnt
             offset: Some(offset),
         });
     }
-    let mut entries = HashMap::new();
+    let mut entries = BTreeMap::new();
     let mut position = 0;
     for (first, count) in index {
         if usize::try_from(count).map_or(true, |count| count > decoded.len()) {

@@ -6,8 +6,9 @@
 
 A reader and writer for PDF 2.0 — the file format defined by ISO 32000-2. No
 `unsafe`, no C dependencies, and the format is implemented in this crate rather
-than wrapped: the four dependencies (`flate2`, `aes`, `cbc`, `sha2`) only supply
-DEFLATE and AES/SHA primitives.
+than wrapped: the four dependencies (`miniz_oxide`, `aes`, `cbc`, `sha2`) only
+supply DEFLATE and AES/SHA primitives, and everything else is `core` + `alloc`,
+so the library also builds without a standard library.
 
 ## Status
 
@@ -71,6 +72,24 @@ Known limits inside the supported surface:
   round-trips and cross-checks against independent implementations (NIST
   SP 800-38A for AES-256-CBC, `base64.a85encode` for ASCII85, a separate
   encoder for LZW, Python for the PNG predictors).
+
+## Features
+
+| Feature | What it enables |
+| --- | --- |
+| `std` (default) | everything: the file-system helpers `Document::open_path`, `open_path_with_password` and `save_to_path`, and the `std::io::Error` conversion |
+| `alloc` | the `no_std` build: `core` + `alloc`, no file system, no standard library |
+
+```sh
+cargo build                                  # std, the normal build
+cargo build --no-default-features --features alloc
+cargo build --no-default-features --features alloc --target thumbv7em-none-eabihf
+```
+
+Without `std`, `Document::open(&[u8])` and the in-memory writer are the entry
+points; everything the parser, filters, document model, text extraction and
+AES-256 decryption need lives in `core` and `alloc`. CI builds both targets for
+`x86_64-unknown-linux-gnu` and `thumbv7em-none-eabihf`.
 
 ## Layout
 
