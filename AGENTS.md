@@ -77,6 +77,13 @@ gh pr merge --squash --delete-branch
   bypass is an incident note in the PR, not the normal path.
 - Automated and agent work follows the same flow: open a pull request, let the
   checks run, merge when green. There is no "just this once".
+- A change to the demo is not verified by reading the diff: `cargo xtask demo`
+  builds it and drives the page in headless Chrome — sample selection, feature
+  jumps, zoom and scroll reachability, the minimap, download, the password
+  field, drag and drop, keyboard paging, and the browser console. CI runs the
+  same chore in the `wasm package` job, and
+  `DEMO_URL=https://pdf2-rs.github.io/pdf2/ node crates/pdf2-wasm/demo-test.mjs`
+  checks a deployment rather than assuming it.
 
 ## Warnings are bugs
 
@@ -135,7 +142,7 @@ required check in the ruleset.
 | Package | `cargo package -p pdf2` and `-p pdf2-cli` | a file the tests need is missing from the tarball, or metadata is invalid |
 | no_std | `alloc` build on x86_64 and thumbv7em | a `std` dependency crept into the library |
 | wasm | browser and WASI smoke tests, size budgets | the wasm build broke or grew past the budget in `docs/PERFORMANCE.md` |
-| wasm package | wasm-bindgen output, `check.mjs`, size budget | the npm artefact would be broken or too large |
+| wasm package | wasm-bindgen output, `check.mjs`, size budget, and the demo driven in headless Chrome | the npm artefact would be broken or too large, or a demo interaction regressed |
 | Licences and advisories | `cargo deny` | a new dependency outside `deny.toml`, or an advisory |
 | Semver | `cargo-semver-checks` for `pdf2` | a breaking change to a published API (informational pre-1.0, blocking after) |
 | Benchmarks | `pdf2-bench --check` against `docs/performance-baseline.json` | allocation/throughput regression past 10% |

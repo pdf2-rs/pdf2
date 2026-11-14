@@ -184,10 +184,12 @@ jobs:
           wasm-bindgen --version
 
       # One chore builds the published package (wasm, glue, types, manifest,
-      # README, licences), copies what the demo loads, and then runs the API
-      # smoke test and the size budget against the package itself.
-      - name: Build the package and check it
-        run: cargo +stable run -q -p xtask -- wasm-package
+      # README, licences), copies what the demo loads, runs the API smoke test
+      # and size budget against the package, and then drives the demo page in
+      # headless Chrome — the runner has one, so a broken interaction fails here
+      # instead of in someone's browser.
+      - name: Build the package and drive the demo
+        run: cargo +stable run -q -p xtask -- demo
 
   deny:
     name: Licences and advisories

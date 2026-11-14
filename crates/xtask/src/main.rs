@@ -31,6 +31,7 @@ fn main() -> ExitCode {
         "no-std" => no_std(),
         "wasm" => wasm(),
         "wasm-package" => wasm_package(),
+        "demo" => demo(),
         "bench" => bench(),
         "fixtures" => fixtures(),
         "bless" => bless(),
@@ -63,6 +64,7 @@ Usage:
   cargo xtask wasm      build the wasm modules, smoke test, check size budgets
   cargo xtask wasm-package
                         build the npm package into crates/pdf2-wasm/pkg
+  cargo xtask demo      build the demo and drive it in a real browser
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
   cargo xtask bless     re-render the committed golden PNGs
@@ -81,6 +83,7 @@ fn gate(full: bool) -> Result<(), String> {
     if full {
         no_std()?;
         wasm()?;
+        demo()?;
         bench()?;
     }
     println!("\ngate: all steps passed");
@@ -260,6 +263,12 @@ fn wasm_package() -> Result<(), String> {
         copy(from, to)?;
     }
     run("node", &["--no-warnings", "crates/pdf2-wasm/check.mjs"])
+}
+
+/// The demo is a page, so it is tested the way a person uses it: in a browser.
+fn demo() -> Result<(), String> {
+    wasm_package()?;
+    run("node", &["--no-warnings", "crates/pdf2-wasm/demo-test.mjs"])
 }
 
 fn copy(from: &str, to: &str) -> Result<(), String> {
