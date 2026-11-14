@@ -317,3 +317,46 @@ fn help_and_version_exit_zero() {
         stdout(&output)
     );
 }
+
+/// Every command, on every committed fixture, in both output modes.
+#[test]
+fn every_command_accepts_every_committed_fixture() {
+    let mut runs = 0;
+    for name in PLAIN_FIXTURES {
+        let file = path(name);
+        for command in ["info", "pages", "text", "check"] {
+            for json in [false, true] {
+                let mut arguments: Vec<&str> = vec![command, &file];
+                if json {
+                    arguments.push("--json");
+                }
+                let output = run(&arguments);
+                assert!(
+                    output.status.success(),
+                    "{arguments:?}: exit {:?}, {}",
+                    output.status.code(),
+                    stderr(&output)
+                );
+                runs += 1;
+            }
+        }
+    }
+    let encrypted = path("encrypted-r6.pdf");
+    for command in ["info", "pages", "text", "check"] {
+        for json in [false, true] {
+            let mut arguments: Vec<&str> = vec![command, &encrypted, "--password", "user"];
+            if json {
+                arguments.push("--json");
+            }
+            let output = run(&arguments);
+            assert!(
+                output.status.success(),
+                "{arguments:?}: exit {:?}, {}",
+                output.status.code(),
+                stderr(&output)
+            );
+            runs += 1;
+        }
+    }
+    assert_eq!(runs, PLAIN_FIXTURES.len() * 4 * 2 + 4 * 2);
+}
