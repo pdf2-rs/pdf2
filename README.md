@@ -177,6 +177,10 @@ Releases are published from `.github/workflows/publish.yml` on a `v*` tag using
 OIDC, short-lived tokens, no secrets. See [docs/RELEASING.md](docs/RELEASING.md)
 for the one-time crates.io configuration and the tag-and-push flow.
 
+The way from here to 1.0 — proof-of-use tools, `no_std` and wasm targets, a
+rendering crate and a wasm package, with the gates between alpha, beta, rc and
+1.0 — is planned in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Legal
 
 Dual-licensed under `MIT` or the [UNLICENSE](http://unlicense.org/).
