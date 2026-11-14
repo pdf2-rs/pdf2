@@ -67,13 +67,33 @@ exists at the required version. The order is `pdf2` → `pdf2-render` →
 
 ### The npm package
 
-`crates/pdf2-wasm/package.json` describes the npm package (`pdf2-wasm`). The
-files it publishes are the wasm-bindgen `--target web` output in
-`crates/pdf2-wasm/demo/pkg/`, which the CI `wasm-package` job and the Demo
-workflow build. Publishing requires an npm login or an automation token — an
-owner action; nothing in this repository holds npm credentials. Once the
-package exists on npm, a trusted publisher can replace the token the same way
-crates.io does it.
+`crates/pdf2-wasm/package.json` describes the npm package (`pdf2-wasm`, version
+1.0.0, homepage the Pages demo). Its four files are the wasm-bindgen
+`--target web` output in `crates/pdf2-wasm/demo/pkg/` plus the README, and
+`crates/pdf2-wasm/check.mjs` smoke-tests them and enforces the size budget.
+
+`.github/workflows/npm.yml` builds, tests and publishes it:
+
+- **First publish, by hand** — npm only accepts a trusted publisher once the
+  package exists. Run it locally with an npm login (or `NPM_TOKEN`):
+
+  ```sh
+  cargo build -p pdf2-wasm --release --target wasm32-unknown-unknown
+  wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
+      target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
+  cd crates/pdf2-wasm && npm publish --access public
+  ```
+
+- **Then trusted publishing (OIDC)** — on npmjs.com add a trusted publisher for
+  `pdf2-wasm`: repository `pdf2-rs/pdf2`, workflow `npm.yml`, environment
+  `release`. npm CLI 11.5.1+ and Node 22.14+ are required (the workflow uses
+  Node 22), provenance is generated automatically, and no token is stored.
+- **Or a token** — add an `NPM_TOKEN` repository secret (automation token); the
+  workflow passes it as `NODE_AUTH_TOKEN` and publishes with `--provenance`.
+
+Releases run on a `wasm-v*` tag whose version matches `package.json` and which
+is on `main`; a manual dispatch defaults to `dry_run`, and a version already on
+npm is skipped.
 
 ## Cutting a release
 

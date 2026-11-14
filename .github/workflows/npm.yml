@@ -1,0 +1,132 @@
+name: Publish to npm
+
+# Publishes the `pdf2-wasm` npm package built from the wasm-bindgen web output.
+#
+# Authentication, in order of preference:
+#   1. npm trusted publishing (OIDC): configure the trusted publisher for
+#      `pdf2-wasm` on npmjs.com with repository `pdf2-rs/pdf2`, workflow
+#      `npm.yml` and environment `release`. The run then needs no token and
+#      provenance is generated automatically.
+#   2. `NPM_TOKEN` repository secret (an npm automation token), used as
+#      `NODE_AUTH_TOKEN` by setup-node.
+# The very first version of a package has to be published by hand: npm only
+# accepts a trusted publisher once the package exists.
+
+on:
+  push:
+    tags:
+      - "wasm-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, test and pack the package without uploading"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # OIDC for trusted publishing and provenance
+
+env:
+  WASM_BINDGEN_VERSION: "0.2.127"
+  NODE_VERSION: "22"
+
+concurrency:
+  group: npm-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: npm
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust for wasm
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: npm
+
+      - name: Cache wasm-bindgen-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          if ! command -v wasm-bindgen >/dev/null; then
+            cargo +stable install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+          fi
+          wasm-bindgen --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: The tag must match package.json and sit on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          version="$(node -p "require('./crates/pdf2-wasm/package.json').version")"
+          tag="${GITHUB_REF_NAME#wasm-v}"
+          echo "tag wasm-v$tag, package.json version $version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::tag $GITHUB_REF_NAME is not on main"
+            exit 1
+          }
+
+      - name: Build the package
+        run: |
+          cargo +stable build -p pdf2-wasm --release --target wasm32-unknown-unknown
+          wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
+            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
+          wasm-bindgen --target nodejs --out-dir crates/pdf2-wasm/pkg-node \
+            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
+
+      - name: API smoke test and size budget
+        run: node --no-warnings crates/pdf2-wasm/check.mjs
+
+      - name: Already published?
+        id: published
+        working-directory: crates/pdf2-wasm
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if npm view "pdf2-wasm@${version}" version >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "pdf2-wasm ${version} is already on npm"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish
+        if: steps.published.outputs.skip != 'true'
+        working-directory: crates/pdf2-wasm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --dry-run --access public
+          elif [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            # Trusted publishing: npm CLI exchanges the workflow's OIDC token.
+            echo "no NPM_TOKEN secret; relying on npm trusted publishing (OIDC)"
+            npm publish --access public
+          else
+            npm publish --access public --provenance
+          fi

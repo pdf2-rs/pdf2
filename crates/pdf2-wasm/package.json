@@ -10,6 +10,7 @@
     "demo/pkg/pdf2_wasm_bg.wasm",
     "README.md"
   ],
+  "homepage": "https://pdf2-rs.github.io/pdf2/",
   "repository": {
     "type": "git",
     "url": "https://github.com/pdf2-rs/pdf2"
