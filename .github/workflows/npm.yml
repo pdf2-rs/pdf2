@@ -27,6 +27,10 @@ on:
         description: "Build, test and pack the package without uploading"
         type: boolean
         default: true
+      release_tag:
+        description: "Record a GitHub release for an existing npm tag (e.g. npm-v1.0.2) instead of publishing"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -43,6 +47,7 @@ concurrency:
 jobs:
   publish:
     name: npm
+    if: inputs.release_tag == ''
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -148,7 +153,7 @@ jobs:
   release:
     name: GitHub release
     needs: publish
-    if: startsWith(github.ref, 'refs/tags/')
+    if: always() && (startsWith(github.ref, 'refs/tags/') || inputs.release_tag != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -158,9 +163,10 @@ jobs:
       - name: Create or update the release for this tag
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${TAG}"
           version="${tag#npm-v}"
           crate="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/pdf2-wasm/Cargo.toml | head -1)"
           body="$(mktemp)"
@@ -177,7 +183,7 @@ jobs:
             *-*) args+=(--prerelease) ;;
           esac
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" "${args[@]}"
+            gh release edit "$tag" --draft=false "${args[@]}"
           else
             gh release create "$tag" --verify-tag "${args[@]}"
           fi
