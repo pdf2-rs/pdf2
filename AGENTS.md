@@ -120,6 +120,16 @@ Every tag also gets a GitHub release, created by the workflow that published it
 marked pre-release. `npm-v*` releases are titled `pdf2-wasm <version> (npm)` and
 say which crate version the wasm was built from.
 
+Two traps this design has already met:
+
+- **A tag runs the workflow as it was at the tagged commit.** A tag created
+  before the release job existed will never use it. Backfill such tags through
+  `workflow_dispatch` with `release_tag: <tag>`, which runs the release job from
+  `main` and skips publishing.
+- **Deleting a tag drafts its release.** If a tag is deleted and recreated, the
+  release comes back as a draft; the job edits with `--draft=false`, and a
+  hand-made draft has to be published or it is invisible.
+
 | Tag | Publishes | Version source |
 | --- | --- | --- |
 | `pdf2-v1.2.3` | `pdf2` | root `Cargo.toml` |
@@ -174,11 +184,12 @@ generated automatically. Tags are **`npm-v<version>`**, where the version is
 6. Verify from the registries, not from the logs: `cargo search`/the crates.io
    API, `npm view <package> version`, `curl -I` the docs.rs page, and the Pages
    demo.
-7. GitHub releases appear from the tag runs themselves. If a tag predates that
-   automation, backfill it with `gh release create <tag> --title "<crate>
-   <version>" --notes-file <file>` (or `gh release edit` to fix one), and check
-   `gh release list` afterwards: a tag without a release is a missing record of
-   something that already shipped.
+7. GitHub releases appear from the tag runs themselves. For a tag that predates
+   the automation (the workflow comes from the tagged commit, so old tags cannot
+   run it), dispatch `Publish`/`Publish to npm` with `release_tag: <tag>` — it
+   records the release from `main` without publishing anything. Then check
+   `gh release list`: every tag must have a release, and `pdf2` should hold the
+   "Latest" flag.
 
 `docs/RELEASING.md` has the exact commands, the owner-only steps (trusted
 publisher configuration, npm account) and the traps hit so far.

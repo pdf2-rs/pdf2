@@ -71,8 +71,11 @@ Both publish workflows create the GitHub release for their tag in a `GitHub
 release` job: the notes are the CHANGELOG section for that version plus the
 registry links, npm releases are titled `pdf2-wasm <version> (npm)`, and
 `-rc`/`-alpha` versions are marked pre-release. Nothing needs to be typed by
-hand; `gh release list` should show a release for every tag. Older tags without
-one are backfilled with `gh release create <tag> --notes-file <file>`.
+hand; `gh release list` should show a release for every tag. Older tags cannot run the job — a tag executes the workflow file from the
+tagged commit — so they are backfilled by dispatching the same workflow with
+`release_tag: <tag>`, which records the release from `main` and publishes
+nothing. A recreated tag comes back as a draft release; the job publishes it
+with `--draft=false`.
 
 ### Before tagging
 
