@@ -546,9 +546,30 @@ def truetype_font():
     import struct
 
     units = 1000
-    box = [(50, 0), (550, 0), (550, 700), (50, 700)]
-    hole = [(200, 250), (200, 450), (400, 450), (400, 250)]
-    glyphs = [[], [box], [box, hole]]  # .notdef, A, B
+    # Glyphs are the renderer's 5x7 bitmap alphabet, at 100 units per cell, so
+    # the pages read as letters instead of anonymous boxes while every pixel is
+    # still derivable: `A` and `B` keep a closed hole.
+    patterns = {
+        "A": [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+        "B": [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+        "H": [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+    }
+    cell = 100
+    left = 50
+
+    def contours_for(rows):
+        contours = []
+        for row, bits in enumerate(rows):
+            for column in range(5):
+                if bits & (0b10000 >> column):
+                    x0 = left + column * cell
+                    y0 = (6 - row) * cell
+                    contours.append(
+                        [(x0, y0), (x0 + cell, y0), (x0 + cell, y0 + cell), (x0, y0 + cell)]
+                    )
+        return contours
+
+    glyphs = [[]] + [contours_for(patterns[name]) for name in ("A", "B")]
     cmap = {0x20: 0, 0x41: 1, 0x42: 2}
     advance = 600
 

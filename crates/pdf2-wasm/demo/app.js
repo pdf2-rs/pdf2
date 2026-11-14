@@ -6,7 +6,9 @@ const SAMPLES = [
   { file: 'samples/text.pdf', title: 'Text and accents' },
   { file: 'samples/paths.pdf', title: 'Paths, fills, dashes' },
   { file: 'samples/images.pdf', title: 'Images and text' },
-  { file: 'samples/calibration.pdf', title: 'Calibration, 6 pages' },
+  // No page count in the title: it is a fact that goes stale when the fixture
+  // grows, and the panel already reports the real number.
+  { file: 'samples/calibration.pdf', title: 'Calibration' },
   // Deliberately no password: the point of this sample is the password field.
   { file: 'samples/encrypted.pdf', title: 'AES-256 encrypted (password: user)' },
 ];
