@@ -5,6 +5,7 @@
 //! process's peak resident memory. `--check` compares the numbers with
 //! `docs/performance-baseline.json` and fails when a metric moves past the
 //! tolerance, so a regression breaks CI instead of being discovered later.
+#![allow(unsafe_code)] // the counting global allocator has to call the system allocator.
 
 mod alloc;
 mod baseline;

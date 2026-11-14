@@ -65,6 +65,12 @@ A crate that depends on another cannot be published until that dependency
 exists at the required version. The order is `pdf2` → `pdf2-render` →
 `pdf2-cli` / `pdf2-wasm`.
 
+### Before tagging
+
+Run `cargo gate --full`: it is the Gate job plus the `no_std` builds, the wasm
+modules (with their size budgets) and the benchmark comparison. See `AGENTS.md`
+for the release checklist and the tag namespaces.
+
 ### The npm package
 
 `crates/pdf2-wasm/package.json` describes the npm package (`pdf2-wasm`, version

@@ -124,6 +124,21 @@ cargo run -p pdf2-render --bin pdf2-render-golden              # verify
 cargo run -p pdf2-render --bin pdf2-render-golden -- --bless   # regenerate
 ```
 
+## Working on this repository
+
+`AGENTS.md` is the rulebook: invariants, the pipeline, and the dual publish
+model (crates.io and npm, with separate tag namespaces). The gate is one
+command, and it is the same sequence the CI Gate job runs:
+
+```sh
+cargo gate        # fmt --check, clippy -D warnings, tests, features, docs
+cargo gate --full # plus no_std, the wasm modules and the benchmark budget
+```
+
+Lint levels live in `[workspace.lints]`, so clippy failures show up in a plain
+`cargo build` too; `scripts/install-hooks.sh` adds a pre-commit format check and
+a pre-push gate.
+
 ## Layout
 
 The repository is a Cargo workspace: `pdf2` is the root package (the library in

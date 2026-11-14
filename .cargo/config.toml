@@ -1,0 +1,6 @@
+# `cargo gate` is the local equivalent of the CI Gate job; the chores live in
+# crates/xtask so there is one implementation to maintain. See AGENTS.md.
+[alias]
+gate = "run --quiet --package xtask --"
+fixtures = "run --quiet --package xtask -- fixtures"
+bless = "run --quiet --package xtask -- bless"

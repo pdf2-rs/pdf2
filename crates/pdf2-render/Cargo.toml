@@ -15,3 +15,6 @@ categories = ["graphics"]
 miniz_oxide = "0.9"
 pdf2 = { path = "../..", version = "1.0.0" }
 ttf-parser = "0.25.1"
+
+[lints]
+workspace = true

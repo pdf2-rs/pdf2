@@ -19,3 +19,6 @@ path = "src/main.rs"
 
 [dependencies]
 pdf2 = { path = "../..", version = "1.0.0" }
+
+[lints]
+workspace = true

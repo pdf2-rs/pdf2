@@ -6,9 +6,11 @@
 //! and reads the extracted text back through [`pdf2_output_ptr`] and the length
 //! [`pdf2_text`] returned.
 //!
-//! Everything here is safe Rust: the pointers only ever point into vectors this
-//! module owns, and those vectors stay alive for the lifetime of the module.
-//! A malformed file is reported as `0`, never as a panic.
+//! The `unsafe` blocks only ever dereference pointers into vectors this module
+//! owns, and those vectors stay alive for the lifetime of the module, which is
+//! why the crate allows `unsafe_code` where the rest of the workspace denies
+//! it. A malformed file is reported as `0`, never as a panic.
+#![allow(unsafe_code)] // the C ABI entry points are exported directly.
 
 use std::cell::RefCell;
 

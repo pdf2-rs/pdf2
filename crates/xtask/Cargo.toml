@@ -1,0 +1,12 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Repository chores: the same gate CI runs, locally."
+license = "Unlicense OR MIT"
+
+[dependencies]
+
+[lints]
+workspace = true

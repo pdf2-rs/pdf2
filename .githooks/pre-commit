@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fast enough to run on every commit; the full gate runs before a push.
+set -e
+cargo fmt --all --check || {
+  echo "formatting: run 'cargo fmt --all' and re-stage" >&2
+  exit 1
+}

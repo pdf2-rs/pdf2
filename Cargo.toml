@@ -23,6 +23,9 @@ std = []
 # The `no_std` build: core + alloc, no file system, no standard library.
 alloc = []
 
+[lints]
+workspace = true
+
 [dependencies]
 aes = { version = "0.8.4", default-features = false }
 cbc = { version = "0.1.2", default-features = false, features = ["block-padding"] }
@@ -35,6 +38,7 @@ sha2 = { version = "0.10.9", default-features = false }
 # library keeps its paths and no source has to move. Tools live under crates/.
 [workspace]
 members = [
+    "crates/xtask",
     "crates/pdf2-bench",
     "crates/pdf2-cli",
     "crates/pdf2-render",
@@ -42,3 +46,18 @@ members = [
     "crates/pdf2-wasm-smoke",
 ]
 resolver = "2"
+
+# Lint policy for every crate, so it holds in `cargo build` and `cargo test`
+# too, not only when someone remembers the flags CI uses. Keep this equal to
+# what the Gate job runs: `cargo clippy --workspace --all-targets -- -D warnings`.
+# `unsafe_code` is denied rather than forbidden so that the two crates that
+# genuinely need it (the counting allocator and the C ABI in the wasm smoke
+# crate) can allow it locally, with a comment, instead of silently.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
