@@ -2,8 +2,10 @@
 //! peak resident memory.
 
 use std::collections::BTreeMap;
-use std::process::Command;
 use std::time::Instant;
+
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 use pdf2::Document;
 
@@ -205,10 +207,8 @@ fn rate(units: f64, seconds: f64) -> f64 {
 pub fn peak_rss_kib() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
-        if let Some(value) = read_status_kib("/proc/self/status", "VmHWM:") {
-            return Some(value);
-        }
-        return read_statm_kib("/proc/self/statm");
+        read_status_kib("/proc/self/status", "VmHWM:")
+            .or_else(|| read_statm_kib("/proc/self/statm"))
     }
     #[cfg(target_os = "macos")]
     {

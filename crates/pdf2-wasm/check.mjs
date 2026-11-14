@@ -5,7 +5,7 @@
 //   wasm-bindgen --target web --out-dir crates/pdf2-wasm/demo/pkg target/.../pdf2_wasm.wasm
 //   node crates/pdf2-wasm/check.mjs
 
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..');
 const fixtures = join(repo, 'tests', 'fixtures');
 const require = createRequire(import.meta.url);
+// The crate's package.json says `"type": "module"` for the npm build; the
+// wasm-bindgen nodejs glue is CommonJS, so give its directory its own scope.
+mkdirSync(join(here, 'pkg-node'), { recursive: true });
+writeFileSync(
+  join(here, 'pkg-node', 'package.json'),
+  JSON.stringify({ type: 'commonjs' }),
+);
 const wasm = require(join(here, 'pkg-node', 'pdf2_wasm.js'));
 
 function expect(condition, message) {
