@@ -176,6 +176,62 @@ fn the_committed_golden_matches_the_renderer() {
 }
 
 #[test]
+fn a_book_page_is_set_in_its_embedded_serif_font() {
+    // book.pdf embeds a Crimson Text subset (OFL, committed with its licence)
+    // and sets six paragraphs of public-domain prose with the font's own
+    // advances: 420x595 pt, 54 pt margins, 11.5 pt on 16 pt leading.
+    let rendered = render("book.pdf", 0, 1.0);
+    assert_eq!(
+        (rendered.canvas.width(), rendered.canvas.height()),
+        (420, 595)
+    );
+    assert_eq!(
+        rendered.report.unsupported_total(),
+        0,
+        "{}",
+        rendered.report
+    );
+
+    let ink = ink(&rendered, 0, 0, 420, 595);
+    assert!(
+        ink > 6_000,
+        "a page of prose should cover thousands of pixels, got {ink}"
+    );
+    // The first line starts at the left margin and nowhere else does ink start
+    // outside it: the measure and the margins are what the generator typeset to.
+    let left_edge = (0..420)
+        .find(|&x| (0..595).any(|y| pixel(&rendered, x, y) != WHITE))
+        .expect("some ink");
+    assert!(
+        (54..=58).contains(&left_edge),
+        "the text block starts at x {left_edge}, expected the 54 pt margin"
+    );
+
+    // The paragraphs are extractable as text, which means the /Widths and the
+    // encoding agree with what was drawn.
+    let document = Document::open(fixture("book.pdf")).expect("open book.pdf");
+    let page = &document.pages().expect("pages")[0];
+    let text = document.extract_text(page).expect("extract");
+    assert!(
+        text.contains("The Time Traveller") && text.contains("recondite matter"),
+        "extracted text: {:?}",
+        &text[..text.len().min(120)]
+    );
+
+    let png = encode_png(&rendered.canvas);
+    let golden_path = repo("tests/fixtures/golden/book.png");
+    if std::env::var_os("BLESS").is_some() {
+        std::fs::write(&golden_path, &png).expect("bless golden");
+        return;
+    }
+    let golden = std::fs::read(&golden_path).expect("read golden");
+    assert!(
+        golden == png,
+        "book.png differs; re-run with BLESS=1 if the change is intended"
+    );
+}
+
+#[test]
 fn the_golden_cli_blesses_and_verifies() {
     let mut out = std::env::temp_dir();
     out.push(format!("pdf2-render-golden-{}.png", std::process::id()));

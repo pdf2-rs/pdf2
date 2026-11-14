@@ -26,6 +26,11 @@ mapped to glyph ids through `/CIDToGIDMap` (identity or a stream), advances from
 program. This is the font family most CJK and many modern Latin documents use,
 and it used to be reported as unsupported.
 
+`tests/fixtures/book.pdf` sets six paragraphs of public-domain prose in an
+embedded Crimson Text subset (OFL, committed with its licence), typeset by the
+fixture generator from the font's own advances: the embedded-TrueType path
+exercised the way a reader would judge it.
+
 The fixture carries the proof rather than a promise: the generator writes a real
 TrueType program whose `A` is a box and whose `B` is the same box with a hole, one
 page embeds it as a simple font, and two more draw `A B A` from two-byte codes —

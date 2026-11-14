@@ -18,6 +18,7 @@ const SAMPLES = [
   // grows, and the panel already reports the real number.
   { file: 'samples/calibration.pdf', title: 'Calibration' },
   // Deliberately no password: the point of this sample is the password field.
+  { file: 'samples/book.pdf', title: 'A page of a book, in an embedded serif' },
   { file: 'samples/encrypted.pdf', title: 'AES-256 encrypted (password: user)' },
 ];
 
@@ -38,7 +39,8 @@ const FEATURES = [
   { label: '/Widths and /MissingWidth advances', sample: 3, page: 6 },
   { label: 'Embedded TrueType program', sample: 3, page: 8 },
   { label: 'Composite (Type 0) fonts over a CID map', sample: 3, page: 9 },
-  { label: 'AES-256 encrypted file (password: user)', sample: 4, page: 0 },
+  { label: 'A page of prose in an embedded serif font', sample: 4, page: 0 },
+  { label: 'AES-256 encrypted file (password: user)', sample: 5, page: 0 },
   { label: 'Base-14 fallback glyphs and accents', sample: 0, page: 0 },
   { label: 'Text extraction for the page', sample: 2, page: 0 },
 ];

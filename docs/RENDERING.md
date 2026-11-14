@@ -88,6 +88,7 @@ real bugs:
 | Simple font with `/Encoding` (`WinAnsiEncoding`, `/Differences`) | codes map through the encoding; `A` remapped to `/bullet` draws the bullet |
 | `/Widths` and the descriptor's `/MissingWidth` | used for advances, so spacing matches the file instead of a fixed 0.6 em |
 | Base-14 with no program (Helvetica and friends) | the built-in 5×7 bitmap alphabet below |
+| A real book page | `book.pdf` — six paragraphs of public-domain prose set in an embedded Crimson Text subset, typeset by the fixture generator from the font's own advances, with `text()` extraction asserted on the result |
 | `/Type0` + `/Identity-H` + `CIDFontType2` with `/FontFile2` | two-byte codes, `/CIDToGIDMap` (identity or stream) to glyph ids, `/W`/`/DW` advances — proven by pages 10 and 11, where the same codes draw different glyphs once the map is swapped |
 | `/Type0` without a usable program or with a CMap stream | **not drawn**, reported by reason: `font:Type0-no-program`, `font:Type0-cmap`, `font:CIDFontType0` (CFF) |
 | `/Type3` | **not drawn**: `font:Type3` |

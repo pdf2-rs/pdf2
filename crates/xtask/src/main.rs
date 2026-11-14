@@ -275,6 +275,10 @@ fn wasm_package() -> Result<(), String> {
             "crates/pdf2-wasm/demo/samples/calibration.pdf",
         ),
         (
+            "tests/fixtures/book.pdf",
+            "crates/pdf2-wasm/demo/samples/book.pdf",
+        ),
+        (
             "tests/fixtures/encrypted-r6.pdf",
             "crates/pdf2-wasm/demo/samples/encrypted.pdf",
         ),

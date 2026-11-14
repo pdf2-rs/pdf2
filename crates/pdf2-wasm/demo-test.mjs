@@ -312,15 +312,72 @@ async function main() {
       'the page it jumps to is actually painted',
     );
 
-    // Zoom: the page must scroll in both directions, and its left edge must be
-    // reachable — the bug was that centring in a scroll container hid it.
-    for (let step = 0; step < 4; step += 1) {
-      await evaluate(`document.querySelector('#zoomIn').click();`);
-    }
+    // The book sample: a page of prose in an embedded serif font, which is what
+    // a reader judges "normal text" by. It has to arrive with ink, and enough of
+    // it to be a page rather than a line.
+    await evaluate(`
+      [...document.querySelectorAll('#features button')]
+        .find((button) => button.textContent.includes('embedded serif'))
+        .click();
+      await new Promise((done) => setTimeout(done, 400));
+    `);
     await waitFor(
-      `document.querySelector('#canvasWrap').scrollWidth > document.querySelector('#canvasWrap').clientWidth`,
+      `document.querySelector('#factName').textContent === 'book.pdf'`,
+      'the book sample to load',
+    );
+    const bookInk = await evaluate(`
+      const canvas = document.querySelector('#canvas');
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let ink = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) ink += 1;
+      }
+      return { ink, page: document.querySelector('#pageInfo').textContent };
+    `);
+    check(
+      bookInk.ink > 5000,
+      'a page of prose in an embedded serif font is drawn',
+      JSON.stringify(bookInk),
+    );
+    check(
+      /The Time Traveller/.test(await evaluate(`return document.querySelector('#text').textContent;`)),
+      'and its text is extractable',
+    );
+
+    // Zoom: the page must scroll in both directions, and its left edge must be
+    // reachable — the bug was that centring in a scroll container hid it. Page 3
+    // is 400 pt wide, so 300% is wider than any laptop viewer.
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      select.value = [...select.options].find((option) => /Calibration/.test(option.textContent)).value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(
+      `document.querySelector('#pageInfo').textContent.startsWith('1 / 11')`,
+      'calibration again before the zoom checks',
+    );
+    await evaluate(`
+      document.querySelector('#next').click();
+      await new Promise((done) => setTimeout(done, 200));
+      document.querySelector('#next').click();
+      await new Promise((done) => setTimeout(done, 300));
+    `);
+    await waitFor(
+      `document.querySelector('#pageInfo').textContent.startsWith('3 /')`,
+      'the widest page before zooming',
+    );
+    await waitFor(
+      `(() => {
+        const wrap = document.querySelector('#canvasWrap');
+        if (wrap.scrollWidth > wrap.clientWidth) return true;
+        const zoomIn = document.querySelector('#zoomIn');
+        if (zoomIn.disabled) return false;
+        zoomIn.click();
+        return false;
+      })()`,
       'the zoomed page to overflow horizontally',
     );
+
     const geometry = await evaluate(`
       const wrap = document.querySelector('#canvasWrap');
       wrap.scrollLeft = 0;
@@ -510,7 +567,9 @@ async function main() {
     // The encrypted file asks for its password and then opens.
     await evaluate(`
       const select = document.querySelector('#sample');
-      select.value = '4';
+      // The option's value is its SAMPLES index; its position in the DOM is not,
+      // because a placeholder option sits in front of the list.
+      select.value = [...select.options].find((option) => /encrypted/.test(option.textContent)).value;
       select.dispatchEvent(new Event('change', { bubbles: true }));
     `);
     await waitFor(
