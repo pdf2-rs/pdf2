@@ -109,6 +109,28 @@ inflate (9.4 KB), `sha2::sha256::compress256` (7.9 KB) and
 `TextInterpreter::run` (7.1 KB). The budgets leave ~25% headroom, so a normal
 refactor fits; a deliberate jump means updating the budget and saying why.
 
+## Wasm package sizes
+
+The `pdf2-wasm` bundle that ships to a browser (wasm-bindgen output: the module
+plus its JS glue) is measured by `crates/pdf2-wasm/check.mjs`, which CI runs:
+
+```sh
+cargo build -p pdf2-wasm --release --target wasm32-unknown-unknown
+wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
+    target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
+node --no-warnings crates/pdf2-wasm/check.mjs
+```
+
+| File | Raw | Gzip |
+| --- | --- | --- |
+| `pdf2_wasm_bg.wasm` | 554 051 B | 194 065 B |
+| `pdf2_wasm.js` (glue) | 18 336 B | 4 667 B |
+| **total** | 572 387 B | **198 732 B** |
+
+Budget: **260 KiB gzip** for the pair, ~30% above the measured size, so a
+normal change fits and a deliberate jump has to update both the budget here and
+the constant in `check.mjs`.
+
 ## Budgets
 
 - Allocation counts and bytes: **no growth** is expected; anything above 10% is

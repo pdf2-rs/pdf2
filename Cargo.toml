@@ -38,6 +38,7 @@ members = [
     "crates/pdf2-bench",
     "crates/pdf2-cli",
     "crates/pdf2-render",
+    "crates/pdf2-wasm",
     "crates/pdf2-wasm-smoke",
 ]
 resolver = "2"

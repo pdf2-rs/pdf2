@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pdf2 — PDF 2.0 in the browser</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 50rem; }
+      canvas { border: 1px solid #ccc; max-width: 100%; height: auto; }
+      #status { margin: 1rem 0; }
+      code { background: #f4f4f4; padding: 0 0.2rem; }
+    </style>
+  </head>
+  <body>
+    <h1>pdf2 in the browser</h1>
+    <p>
+      The bundled <code>sample.pdf</code> is rendered with the <code>pdf2</code>
+      crate compiled to WebAssembly. Pick another file to replace it; nothing is
+      uploaded — the bytes never leave this page.
+    </p>
+    <input id="file" type="file" accept="application/pdf" />
+    <p id="status">loading…</p>
+    <canvas id="canvas"></canvas>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

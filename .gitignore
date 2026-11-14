@@ -9,3 +9,7 @@ RALPH_PROGRESS.md
 .rounds-state.*.json
 rounds-history.*.jsonl
 /rounds
+
+# wasm-bindgen output (built by CI and the demo workflow)
+crates/pdf2-wasm/pkg-node/
+crates/pdf2-wasm/demo/pkg/

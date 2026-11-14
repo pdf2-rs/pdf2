@@ -1,0 +1,63 @@
+name: Demo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/pdf2-wasm/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy the demo
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust for wasm
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: pages
+
+      - name: Cache wasm-bindgen-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-0.2.127
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          if ! command -v wasm-bindgen >/dev/null; then
+            cargo +stable install wasm-bindgen-cli --version 0.2.127 --locked
+          fi
+
+      - name: Build the demo
+        run: |
+          cargo +stable build -p pdf2-wasm --release --target wasm32-unknown-unknown
+          wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
+            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: crates/pdf2-wasm/demo
+      - id: deployment
+        uses: actions/deploy-pages@v4
