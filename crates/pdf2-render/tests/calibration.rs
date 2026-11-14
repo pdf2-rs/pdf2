@@ -18,7 +18,9 @@
 //!    same string at 100%;
 //! 7. `/Widths` — three fonts that differ only in the width table, so the
 //!    distance between two identical glyphs is the space advance;
-//! 8. a Type 0 font, which must be reported rather than painted.
+//! 8. a Type 0 font, which must be reported rather than painted;
+//! 9. an embedded TrueType program written by the generator, whose `A` is a box
+//!    and whose `B` is a box with a hole — shapes the bitmap fallback has not.
 //!
 //! Every assertion states where the pixel comes from. A golden PNG pins the
 //! whole raster as a regression net, but it cannot tell a right answer from a
@@ -372,6 +374,38 @@ fn a_type_0_font_is_reported_instead_of_painted_with_fallback_glyphs() {
 }
 
 #[test]
+fn an_embedded_truetype_program_is_drawn_from_its_own_outlines() {
+    // Page 9 embeds a font this repository generates: `A` is a filled box from
+    // (50, 0) to (550, 700) in a 1000-unit em, `B` the same box with a hole from
+    // (200, 250) to (400, 450). At 40 pt on baseline y = 150 device y is 50, so
+    // `A` covers x 22–42 and y 22–50 and `B`'s hole sits at x 52–60, y 32–40.
+    let page = render(8);
+    assert_eq!((page.canvas.width(), page.canvas.height()), (300, 200));
+    expect_at(&page, 30, 35, BLACK, "A: the middle of the filled box");
+    expect_at(&page, 48, 35, BLACK, "B: the left wall of the ring");
+    expect_at(
+        &page,
+        55,
+        35,
+        WHITE,
+        "B: the hole, which no fallback glyph has",
+    );
+    expect_at(&page, 75, 35, BLACK, "the second A");
+    let runs = ink_runs(&page, 0, 22, 300, 50);
+    assert_eq!(runs.len(), 3, "three glyphs: {runs:?}");
+    assert_eq!(runs[0], (22, 42), "A spans 20 px at 40 pt");
+    assert_eq!(runs[1], (46, 66), "B is the same box, one advance later");
+    assert_eq!(runs[2], (70, 90), "the last A");
+    // Two whole boxes and one with its 8×8 hole cut out.
+    assert_eq!(
+        ink(&page, 0, 0, 300, 200),
+        2 * (20 * 28) + (20 * 28 - 8 * 8),
+        "ink area"
+    );
+    assert_eq!(page.report.unsupported_total(), 0, "{}", page.report);
+}
+
+#[test]
 fn every_calibration_page_uses_only_supported_operators() {
     for page in 0..6 {
         let rendered = render(page);
@@ -387,7 +421,7 @@ fn every_calibration_page_uses_only_supported_operators() {
 
 #[test]
 fn the_committed_goldens_match_the_renderer() {
-    for page in 0..8 {
+    for page in 0..9 {
         let rendered = render(page);
         let png = encode_png(&rendered.canvas);
         let golden_path = repo(&format!(

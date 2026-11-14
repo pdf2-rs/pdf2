@@ -537,6 +537,139 @@ CALIBRATION_WIDTHS_TEXT = (
 CALIBRATION_UNSUPPORTED_TEXT = b"BT /F1 12 Tf 20 100 Td (hi) Tj ET\n"
 
 
+
+# A real TrueType program, written here so the embedded-font path has a fixture
+# and so a later composite-font fixture has glyphs whose shape is known: `A` is
+# a filled box, `B` the same box with a hole, `space` empty. Units per em 1000,
+# advance 600.
+def truetype_font():
+    import struct
+
+    units = 1000
+    box = [(50, 0), (550, 0), (550, 700), (50, 700)]
+    hole = [(200, 250), (200, 450), (400, 450), (400, 250)]
+    glyphs = [[], [box], [box, hole]]  # .notdef, A, B
+    cmap = {0x20: 0, 0x41: 1, 0x42: 2}
+    advance = 600
+
+    def glyf_entry(contours):
+        if not contours:
+            return b""
+        points = [point for contour in contours for point in contour]
+        xs = [x for x, _ in points]
+        ys = [y for _, y in points]
+        data = struct.pack(">hhhhh", len(contours), min(xs), min(ys), max(xs), max(ys))
+        end = -1
+        for contour in contours:
+            end += len(contour)
+            data += struct.pack(">H", end)
+        data += struct.pack(">H", 0)  # no instructions
+        data += bytes([0x01]) * len(points)  # on-curve, 16-bit deltas
+        previous = 0
+        for x, _ in points:
+            data += struct.pack(">h", x - previous)
+            previous = x
+        previous = 0
+        for _, y in points:
+            data += struct.pack(">h", y - previous)
+            previous = y
+        padded = data + bytes((-len(data)) % 4)
+        return padded
+
+    def checksum(data):
+        padded = data + bytes((-len(data)) % 4)
+        return sum(struct.unpack(">%dI" % (len(padded) // 4), padded)) & 0xFFFFFFFF
+
+    glyf = b"".join(glyf_entry(contours) for contours in glyphs)
+    offsets = []
+    position = 0
+    for contours in glyphs:
+        offsets.append(position)
+        position += len(glyf_entry(contours))
+    offsets.append(position)
+    loca = b"".join(struct.pack(">H", offset // 2) for offset in offsets)
+
+    # cmap format 4: one segment per code plus the mandatory 0xFFFF sentinel.
+    codes = sorted(code for code in cmap if cmap[code] != 0)
+    segments = len(codes) + 1
+    ends = b"".join(struct.pack(">H", code) for code in codes) + struct.pack(">H", 0xFFFF)
+    starts = b"".join(struct.pack(">H", code) for code in codes) + struct.pack(">H", 0xFFFF)
+    deltas = b"".join(
+        struct.pack(">H", (cmap[code] - code) % 0x10000) for code in codes
+    ) + struct.pack(">H", 1)
+    ranges = b"\x00\x00" * segments
+    search = 2 ** (segments.bit_length() - 1) * 2
+    subtable_body = ends + b"\x00\x00" + starts + deltas + ranges
+    subtable = struct.pack(
+        ">HHHHHHH",
+        4,
+        14 + len(subtable_body),
+        0,
+        segments * 2,
+        search,
+        search.bit_length() - 2,
+        segments * 2 - search,
+    ) + subtable_body
+    cmap_table = struct.pack(">HHHHI", 0, 1, 3, 1, 12) + subtable
+
+    hmtx = b"".join(struct.pack(">Hh", advance, 50) for _ in glyphs)
+    hhea_fields = [
+        0x00010000,  # version
+        800, -200, 0,  # ascender, descender, lineGap
+        advance,  # advanceWidthMax
+        50, 250, 550,  # min left/right side bearing, xMaxExtent
+        1, 0, 0,  # caret slope rise/run, caret offset
+        0, 0, 0, 0,  # reserved
+        0,  # metricDataFormat
+        len(glyphs),  # numberOfHMetrics
+    ]
+    hhea = struct.pack(">I" + "hhh" + "H" + "h" * 11 + "H", *hhea_fields)
+    maxp = struct.pack(">IH", 0x00010000, len(glyphs)) + b"\x00\x32" * 13
+    head = struct.pack(
+        ">IIIIHHQQhhhhHHhhh",
+        0x00010000, 0x00010000, 0, 0x5F0F3CF5, 0x000B, units,
+        0, 0, -50, -200, 600, 750, 0, 8, 2, 0, 0,
+    )
+    post = struct.pack(">IIhhIIIII", 0x00030000, 0, -100, 50, 1, 0, 0, 0, 0)
+    name = struct.pack(">HHH", 0, 1, 18) + struct.pack(
+        ">HHHHHH", 3, 1, 0x0409, 1, len(b"pdf2 fixture"), 0
+    ) + b"pdf2 fixture"
+
+    tables = {
+        b"cmap": cmap_table,
+        b"glyf": glyf,
+        b"head": head,
+        b"hhea": hhea,
+        b"hmtx": hmtx,
+        b"loca": loca,
+        b"maxp": maxp,
+        b"name": name,
+        b"post": post,
+    }
+    tags = sorted(tables)
+    count = len(tags)
+    search = 2 ** (count.bit_length() - 1) * 16
+    header = struct.pack(">IHHHH", 0x00010000, count, search, count.bit_length() - 1, count * 16 - search)
+    offset = 12 + count * 16
+    directory = b""
+    body = b""
+    for tag in tags:
+        data = tables[tag]
+        padded = data + bytes((-len(data)) % 4)
+        directory += struct.pack(">4sIII", tag, checksum(data), offset, len(data))
+        body += padded
+        offset += len(padded)
+    font = bytearray(header + directory + body)
+    adjustment = (0xB1B0AFBA - checksum(bytes(font))) & 0xFFFFFFFF
+    head_at = 12 + count * 16 + sum(
+        len(tables[tag]) + (-len(tables[tag]) % 4) for tag in tags[: tags.index(b"head")]
+    )
+    struct.pack_into(">I", font, head_at + 8, adjustment)
+    return bytes(font)
+
+
+CALIBRATION_EMBEDDED_TEXT = b"BT /F1 40 Tf 20 150 Td (ABA) Tj ET\n"
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -551,16 +684,17 @@ def make_calibration():
     and word spacing measured against the same string at 100%.
 
     Object numbers: 1 catalog, 2 page tree, pages at 3/5/7/9/11/13 with their
-    content streams at 4/6/8/10/12/14, 15 the font, 16..19 the images, 20/22 the
-    /Widths and unsupported-font pages with their streams at 21/23, and 24..27
-    the fonts those pages use.
+    content streams at 4/6/8/10/12/14, 15 the font, 16..19 the images, 20/22/28
+    the /Widths, unsupported-font and embedded-TrueType pages with their streams
+    at 21/23/29, 24..27 the fonts those pages use, and 30..32 the embedded
+    TrueType font, its descriptor and its program.
     """
     writer = Writer()
     writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
     writer.obj(
         2,
-        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 20 0 R 22 0 R]"
-        b" /Count 8 >>",
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 20 0 R 22 0 R 28 0 R]"
+        b" /Count 9 >>",
     )
 
     def page(number, media, content, resources=b"", rotate=None):
@@ -646,6 +780,35 @@ def make_calibration():
         b" /FontDescriptor << /Type /FontDescriptor /FontName /Helvetica"
         b" /Flags 32 /MissingWidth 900 /FontBBox [0 0 1000 1000]"
         b" /ItalicAngle 0 /Ascent 700 /Descent -200 /CapHeight 700 /StemV 80 >>",
+    )
+    # Page 9: a real embedded TrueType program, written by this generator. `A`
+    # is a filled box and `B` a box with a hole, so a probe can tell an outline
+    # from the bitmap fallback.
+    page(28, b"0 0 300 200", CALIBRATION_EMBEDDED_TEXT, b"/Font << /F1 30 0 R >>")
+    widths = [0] * (66 - 32 + 1)
+    widths[32 - 32] = 300
+    widths[65 - 32] = 600
+    widths[66 - 32] = 600
+    writer.obj(
+        30,
+        b"<< /Type /Font /Subtype /TrueType /BaseFont /Pdf2Fixture"
+        b" /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 66"
+        b" /Widths [" + b" ".join(b"%d" % width for width in widths) + b"]"
+        b" /FontDescriptor 31 0 R >>",
+    )
+    font_program = truetype_font()
+    writer.obj(
+        31,
+        b"<< /Type /FontDescriptor /FontName /Pdf2Fixture /Flags 32"
+        b" /FontBBox [0 -200 600 750] /ItalicAngle 0 /Ascent 800"
+        b" /Descent -200 /CapHeight 700 /StemV 80 /MissingWidth 600"
+        b" /FontFile2 32 0 R >>",
+    )
+    writer.stream(
+        32,
+        b"/Length1 %d" % len(font_program),
+        font_program,
+        compress=True,
     )
     writer.obj(
         27,

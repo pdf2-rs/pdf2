@@ -84,7 +84,7 @@ real bugs:
 
 | What the PDF carries | What the renderer does |
 | --- | --- |
-| Simple font with `/FontFile2` (embedded TrueType) | glyph outlines from `ttf-parser`, placed by the PDF's encoding |
+| Simple font with `/FontFile2` (embedded TrueType) | glyph outlines from `ttf-parser`, placed by the PDF's encoding — proven by page 9, whose font this repository generates (`A` a filled box, `B` a box with a hole, so a probe can tell an outline from the fallback) |
 | Simple font with `/Encoding` (`WinAnsiEncoding`, `/Differences`) | codes map through the encoding; `A` remapped to `/bullet` draws the bullet |
 | `/Widths` and the descriptor's `/MissingWidth` | used for advances, so spacing matches the file instead of a fixed 0.6 em |
 | Base-14 with no program (Helvetica and friends) | the built-in 5×7 bitmap alphabet below |
