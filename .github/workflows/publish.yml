@@ -209,6 +209,13 @@ jobs:
           } > "$body"
 
           args=(--title "$crate $version" --notes-file "$body")
+          # Only the library is "Latest": a tool or packaging release is a
+          # release, not the thing people are looking for when they land here.
+          if [ "$crate" = "pdf2" ]; then
+            args+=(--latest)
+          else
+            args+=(--latest=false)
+          fi
           case "$version" in
             *-*) args+=(--prerelease) ;;
           esac
