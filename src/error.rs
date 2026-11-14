@@ -39,15 +39,6 @@ pub enum Error {
         what: &'static str,
     },
 
-    /// A construct this version does not implement yet.
-    ///
-    /// Unlike [`Error::Malformed`], the file is not wrong: the reader simply
-    /// does not support the feature, and callers may choose to skip it.
-    Unsupported {
-        /// What is missing, for example `"composite (Type0) fonts"`.
-        what: &'static str,
-    },
-
     /// A numeric token could not be parsed.
     InvalidNumber {
         /// The offending token, as it appeared in the input.
@@ -68,6 +59,19 @@ pub enum Error {
     Io {
         /// The operating system's message.
         message: String,
+    },
+
+    /// A construct this version does not implement yet.
+    ///
+    /// Unlike [`Error::Malformed`], the file is not wrong: the reader simply
+    /// does not support the feature, and callers may choose to skip it.
+    ///
+    /// The variant is last on purpose: inserting one earlier would shift the
+    /// implicit discriminants of every variant after it, which `cargo
+    /// semver-checks` rightly treats as a breaking change for a public enum.
+    Unsupported {
+        /// What is missing, for example `"composite (Type0) fonts"`.
+        what: &'static str,
     },
 }
 
