@@ -178,7 +178,7 @@ jobs:
             printf -- '- demo: https://pdf2-rs.github.io/pdf2/\n'
             printf -- '- provenance: signed by GitHub Actions, visible on the package page\n'
           } > "$body"
-          args=(--title "pdf2-wasm $version (npm)" --notes-file "$body")
+          args=(--title "pdf2-wasm $version (npm)" --notes-file "$body" --latest=false)
           case "$version" in
             *-*) args+=(--prerelease) ;;
           esac

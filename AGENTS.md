@@ -118,7 +118,9 @@ Every tag also gets a GitHub release, created by the workflow that published it
 (`GitHub release` job): the title names the crate and version, the notes are the
 `CHANGELOG.md` section plus the registry link, and a `-rc`/`-alpha` version is
 marked pre-release. `npm-v*` releases are titled `pdf2-wasm <version> (npm)` and
-say which crate version the wasm was built from.
+say which crate version the wasm was built from. Only a `pdf2` release carries
+the **Latest** flag; a tool or npm release sets `--latest=false`, so the landing
+page keeps pointing at the library.
 
 Two traps this design has already met:
 
