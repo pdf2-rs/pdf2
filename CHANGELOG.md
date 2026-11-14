@@ -4,7 +4,33 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-alpha.1] — unreleased
+## [0.2.0-alpha.2] — unreleased
+
+The library gained its `no_std` build and a public encoding API; the rendering,
+CLI and WebAssembly crates were released on top of it.
+
+### Added
+
+- `pdf2::Encoding`: simple-font code → character mapping (`StandardEncoding`,
+  `WinAnsiEncoding`, `/Encoding` names and dictionaries, `/Differences`, glyph
+  names), shared by text extraction and rendering.
+- Feature flags: `std` (default) and `alloc`; the crate builds as `no_std` with
+  `core` + `alloc` on bare-metal and wasm targets. `Document::open(&[u8])` is
+  the entry point without a file system.
+
+### Changed
+
+- `flate2` was replaced by `miniz_oxide`, dropping a dependency and the last
+  `std::io` use in the library.
+- Dictionary and xref lookups use `alloc`-only collections (`BTreeMap`,
+  `BTreeSet`), removing the last `std`-only container from the core.
+
+### Fixed
+
+- `classic-xref.pdf` declared no `/Resources` for the page it repaints; the
+  content stream's `/F1` is now declared.
+
+## [0.2.0-alpha.1] — 2026-11-14
 
 First release of the PDF 2.0 implementation. The crate is still alpha: the
 read side is broad and fixture-tested, the write side is deliberately small,
@@ -57,3 +83,4 @@ and the public API may change before 0.2.0.
   publishing on a `v*` tag.
 
 [0.2.0-alpha.1]: https://crates.io/crates/pdf2/0.2.0-alpha.1
+[0.2.0-alpha.2]: https://crates.io/crates/pdf2/0.2.0-alpha.2

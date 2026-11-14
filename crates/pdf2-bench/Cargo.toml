@@ -13,4 +13,4 @@ name = "pdf2-bench"
 path = "src/main.rs"
 
 [dependencies]
-pdf2 = { path = "../..", version = "0.2.0-alpha.1" }
+pdf2 = { path = "../..", version = "0.2.0-alpha.2" }
