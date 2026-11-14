@@ -45,23 +45,23 @@ BLESS=1 cargo test -p pdf2-render --test calibration   # re-bless after an inten
 Re-blessing is a review event, not a repair: a golden that moves has to be
 explained by a probe or by the clause it implements.
 
-## Independent oracle (optional, needs a system renderer)
+## Oracles and tolerances
 
 Hand-computable pages stop scaling once text layout, transparency and fonts are
-involved. For those, compare against another implementation — poppler's
-`pdftoppm`, mupdf's `mutool draw` or pdfium — and treat the oracle as the
-expectation:
+involved. For those, the claim has to be measured against independent engines —
+and the tolerance has to come from *their* disagreement rather than from a
+number someone liked.
 
-```sh
-pdftoppm -r 72 -png -f 1 -l 1 fixture.pdf /tmp/oracle     # poppler
-cargo run -p pdf2-render --bin pdf2-render-golden -- --fixture fixture.pdf --out /tmp/ours.png
-# compare with a tolerance: neither renderer antialiases identically
-```
+**[`docs/PROOF.md`](PROOF.md) is the proof strategy**: the three tiers of
+evidence (arithmetic fixtures, a committed curated corpus, pinned upstream
+corpora in CI), the licences behind each corpus, which engines are oracles
+(poppler, mupdf, Ghostscript in the gate; pdfium, pdf.js and PDFBox as manual
+cross-checks), the three metrics per page (geometry, text, pixels at 144 DPI),
+and the rule that our tolerance is the largest inter-oracle spread on that page
+plus 10% — with a 1% fallback bound where no calibration exists yet.
 
-Tolerances that have worked elsewhere: mean absolute channel difference under
-2%, and no more than 1% of pixels differing by more than 32 per channel. This is
-a developer tool, not a CI gate: it needs a system package, and a mismatch has
-to be judged, not merely counted.
+A golden PNG pins a regression; it never proves a new claim. A file outside its
+tolerance is a finding in `docs/CORPUS.md`, not a re-blessing.
 
 ## What the calibration found
 
