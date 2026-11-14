@@ -68,7 +68,7 @@ expect(rejected, 'a wrong password throws');
 {
   const { readdirSync } = require('node:fs');
   const manifest = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
-  expect(manifest.name === 'pdf2', `the package is published as ${manifest.name}`);
+  expect(manifest.name === 'pdf2-wasm', `the package is published as ${manifest.name}`);
   expect(manifest.main === './pdf2_wasm.js', `main is ${manifest.main}`);
   expect(manifest.types === './pdf2_wasm.d.ts', `types is ${manifest.types}`);
   expect(manifest.type === 'module', 'the package is ESM');

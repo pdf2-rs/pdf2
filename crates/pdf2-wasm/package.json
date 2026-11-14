@@ -1,5 +1,5 @@
 {
-  "name": "pdf2",
+  "name": "pdf2-wasm",
   "version": "1.0.7",
   "description": "PDF 2.0 in the browser: open, inspect and render with the pdf2 crate compiled to WebAssembly.",
   "license": "Unlicense OR MIT",
@@ -45,7 +45,6 @@
     "browser"
   ],
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   }
 }

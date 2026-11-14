@@ -15,7 +15,7 @@ paths and 1.0's layout depend on them.
 | `pdf2` (root) | library semver, currently 1.x | crates.io |
 | `crates/pdf2-render` | independent, currently 1.0.x | crates.io |
 | `crates/pdf2-cli` | independent, currently 1.0.x | crates.io |
-| `crates/pdf2-wasm` | independent, currently 1.0.x | crates.io (crate `pdf2-wasm`) **and** npm (package `pdf2`, versioned separately) |
+| `crates/pdf2-wasm` | independent, currently 1.0.x | crates.io (crate `pdf2-wasm`) **and** npm (package `pdf2-wasm`, versioned separately) |
 | `crates/pdf2-bench` | `publish = false` | nothing |
 | `crates/pdf2-wasm-smoke` | `publish = false` | nothing |
 | `crates/xtask` | `publish = false` | nothing |
@@ -171,7 +171,7 @@ token), in dependency order: `pdf2` → `pdf2-render` → `pdf2-cli` / `pdf2-was
 Every tag also gets a GitHub release, created by the workflow that published it
 (`GitHub release` job): the title names the crate and version, the notes are the
 `CHANGELOG.md` section plus the registry link, and a `-rc`/`-alpha` version is
-marked pre-release. `npm-v*` releases are titled `pdf2 <version> (npm)` and
+marked pre-release. `npm-v*` releases are titled `pdf2-wasm <version> (npm)` and
 say which crate version the wasm was built from. Only a `pdf2` release carries
 the **Latest** flag; a tool or npm release sets `--latest=false`, so the landing
 page keeps pointing at the library.
@@ -209,7 +209,7 @@ Two traps this design has already met:
 
 ### npm
 
-`crates/pdf2-wasm/package.json` publishes as the npm package `pdf2`, from
+`crates/pdf2-wasm/package.json` publishes as the npm package `pdf2-wasm`, from
 `.github/workflows/npm.yml`, also with trusted publishing (OIDC) — provenance is
 generated automatically. Tags are **`npm-v<version>`**, where the version is
 `package.json`'s and may differ from the crate's.
