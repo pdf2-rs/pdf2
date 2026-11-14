@@ -71,8 +71,10 @@ gh pr merge --squash --delete-branch
 - The ruleset does not cover tags. Releases still push `pdf2-v*`/`render-v*`/
   `cli-v*`/`wasm-v*`/`npm-v*` tags directly to the tagged commit on `main`, as
   described below; a tag must point at a commit that is already on `main`.
-- Repository administrators can bypass the pull-request rule for an emergency.
-  A bypass is an incident note in the commit or PR, not the normal path.
+- Repository administrators can bypass the *check* requirement when merging a
+  pull request (the ruleset's bypass mode is `pull_request`), which is for an
+  emergency only; a direct push to `main` is still refused for everyone. A
+  bypass is an incident note in the PR, not the normal path.
 - Automated and agent work follows the same flow: open a pull request, let the
   checks run, merge when green. There is no "just this once".
 
