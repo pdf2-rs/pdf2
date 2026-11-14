@@ -49,11 +49,17 @@ jobs:
             cargo +stable install wasm-bindgen-cli --version 0.2.127 --locked
           fi
 
+      # The same chore CI and the release use: it builds the demo's wasm glue
+      # *and* its samples, which are derived from tests/fixtures rather than
+      # committed. A hand-written build step here silently deployed a site
+      # without samples once.
+      # Node 22 for global WebSocket: the post-deploy check drives the page.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
       - name: Build the demo
-        run: |
-          cargo +stable build -p pdf2-wasm --release --target wasm32-unknown-unknown
-          wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
-            target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
+        run: cargo +stable run -q -p xtask -- wasm-package
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
@@ -61,3 +67,18 @@ jobs:
           path: crates/pdf2-wasm/demo
       - id: deployment
         uses: actions/deploy-pages@v5
+
+      # The deployment is not done until the page works: this drives the live URL
+      # the same way a person would, so a missing sample fails the deploy instead
+      # of being found by a reader.
+      - name: Check the deployed demo
+        run: |
+          for attempt in 1 2 3; do
+            if DEMO_URL="${{ steps.deployment.outputs.page_url }}" \
+              node --no-warnings crates/pdf2-wasm/demo-test.mjs; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; waiting for the deployment to propagate"
+            sleep 20
+          done
+          exit 1
