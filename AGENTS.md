@@ -78,6 +78,16 @@ gh pr merge --squash --delete-branch
 - Automated and agent work follows the same flow: open a pull request, let the
   checks run, merge when green. There is no "just this once".
 
+## Warnings are bugs
+
+A `warning:` line in a pipeline is a defect, not background noise: fix it in the
+same change that introduced it, or open an issue. That includes manifest fields
+(`homepage` must not repeat `repository` — cargo lints it), rustc and clippy
+warnings (denied in `[workspace.lints]`), rustdoc warnings (`-D warnings`), and
+`::warning` annotations. Third-party action runtimes are the one exception;
+those are fixed by pinning a newer action version, which is why the versions in
+`.github/workflows` are exact majors rather than floating.
+
 ## The gate
 
 ```sh

@@ -38,7 +38,7 @@ jobs:
           key: pages
 
       - name: Cache wasm-bindgen-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/wasm-bindgen
           key: wasm-bindgen-cli-0.2.127
@@ -55,9 +55,9 @@ jobs:
           wasm-bindgen --target web --no-typescript --out-dir crates/pdf2-wasm/demo/pkg \
             target/wasm32-unknown-unknown/release/pdf2_wasm.wasm
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: crates/pdf2-wasm/demo
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

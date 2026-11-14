@@ -6,7 +6,6 @@ rust-version = "1.87"
 description = "Rasteriser for the pdf2 crate: paths, clips, transforms and (soon) images and text."
 license = "Unlicense OR MIT"
 repository = "https://github.com/pdf2-rs/pdf2"
-homepage = "https://github.com/pdf2-rs/pdf2"
 readme = "README.md"
 keywords = ["pdf", "pdf2", "render", "raster"]
 categories = ["graphics"]

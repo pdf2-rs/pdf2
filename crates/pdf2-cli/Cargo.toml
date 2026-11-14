@@ -6,7 +6,6 @@ rust-version = "1.87"
 description = "Command-line front end for the pdf2 crate: inspect PDF 2.0 files."
 license = "Unlicense OR MIT"
 repository = "https://github.com/pdf2-rs/pdf2"
-homepage = "https://github.com/pdf2-rs/pdf2"
 readme = "README.md"
 keywords = ["pdf", "pdf2", "cli"]
 categories = ["command-line-utilities"]
