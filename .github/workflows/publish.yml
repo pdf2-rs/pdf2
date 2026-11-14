@@ -75,6 +75,11 @@ jobs:
         with:
           toolchain: stable
 
+      # `Cargo.lock` is not committed, and `cargo pkgid` (used below to read
+      # each crate's version) refuses to run without one.
+      - name: Resolve the workspace
+        run: cargo +stable generate-lockfile
+
       - name: Check the tag or the manual selection
         id: plan
         run: |
