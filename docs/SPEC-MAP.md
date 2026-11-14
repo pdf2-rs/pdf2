@@ -62,9 +62,22 @@ round from the objective file that will deliver it.
 | 8.2 | Graphics objects and operators | `src/content.rs` | partial — operands consumed and ignored; nothing is painted |
 | 9.3 | Text state: `Tf`, `Td`, `TD`, `T*`, `TL`, `Tm`, `Tc`, `Tw`, `Tz`, `Ts` | `src/content.rs` (`TextInterpreter::execute`) | done for extraction (spacing values recorded but unused) |
 | 9.4 | Text objects, `Tj`, `TJ`, `'`, `"`, text extraction | `src/content.rs` (`show`, `adjust`) | done |
-| 9.6 | Simple fonts, `/Encoding` (`StandardEncoding`, `WinAnsiEncoding`), `/Differences` | `src/content.rs` (`encoding_of`, `glyph_to_char`) | partial — ASCII and the cp1252 block; MacRoman upper half and unknown glyph names are skipped |
+| 9.6 | Simple fonts, `/Encoding` (`StandardEncoding`, `WinAnsiEncoding`), `/Differences` | `src/encoding.rs` (`Encoding`), shared by extraction and rendering | partial — ASCII and the cp1252 block; MacRoman upper half and unknown glyph names are skipped |
 | 9.7 | Composite (Type0) fonts, `/ToUnicode` CMaps | — | deliberately unsupported: reported as an error |
 | 14.3.2 | Metadata streams (XMP) | `src/page.rs` (`Document::metadata`, `has_metadata`), `src/writer.rs` (`XMP_PACKET`) | read + write (no `/Info` on either side) |
+
+## Painting, outside the library
+
+`pdf2-render` walks the content stream with `pdf2::Parser` and paints it. The
+clauses it covers:
+
+| Clause | Name | Module | Status |
+| --- | --- | --- | --- |
+| 8.2 | Graphics objects, operators, path construction | `crates/pdf2-render/src/walk.rs`, `path.rs` | done for the operators in the crate README |
+| 8.5 | Fill and stroke: non-zero and even-odd rules, caps, joins, dashing | `crates/pdf2-render/src/raster.rs`, `path.rs` | done, round joins only |
+| 8.9 | Images: `/Image` XObjects, sampling | `crates/pdf2-render/src/image.rs` | 8-bit Gray/RGB/CMYK/Indexed/ICCBased; no `/SMask` |
+| 9.3, 9.4 | Text state and text objects, glyph outlines | `crates/pdf2-render/src/font.rs`, `walk.rs` | simple fonts; embedded TrueType via `ttf-parser`, built-in fallback |
+| 14.11.2 | Clipping paths | `crates/pdf2-render/src/raster.rs` (`clip_mask`) | rectangular and path clips as a pixel mask |
 
 ## Encryption (§7.6)
 
@@ -102,6 +115,7 @@ rendering, PDF/A, XFA, JavaScript and form filling.
 | `tests/writer.rs` | `Document::new()` … `save()` → `Document::open()` round-trips: pages, object graph, offsets, metadata, custom objects |
 | `examples/write.rs` | Runable end-to-end writer example (`cargo run --example write`) |
 | `tests/encryption.rs` | AES-256 `/V 5 /R 6`: user and owner passwords, wrong-password errors, encrypted/plain text equality, `/Perms` tamper check, deprecated revisions refused |
+| `crates/pdf2-render/tests/golden.rs` | Golden images for `paths.pdf` and `images.pdf`, compared byte-for-byte, plus pixel-level assertions |
 | `tests/robustness.rs` | every fixture truncated at every length, sampled byte mutations and deletions, exercising the whole read API on anything that still opens |
 | `examples/make_encrypted_fixture.rs` | Generates `encrypted-r6.pdf` and `plain-twin.pdf` (no external tool can produce an R6 file here) |
 | `tests/fixtures/*.pdf` | Hand-built PDF files, committed, each paired with the assertions it must satisfy; the compressed ones are rebuilt by `tests/fixtures/make_fixtures.py` |
