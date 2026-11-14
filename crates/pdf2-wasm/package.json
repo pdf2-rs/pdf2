@@ -1,0 +1,21 @@
+{
+  "name": "pdf2-wasm",
+  "version": "0.1.0-alpha.1",
+  "description": "PDF 2.0 in the browser: open, inspect and render with the pdf2 crate compiled to WebAssembly.",
+  "license": "Unlicense OR MIT",
+  "type": "module",
+  "main": "demo/pkg/pdf2_wasm.js",
+  "files": [
+    "demo/pkg/pdf2_wasm.js",
+    "demo/pkg/pdf2_wasm_bg.wasm",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pdf2-rs/pdf2"
+  },
+  "keywords": ["pdf", "pdf2", "wasm", "render"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

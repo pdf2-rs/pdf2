@@ -45,8 +45,35 @@ for a crate that already exists.
    publish order and per-crate tags into `publish.yml` is Q10 in
    `rounds/ROADMAP.md`.
 
-`pdf2-cli` 0.1.0-alpha.1 was published this way on 2026-11-14, after being
-packaged and checked with `cargo package -p pdf2-cli`.
+Current state (2026-11-14):
+
+| Crate | Version | First publish |
+| --- | --- | --- |
+| `pdf2` | `0.2.0-alpha.2` | trusted publishing from a `v*` tag |
+| `pdf2-cli` | `0.1.0-alpha.1` | manual, token |
+| `pdf2-render` | `0.1.0-alpha.1` | manual, token |
+| `pdf2-wasm` | `0.1.0-alpha.1` | manual, token |
+
+Trusted publishers still need adding on crates.io for `pdf2-cli`,
+`pdf2-render` and `pdf2-wasm` (same repository, workflow `publish.yml`,
+environment `release`); crates.io only accepts the configuration once the crate
+exists, which is why the first version of each went out by hand.
+
+### Order matters
+
+A crate that depends on another cannot be published until that dependency
+exists at the required version. The order is `pdf2` → `pdf2-render` →
+`pdf2-cli` / `pdf2-wasm`.
+
+### The npm package
+
+`crates/pdf2-wasm/package.json` describes the npm package (`pdf2-wasm`). The
+files it publishes are the wasm-bindgen `--target web` output in
+`crates/pdf2-wasm/demo/pkg/`, which the CI `wasm-package` job and the Demo
+workflow build. Publishing requires an npm login or an automation token — an
+owner action; nothing in this repository holds npm credentials. Once the
+package exists on npm, a trusted publisher can replace the token the same way
+crates.io does it.
 
 ## Cutting a release
 
