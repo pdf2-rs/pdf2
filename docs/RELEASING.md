@@ -8,8 +8,8 @@ secrets.
 
 ## One-time setup
 
-The crate already exists on crates.io (0.1.0, April 2023), which is the
-prerequisite for trusted publishing.
+The crate already exists on crates.io (0.1.0 from April 2023, then the
+0.2.0-alpha series), which is the prerequisite for trusted publishing.
 
 1. crates.io → `pdf2` → Settings → **Trusted Publishing** → *Add* → GitHub:
 
@@ -30,9 +30,9 @@ prerequisite for trusted publishing.
 
 ## Cutting a release
 
-1. Bump the version in `Cargo.toml`. **0.1.0 is already on crates.io**, so the
-   first release through this workflow must use a new number (for example
-   `0.2.0`).
+1. Bump the version in `Cargo.toml` and add the entry to `CHANGELOG.md`. Every
+   version already on crates.io is taken, so the release must use a new number
+   (`0.2.0-alpha.2`, `0.2.0`, …).
 2. Commit on `main` and wait for CI to be green.
 3. Tag and push the tag:
 
