@@ -107,14 +107,29 @@ pub fn render_page(
     let media = page
         .media_box
         .unwrap_or(pdf2::Rect::new(0.0, 0.0, 612.0, 792.0));
-    let width = ((media.width() * scale).round().max(1.0)) as u32;
-    let height = ((media.height() * scale).round().max(1.0)) as u32;
+    // `/Rotate` turns the page clockwise for display, so a quarter turn swaps
+    // the canvas dimensions.
+    let rotate = page.rotate.rem_euclid(360);
+    let landscape = rotate == 90 || rotate == 270;
+    let (width_points, height_points) = if landscape {
+        (media.height(), media.width())
+    } else {
+        (media.width(), media.height())
+    };
+    let width = ((width_points * scale).round().max(1.0)) as u32;
+    let height = ((height_points * scale).round().max(1.0)) as u32;
     let mut canvas = Canvas::new(width, height, options.background);
     let mut report = Report::default();
 
-    // PDF user space to device space: shift the media box origin to (0, 0) and
-    // flip the y axis, which grows downwards in the raster.
-    let base = Matrix::new(scale, 0.0, 0.0, -scale, -media.x0 * scale, media.y1 * scale);
+    // PDF user space to device space. Every case shifts the media box origin to
+    // (0, 0); the y axis grows downwards in the raster, and `/Rotate` composes
+    // a clockwise quarter turn (or two) on top of that flip.
+    let base = match rotate {
+        90 => Matrix::new(0.0, scale, scale, 0.0, -media.y0 * scale, -media.x0 * scale),
+        180 => Matrix::new(-scale, 0.0, 0.0, scale, media.x1 * scale, -media.y0 * scale),
+        270 => Matrix::new(0.0, scale, -scale, 0.0, media.y1 * scale, -media.x0 * scale),
+        _ => Matrix::new(scale, 0.0, 0.0, -scale, -media.x0 * scale, media.y1 * scale),
+    };
 
     let content = document.page_content(page)?;
     let mut walker = Walker {
@@ -144,6 +159,7 @@ struct State {
     stroke: Color,
     font: Option<Font>,
     font_size: f64,
+    miter_limit: f64,
     char_spacing: f64,
     word_spacing: f64,
     horizontal_scale: f64,
@@ -165,6 +181,7 @@ impl State {
             stroke: Color::BLACK,
             font: None,
             font_size: 0.0,
+            miter_limit: 10.0,
             char_spacing: 0.0,
             word_spacing: 0.0,
             horizontal_scale: 1.0,
@@ -247,7 +264,7 @@ impl Walker<'_> {
                     _ => Join::Miter,
                 }
             }
-            b"M" => {}
+            b"M" => self.state.miter_limit = number(operands, 0).max(1.0),
             b"d" => self.state.dash = dash_operand(operands),
             b"m" => {
                 if let Some(point) = point_operand(operands, 0) {
@@ -471,7 +488,13 @@ impl Walker<'_> {
             for polyline in &polylines {
                 stroked.extend(dash_polyline(polyline, &self.state.dash, scale));
             }
-            let outline = stroke_outline(&stroked, self.state.line_width * scale, self.state.cap);
+            let outline = stroke_outline(
+                &stroked,
+                self.state.line_width * scale,
+                self.state.cap,
+                self.state.join,
+                self.state.miter_limit,
+            );
             if !outline.is_empty() {
                 fill_polygons(
                     self.canvas,
@@ -682,7 +705,14 @@ fn matrix_operand(operands: &[Object]) -> Option<Matrix> {
     ))
 }
 
-fn point_operand(operands: &[Object], start: usize) -> Option<Point> {
+/// The `pair`th point in the operands, if all of its numbers are there.
+///
+/// Callers name a *point*, not a number: `c` takes three of them at slots 0, 1
+/// and 2, which are the numbers `(0, 1)`, `(2, 3)` and `(4, 5)`. Reading the
+/// slot as a number index silently turned every curve's last control point into
+/// its end point, which is what a wrong index looks like on the page.
+fn point_operand(operands: &[Object], pair: usize) -> Option<Point> {
+    let start = pair * 2;
     if operands.len() < start + 2 {
         return None;
     }

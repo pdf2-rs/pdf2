@@ -52,46 +52,19 @@ impl Image {
                 offset: None,
             });
         }
+        // `/Decode` remaps every sample before the colour space sees it; the
+        // default is the identity, and `[1 0]` per component is an inversion
+        // (8.9.5.2).
+        let decode = decode_ranges(dict.get(b"Decode"), per_pixel);
         let mut pixels = Vec::with_capacity((width as usize) * (height as usize));
         for index in (0..count).step_by(per_pixel) {
             let sample = &data[index..index + per_pixel];
-            pixels.push(match &colours {
-                ColourSpace::Gray => Color::rgb(
-                    f64::from(sample[0]) / 255.0,
-                    f64::from(sample[0]) / 255.0,
-                    f64::from(sample[0]) / 255.0,
-                ),
-                ColourSpace::Rgb => Color::from_bytes(sample[0], sample[1], sample[2]),
-                ColourSpace::Cmyk => Color::from_cmyk(
-                    f64::from(sample[0]) / 255.0,
-                    f64::from(sample[1]) / 255.0,
-                    f64::from(sample[2]) / 255.0,
-                    f64::from(sample[3]) / 255.0,
-                ),
-                ColourSpace::Indexed { base, lookup } => {
-                    let components = base.components();
-                    let entry = usize::from(sample[0]) * components;
-                    let slice = lookup.get(entry..entry + components).unwrap_or(&[]);
-                    if slice.len() < components {
-                        Color::BLACK
-                    } else {
-                        match **base {
-                            ColourSpace::Gray => Color::rgb(
-                                f64::from(slice[0]) / 255.0,
-                                f64::from(slice[0]) / 255.0,
-                                f64::from(slice[0]) / 255.0,
-                            ),
-                            ColourSpace::Rgb => Color::from_bytes(slice[0], slice[1], slice[2]),
-                            _ => Color::from_cmyk(
-                                f64::from(slice[0]) / 255.0,
-                                f64::from(slice[1]) / 255.0,
-                                f64::from(slice[2]) / 255.0,
-                                f64::from(slice.get(3).copied().unwrap_or(0)) / 255.0,
-                            ),
-                        }
-                    }
-                }
-            });
+            let mut components = [0.0_f64; 4];
+            for (slot, byte) in sample.iter().enumerate().take(per_pixel) {
+                let (from, to) = decode[slot];
+                components[slot] = (from + f64::from(*byte) / 255.0 * (to - from)).clamp(0.0, 1.0);
+            }
+            pixels.push(colour_at(&colours, &components));
         }
         Ok(Self {
             width,
@@ -184,6 +157,51 @@ impl Image {
                 let colour = self.sample(user.x, 1.0 - user.y);
                 canvas.blend(x, y, colour, 1.0);
             }
+        }
+    }
+}
+
+/// The `/Decode` range for each component, defaulting to the identity.
+fn decode_ranges(decode: Option<&Object>, components: usize) -> Vec<(f64, f64)> {
+    let mut ranges = vec![(0.0, 1.0); components];
+    let Some(Object::Array(items)) = decode else {
+        return ranges;
+    };
+    if items.len() < components * 2 {
+        return ranges;
+    }
+    for (slot, pair) in items.chunks_exact(2).enumerate().take(components) {
+        let (Some(from), Some(to)) = (pair[0].as_real(), pair[1].as_real()) else {
+            continue;
+        };
+        ranges[slot] = (from, to);
+    }
+    ranges
+}
+
+/// Turn decoded components (0–1 each) into a colour through `colours`.
+fn colour_at(colours: &ColourSpace, components: &[f64; 4]) -> Color {
+    match colours {
+        ColourSpace::Gray => Color::rgb(components[0], components[0], components[0]),
+        ColourSpace::Rgb => Color::rgb(components[0], components[1], components[2]),
+        ColourSpace::Cmyk => {
+            Color::from_cmyk(components[0], components[1], components[2], components[3])
+        }
+        ColourSpace::Indexed { base, lookup } => {
+            // For an indexed image the decoded value is the index, not a colour
+            // component, so it is scaled back into the table's range.
+            let index = (components[0] * 255.0).round().max(0.0) as usize;
+            let count = base.components();
+            let entry = index * count;
+            let slice = lookup.get(entry..entry + count).unwrap_or(&[]);
+            if slice.len() < count {
+                return Color::BLACK;
+            }
+            let mut table = [0.0_f64; 4];
+            for (slot, byte) in slice.iter().enumerate().take(4) {
+                table[slot] = f64::from(*byte) / 255.0;
+            }
+            colour_at(base, &table)
         }
     }
 }

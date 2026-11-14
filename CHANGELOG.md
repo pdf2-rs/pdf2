@@ -4,6 +4,21 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-11-14
+
+Renderer bug fixes, found by the new calibration fixture rather than by the
+golden images, which had nothing curved in them:
+
+- **Curves.** `c`, `v` and `y` took their end point from the wrong operands, so
+  every Bézier was drawn to its last control point; curves are now the curve.
+- **`/Decode`** is applied to image samples, including `/Indexed` index ranges.
+- **Joins.** Miter, round and bevel are drawn as asked, and the miter limit
+  `M` is honoured with the standard cut-back to a bevel.
+- **`/Rotate`** turns the page and swaps the canvas dimensions for 90/180/270.
+
+`docs/RENDERING.md` maps every covered clause to the page and assertion that
+proves it, and lists what is still unimplemented.
+
 ## [1.0.0] — 2026-11-14
 
 The 1.0 release. The public API is frozen: `1.x` changes no signatures and no

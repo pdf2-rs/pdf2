@@ -443,6 +443,166 @@ def make_images():
     write("images.pdf", bytes(writer.out))
 
 
+CALIBRATION_FONT = (
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
+    b" /Encoding /WinAnsiEncoding >>"
+)
+
+CALIBRATION_COLOUR = b"".join(
+    b"q %s %d %d 40 40 re f Q\n" % (operator, x, y)
+    for operator, x, y in (
+        (b"0 g", 10, 150),
+        (b"0.5 g", 56, 150),
+        (b"0.25 g", 102, 150),
+        (b"0.75 g", 148, 150),
+        (b"1 0 0 rg", 10, 104),
+        (b"0 1 0 rg", 56, 104),
+        (b"0 0 1 rg", 102, 104),
+        (b"0.2 0.4 1 rg", 148, 104),
+        (b"1 0 0 0 k", 10, 58),
+        (b"0 0 0 0.5 k", 56, 58),
+        (b"0 1 1 0 k", 102, 58),
+        (b"1 1 0 1 k", 148, 58),
+    )
+)
+
+# Four cubic Beziers approximating the circle of radius 30 at (250, 230); the
+# control-point offset is the usual 0.5522847498 r.
+CALIBRATION_CIRCLE = (
+    b"280 230 m"
+    b" 280 246.56854 266.56854 260 250 260 c"
+    b" 233.43146 260 220 246.56854 220 230 c"
+    b" 220 213.43146 233.43146 200 250 200 c"
+    b" 266.56854 200 280 213.43146 280 230 c h"
+)
+
+CALIBRATION_STROKES = (
+    b"q 12 w 0 J 40 260 m 140 260 l S Q\n"
+    b"q 12 w 1 J 40 230 m 140 230 l S Q\n"
+    b"q 12 w 2 J 40 200 m 140 200 l S Q\n"
+    b"q 12 w 0 j 20 120 m 80 120 l 80 60 l S Q\n"
+    b"q 12 w 2 j 120 120 m 180 120 l 180 60 l S Q\n"
+    b"q 1 0 0 rg 20 20 60 60 re 40 40 20 20 re f Q\n"
+    b"q 0 0 1 rg 140 20 60 60 re 160 40 20 20 re f* Q\n"
+    b"q 1 0 1 RG 4 w [20 10] 5 d 120 160 m 280 160 l S Q\n"
+    b"q 0 0.6 0 rg " + CALIBRATION_CIRCLE + b" f Q\n"
+)
+
+# A 2x2 RGB checkerboard: red and green on the top row, blue and white below.
+CALIBRATION_CHECKER = bytes(
+    (255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255)
+)
+
+CALIBRATION_IMAGES = (
+    b"q 120 0 0 120 20 20 cm /Chk Do Q\n"
+    b"q 120 0 0 120 20 160 cm /Inv Do Q\n"
+    b"q 60 0 0 60 160 20 cm /Gray Do Q\n"
+    b"q 60 0 0 60 240 20 cm /Idx Do Q\n"
+    b"q 0 120 -120 0 280 160 cm /Chk Do Q\n"
+)
+
+CALIBRATION_PAGE_BOX = (
+    b"q 1 0 0 rg 50 60 20 20 re f Q\n"
+    b"q 0 0 1 rg 230 240 20 20 re f Q\n"
+)
+
+CALIBRATION_ROTATED = (
+    b"q 1 0 0 rg 0 0 100 100 re f Q\n"
+    b"q 0 0 1 rg 200 0 100 100 re f Q\n"
+)
+
+# Text state persists across `BT`, so every run states the values it relies on.
+CALIBRATION_TEXT = (
+    b"BT /F1 40 Tf 100 Tz 20 150 Td (HELLO) Tj ET\n"
+    b"BT /F1 40 Tf 50 Tz 20 80 Td (HELLO) Tj ET\n"
+    b"BT /F1 20 Tf 100 Tz 0 Tw 20 60 Td (A A A) Tj ET\n"
+    b"BT /F1 20 Tf 100 Tz 40 Tw 20 20 Td (A A A) Tj ET\n"
+)
+
+
+def make_calibration():
+    """Pages whose correct pixels follow from the specification.
+
+    Page 1 is colour: DeviceGray, DeviceRGB and DeviceCMYK cells whose byte
+    values are arithmetic. Page 2 is strokes: the three cap styles, a miter and
+    a bevel join, the nonzero and even-odd fill rules on identical geometry, a
+    dash phase, and a Bezier circle whose area is pi r^2. Page 3 is images: a
+    2x2 checkerboard at integer scale (exact block edges), the same image
+    inverted by /Decode, gray and /Indexed images, and the checkerboard on a
+    quarter-turn matrix. Page 4 is page boxes: a /MediaBox with a non-zero
+    origin, and a /Rotate 90 page. Page 5 is text metrics: horizontal scaling
+    and word spacing measured against the same string at 100%.
+
+    Object numbers: 1 catalog, 2 page tree, pages at 3/5/7/9/11/13 with their
+    content streams at 4/6/8/10/12/14, 15 the font, 16..19 the images.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(
+        2,
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R] /Count 6 >>",
+    )
+
+    def page(number, media, content, resources=b"", rotate=None):
+        extra = b" /Rotate %d" % rotate if rotate is not None else b""
+        writer.stream(number + 1, b"", content)
+        writer.obj(
+            number,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [%s] /Contents %d 0 R%s"
+            b" /Resources << %s >> >>"
+            % (media, number + 1, extra, resources),
+        )
+
+    page(3, b"0 0 200 200", CALIBRATION_COLOUR)
+    page(5, b"0 0 300 300", CALIBRATION_STROKES)
+    page(
+        7,
+        b"0 0 400 300",
+        CALIBRATION_IMAGES,
+        b"/XObject << /Chk 16 0 R /Inv 17 0 R /Gray 18 0 R /Idx 19 0 R >>",
+    )
+    page(9, b"50 60 250 260", CALIBRATION_PAGE_BOX)
+    page(11, b"0 0 300 100", CALIBRATION_ROTATED, rotate=90)
+
+    def image(number, extra, pixels, width, height):
+        writer.stream(
+            number,
+            b"/Type /XObject /Subtype /Image /Width %d /Height %d"
+            b" /BitsPerComponent 8" % (width, height) + extra,
+            pixels,
+            compress=True,
+        )
+
+    image(16, b" /ColorSpace /DeviceRGB", CALIBRATION_CHECKER, 2, 2)
+    image(
+        17,
+        b" /ColorSpace /DeviceRGB /Decode [1 0 1 0 1 0]",
+        CALIBRATION_CHECKER,
+        2,
+        2,
+    )
+    image(18, b" /ColorSpace /DeviceGray", bytes((0, 255)), 2, 1)
+    image(
+        19,
+        b" /ColorSpace [/Indexed /DeviceRGB 1 <FF00000000FF>]",
+        bytes((0, 1)),
+        2,
+        1,
+    )
+
+    writer.obj(15, CALIBRATION_FONT)
+    page(13, b"0 0 300 200", CALIBRATION_TEXT, b"/Font << /F1 15 0 R >>")
+
+    offsets = writer.offsets
+    xref = len(writer.out)
+    writer.out += b"xref\n0 %d\n" % (max(offsets) + 1)
+    writer.out += b"0000000000 65535 f \n"
+    for number in range(1, max(offsets) + 1):
+        writer.out += b"%010d 00000 n \n" % offsets[number]
+    writer.out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (max(offsets) + 1)
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
+    write("calibration.pdf", bytes(writer.out))
+
 if __name__ == "__main__":
     make_xref_stream_pdf()
     make_classic_twin()
@@ -452,3 +612,4 @@ if __name__ == "__main__":
     make_classic_xref()
     make_paths()
     make_images()
+    make_calibration()

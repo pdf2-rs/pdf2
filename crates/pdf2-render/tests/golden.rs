@@ -146,13 +146,14 @@ fn scaling_multiplies_the_canvas_and_the_geometry() {
 
 #[test]
 fn a_page_without_content_is_uniformly_background() {
-    // page-tree.pdf page 2 has no /Contents at all.
+    // page-tree.pdf page 2 has no /Contents at all, and it inherits /Rotate 90
+    // from its parent, so the canvas is the media box turned a quarter.
     let rendered = render("page-tree.pdf", 1, 1.0);
     assert_eq!(
         (rendered.canvas.width(), rendered.canvas.height()),
-        (612, 792)
+        (792, 612)
     );
-    for (x, y) in [(0, 0), (611, 0), (300, 400), (611, 791)] {
+    for (x, y) in [(0, 0), (791, 0), (396, 306), (791, 611)] {
         assert_eq!(pixel(&rendered, x, y), WHITE, "({x}, {y})");
     }
     assert_eq!(rendered.report.unsupported_total(), 0);

@@ -102,11 +102,22 @@ both and fails if their gzip size passes the budget in
 ## Rendering
 
 `crates/pdf2-render` rasterises a page into RGBA8 with the library's own
-tokenizer: paths, fills (non-zero and even-odd), strokes with caps/joins and
-dashes, clipping through `q`/`Q`, the `cm` transform, text through simple-font
-encodings (embedded TrueType via `ttf-parser`, a built-in base-14 fallback
-otherwise) and `/Image` XObjects with nearest or bilinear sampling. Golden
-images pin the output:
+tokenizer: paths and curves, fills (non-zero and even-odd), strokes with the
+three cap styles, miter/round/bevel joins and the miter limit, dashes and dash
+phases, clipping through `q`/`Q`, the `cm` transform, `/MediaBox` origins and
+`/Rotate` quarter turns, text through simple-font encodings (embedded TrueType
+via `ttf-parser`, a built-in base-14 fallback otherwise), and `/Image` XObjects
+(DeviceGray/RGB/CMYK, `/Indexed`, `/ICCBased`, `/Decode`, nearest or bilinear
+sampling).
+
+Correctness is proven against arithmetic, not against the last render:
+`tests/fixtures/calibration.pdf` holds six pages whose right pixels follow from
+ISO 32000 — colour conversion, cap and join geometry, dash phases, the two fill
+rules, a Bézier circle of known area, exact image block edges, `/Decode`
+inversion, a rotated image, a shifted media box, a `/Rotate` page and text
+scaling/spacing — and `crates/pdf2-render/tests/calibration.rs` asserts them.
+[docs/RENDERING.md](docs/RENDERING.md) maps each page to its clause and lists
+what is still unimplemented. Golden images pin the output as a regression net:
 
 ```sh
 cargo run -p pdf2-render --bin pdf2-render-golden              # verify

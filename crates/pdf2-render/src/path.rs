@@ -38,18 +38,14 @@ pub enum Cap {
     Square,
 }
 
-/// How stroked segments meet.
-///
-/// Joins are drawn as round joins whatever PDF asks for; miter and bevel are
-/// accepted so that content streams parse, and the difference is documented as
-/// a rendering limitation rather than silently changing geometry.
+/// How stroked segments meet, from the `j` operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Join {
-    /// A sharp join (drawn round here).
+    /// A sharp join, cut back to a bevel when the miter limit is exceeded.
     Miter,
     /// A rounded join.
     Round,
-    /// A cut-off join (drawn round here).
+    /// A cut-off join.
     Bevel,
 }
 
@@ -280,7 +276,13 @@ pub fn dash_polyline(polyline: &[Point], dash: &Dash, ctm_scale: f64) -> Vec<Vec
 ///
 /// The union of per-segment quads, round joins and caps is returned as
 /// polygons wound the same way, so a non-zero fill paints exactly the stroke.
-pub fn stroke_outline(polylines: &[Vec<Point>], width: f64, cap: Cap) -> Vec<Vec<Point>> {
+pub fn stroke_outline(
+    polylines: &[Vec<Point>],
+    width: f64,
+    cap: Cap,
+    join: Join,
+    miter_limit: f64,
+) -> Vec<Vec<Point>> {
     let half = (width / 2.0).max(0.0);
     if half <= 0.0 {
         return Vec::new();
@@ -315,10 +317,10 @@ pub fn stroke_outline(polylines: &[Vec<Point>], width: f64, cap: Cap) -> Vec<Vec
                 continue;
             }
             polygons.push(oriented(quad));
-            // Interior vertices get a round join; the closing vertex is a seam,
-            // not a cap, so it is covered by the last segment's quad.
+            // A vertex between two segments joins them; the closing vertex of a
+            // closed path is a seam, covered by the first segment's quad.
             if !first {
-                polygons.push(oriented(circle(start, half)));
+                polygons.push(join_polygon(polyline, index, half, join, miter_limit));
             }
             if last && cap == Cap::Round {
                 polygons.push(oriented(circle(end, half)));
@@ -329,6 +331,76 @@ pub fn stroke_outline(polylines: &[Vec<Point>], width: f64, cap: Cap) -> Vec<Vec
         }
     }
     polygons
+}
+
+/// The wedge that joins the segment ending at `polyline[index]` to the one
+/// starting there.
+fn join_polygon(
+    polyline: &[Point],
+    index: usize,
+    half: f64,
+    join: Join,
+    miter_limit: f64,
+) -> Vec<Point> {
+    let vertex = polyline[index];
+    let before = polyline[index - 1];
+    let after = polyline[index + 1];
+    if join == Join::Round {
+        return oriented(circle(vertex, half));
+    }
+    let (Some(incoming), Some(outgoing)) = (unit(before, vertex), unit(vertex, after)) else {
+        return oriented(circle(vertex, half));
+    };
+    // The outer side of a turn is the side the path turns away from: opposite
+    // the left normal for a left turn, along it for a right turn.
+    let cross = incoming.0 * outgoing.1 - incoming.1 * outgoing.0;
+    let factor = if cross > 0.0 { -1.0 } else { 1.0 };
+    let back_out = offset(vertex, incoming, half * factor);
+    let forward_out = offset(vertex, outgoing, half * factor);
+    if join == Join::Bevel || cross.abs() < 1e-9 {
+        return oriented(vec![vertex, back_out, forward_out]);
+    }
+    // Miter: the two outer edges meet at a point along the bisector; past the
+    // limit the standard cuts the corner instead (8.4.3.5).
+    let Some(tip) = intersect(back_out, incoming, forward_out, outgoing) else {
+        return oriented(vec![vertex, back_out, forward_out]);
+    };
+    let length = ((tip.x - vertex.x).powi(2) + (tip.y - vertex.y).powi(2)).sqrt();
+    if length > half * miter_limit.max(1.0) {
+        return oriented(vec![vertex, back_out, forward_out]);
+    }
+    oriented(vec![vertex, back_out, tip, forward_out])
+}
+
+/// The point `distance` along the left normal of `direction` from `from`.
+fn offset(from: Point, direction: (f64, f64), distance: f64) -> Point {
+    Point::new(
+        from.x - direction.1 * distance,
+        from.y + direction.0 * distance,
+    )
+}
+
+/// A unit vector in the direction `to - from`, or `None` for a zero length.
+fn unit(from: Point, to: Point) -> Option<(f64, f64)> {
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let length = (dx * dx + dy * dy).sqrt();
+    if length <= 1e-12 {
+        return None;
+    }
+    Some((dx / length, dy / length))
+}
+
+/// Where the line through `p` along `d` meets the line through `q` along `e`.
+fn intersect(p: Point, d: (f64, f64), q: Point, e: (f64, f64)) -> Option<Point> {
+    let denominator = d.0 * e.1 - d.1 * e.0;
+    if denominator.abs() < 1e-9 {
+        return None;
+    }
+    let dx = q.x - p.x;
+    let dy = q.y - p.y;
+    let t = (dx * e.1 - dy * e.0) / denominator;
+    Some(Point::new(p.x + d.0 * t, p.y + d.1 * t))
 }
 
 /// A point `distance` away from `from`, in the direction `from → towards`.
@@ -398,7 +470,7 @@ fn signed_area(polygon: &[Point]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{dash_polyline, stroke_outline, Cap, Dash, Path};
+    use super::{dash_polyline, stroke_outline, Cap, Dash, Join, Path};
     use crate::geom::{Matrix, Point};
 
     #[test]
@@ -462,7 +534,7 @@ mod tests {
     #[test]
     fn strokes_become_polygons_around_the_line() {
         let line = vec![Point::new(10.0, 10.0), Point::new(30.0, 10.0)];
-        let polygons = stroke_outline(&[line], 4.0, Cap::Butt);
+        let polygons = stroke_outline(&[line], 4.0, Cap::Butt, Join::Miter, 10.0);
         assert!(!polygons.is_empty());
         // Every polygon is wound counter-clockwise after orientation.
         for polygon in &polygons {
@@ -474,5 +546,58 @@ mod tests {
         let max_y = quad.iter().fold(f64::MIN, |max, point| max.max(point.y));
         assert!((min_y - 8.0).abs() < 1e-9, "{min_y}");
         assert!((max_y - 12.0).abs() < 1e-9, "{max_y}");
+    }
+
+    /// A right-angle corner from (0, 10) to (10, 10) to (10, 20) with a 4-wide
+    /// stroke: the outer corner is the square [10, 12] x [8, 10], and a 90°
+    /// miter needs 1.41 half-widths to reach into it.
+    fn corner(join: Join, limit: f64) -> Vec<Vec<Point>> {
+        let path = vec![
+            Point::new(0.0, 10.0),
+            Point::new(10.0, 10.0),
+            Point::new(10.0, 20.0),
+        ];
+        stroke_outline(&[path], 4.0, Cap::Butt, join, limit)
+    }
+
+    fn painted(polygons: &[Vec<Point>], x: u32, y: u32) -> bool {
+        let mut canvas = crate::canvas::Canvas::new(24, 30, crate::canvas::Color::WHITE);
+        let mask = crate::canvas::ClipMask::all(24, 30);
+        crate::raster::fill_polygons(
+            &mut canvas,
+            &mask,
+            polygons,
+            crate::canvas::Color::BLACK,
+            false,
+            1.0,
+        );
+        canvas.pixel(x, y) == Some([0, 0, 0, 255])
+    }
+
+    #[test]
+    fn a_miter_join_fills_the_corner_and_a_bevel_cuts_it() {
+        // (11, 8) is inside the corner square but outside both stroke bands.
+        assert!(
+            painted(&corner(Join::Miter, 10.0), 11, 8),
+            "the miter fills the corner"
+        );
+        assert!(
+            !painted(&corner(Join::Bevel, 10.0), 11, 8),
+            "the bevel cuts the corner"
+        );
+    }
+
+    #[test]
+    fn the_miter_limit_cuts_the_corner_back_to_a_bevel() {
+        // The 90-degree miter is 1.41 half-widths long: accepted at the default
+        // limit of 10, cut back once the limit is under 1.41 (8.4.3.5).
+        assert!(
+            painted(&corner(Join::Miter, 10.0), 11, 8),
+            "limit 10 miters"
+        );
+        assert!(
+            !painted(&corner(Join::Miter, 1.2), 11, 8),
+            "limit 1.2 bevels"
+        );
     }
 }
