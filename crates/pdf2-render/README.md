@@ -25,7 +25,9 @@ println!("unsupported operators: {}", rendered.report);
 | Clipping | `W` and `W*` as a per-pixel mask, restored by `q`/`Q` |
 | Transform | `cm` composed the way PDF composes it |
 | Colour | `g`/`G`, `rg`/`RG`, and the naive `k`/`K` CMYK conversion |
-| Text and images | **not yet** — counted per page in `Report::unsupported` |
+| Text | `BT`/`ET`, `Tf`, `Td`/`TD`/`T*`/`Tm`, `TL`, `Tc`/`Tw`/`Tz`/`Ts`, `Tj`, `TJ`, `'`, `"`; simple-font encodings from `pdf2::Encoding` |
+| Fonts | embedded TrueType through `ttf-parser`; otherwise the built-in 5×7 base-14 fallback (lowercase uses uppercase shapes) |
+| Images | `/Image` XObjects with `Do`, 8 bits per component, Gray/RGB/CMYK/Indexed/ICCBased, nearest and bilinear sampling |
 
 Rendering is deliberately without anti-aliasing: coverage is decided at pixel
 centres, so a golden image is exact and the scanline code stays small. Curves are
@@ -47,6 +49,13 @@ cargo run -p pdf2-render --bin pdf2-render-golden -- --bless  # regenerate
 
 ## Limits
 
-Paths only, plus clips and dashes: text glyphs need a font backend and images
-need the image layer, both on the roadmap. Colour is RGB (CMYK converted
-naively); there is no colour management.
+- No anti-aliasing: coverage is sampled at pixel centres.
+- Curves are flattened in fixed steps; joins are round whatever the stream asks
+  for.
+- The built-in font is a fallback: real typography needs an embedded font
+  program. Embedded TrueType is implemented (`ttf-parser`) but unexercised in
+  the test suite, because no licence-free font program can be committed here;
+  a document that carries `/FontFile2` uses it.
+- Images: no `/SMask` alpha, no `/Mask` colour key, no image filters beyond
+  those `pdf2` already decodes (JPEG/JPX are out of scope). Colour is RGB with a
+  naive CMYK conversion; there is no colour management.

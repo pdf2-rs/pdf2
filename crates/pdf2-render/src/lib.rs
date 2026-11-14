@@ -18,14 +18,18 @@
 //! exact and the scanline code small.
 
 mod canvas;
+mod font;
 mod geom;
+mod image;
 mod path;
 mod png;
 mod raster;
 mod walk;
 
 pub use canvas::{Canvas, ClipMask, Color};
+pub use font::{Font, Glyph};
 pub use geom::{Matrix, Point};
+pub use image::Image;
 pub use path::{Cap, Dash, Join, Path, Segment, Subpath};
 pub use pdf2::{Error, Rect, Result};
 pub use png::encode_png;

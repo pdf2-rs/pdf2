@@ -14,12 +14,12 @@
 //! itself or from large `TJ` adjustments.
 
 use alloc::string::String;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use alloc::collections::BTreeMap;
 
 use crate::document::Document;
+use crate::encoding::Encoding;
 use crate::error::{Error, Result};
 use crate::lexer::Token;
 use crate::object::{Dictionary, Object};
@@ -36,13 +36,13 @@ const LINE_TOLERANCE: f64 = 0.01;
 /// A simple font: one byte per code, resolved to characters.
 #[derive(Debug, Clone)]
 struct Font {
-    /// Code → character, index by byte value.
-    encoding: Vec<Option<char>>,
+    /// Code → character table.
+    encoding: Encoding,
 }
 
 impl Font {
     fn character(&self, code: u8) -> Option<char> {
-        self.encoding.get(usize::from(code)).copied().flatten()
+        self.encoding.character(code)
     }
 }
 
@@ -261,24 +261,17 @@ impl<'a> TextInterpreter<'a> {
         })
     }
 
-    fn encoding_of(&self, dict: &Dictionary) -> Result<Vec<Option<char>>> {
-        let mut encoding = standard_encoding();
+    fn encoding_of(&self, dict: &Dictionary) -> Result<Encoding> {
         let Some(encoding_object) = dict.get(b"Encoding") else {
-            return Ok(encoding);
+            return Ok(Encoding::standard());
         };
         let encoding_object = self
             .document
             .resolve(Some(encoding_object))?
             .unwrap_or(Object::Null);
-        match encoding_object {
-            Object::Name(name) => encoding = base_encoding(&name),
-            Object::Dictionary(differences) => {
-                if let Some(Object::Name(base)) = differences.get(b"BaseEncoding") {
-                    encoding = base_encoding(base);
-                }
-                let Some(differences) = differences.get(b"Differences") else {
-                    return Ok(encoding);
-                };
+        let mut encoding = Encoding::from_object(Some(&encoding_object))?;
+        if let Object::Dictionary(differences) = &encoding_object {
+            if let Some(differences) = differences.get(b"Differences") {
                 let differences = self
                     .document
                     .resolve(Some(differences))?
@@ -289,31 +282,8 @@ impl<'a> TextInterpreter<'a> {
                         offset: None,
                     });
                 };
-                let mut code = 0_usize;
-                for item in &items {
-                    match item {
-                        Object::Integer(value) => {
-                            code = usize::try_from(*value).map_err(|_| Error::Malformed {
-                                what: "/Differences code must be a non-negative integer",
-                                offset: None,
-                            })?;
-                        }
-                        Object::Name(glyph) => {
-                            if code < 256 {
-                                encoding[code] = glyph_to_char(glyph);
-                            }
-                            code += 1;
-                        }
-                        _ => {
-                            return Err(Error::Malformed {
-                                what: "/Differences entries must be integers or names",
-                                offset: None,
-                            })
-                        }
-                    }
-                }
+                encoding.apply_differences(&items)?;
             }
-            _ => {}
         }
         Ok(encoding)
     }
@@ -386,195 +356,9 @@ impl Document {
     }
 }
 
-/// The ASCII part of `StandardEncoding` (§D.2), which is what almost every
-/// simple font uses for its codes 32–126.
-fn standard_encoding() -> Vec<Option<char>> {
-    let mut encoding = vec![None; 256];
-    for code in 32_u8..=126 {
-        encoding[usize::from(code)] = Some(char::from(code));
-    }
-    encoding[0x27] = Some('\u{2019}'); // quoteright
-    encoding[0x60] = Some('\u{2018}'); // quoteleft
-    encoding
-}
-
-/// `WinAnsiEncoding` is Latin-1 with the `0x80..=0x9F` range replaced by the
-/// Windows-1252 punctuation block (§D.2).
-fn win_ansi_encoding() -> Vec<Option<char>> {
-    let mut encoding = vec![None; 256];
-    for code in 0_u8..=255 {
-        encoding[usize::from(code)] = match code {
-            0x80 => Some('\u{20AC}'),
-            0x82 => Some('\u{201A}'),
-            0x83 => Some('\u{0192}'),
-            0x84 => Some('\u{201E}'),
-            0x85 => Some('\u{2026}'),
-            0x86 => Some('\u{2020}'),
-            0x87 => Some('\u{2021}'),
-            0x88 => Some('\u{02C6}'),
-            0x89 => Some('\u{2030}'),
-            0x8A => Some('\u{0160}'),
-            0x8B => Some('\u{2039}'),
-            0x8C => Some('\u{0152}'),
-            0x8E => Some('\u{017D}'),
-            0x91 => Some('\u{2018}'),
-            0x92 => Some('\u{2019}'),
-            0x93 => Some('\u{201C}'),
-            0x94 => Some('\u{201D}'),
-            0x95 => Some('\u{2022}'),
-            0x96 => Some('\u{2013}'),
-            0x97 => Some('\u{2014}'),
-            0x98 => Some('\u{02DC}'),
-            0x99 => Some('\u{2122}'),
-            0x9A => Some('\u{0161}'),
-            0x9B => Some('\u{203A}'),
-            0x9C => Some('\u{0153}'),
-            0x9E => Some('\u{017E}'),
-            0x9F => Some('\u{0178}'),
-            0x81 | 0x8D | 0x8F | 0x90 | 0x9D => None,
-            _ => Some(char::from(code)),
-        };
-    }
-    encoding
-}
-
-fn base_encoding(name: &[u8]) -> Vec<Option<char>> {
-    match name {
-        b"WinAnsiEncoding" => win_ansi_encoding(),
-        // MacRomanEncoding shares the ASCII range with StandardEncoding; the
-        // upper half is not implemented, which the README states.
-        b"StandardEncoding" | b"MacRomanEncoding" | b"PDFDocEncoding" => standard_encoding(),
-        _ => standard_encoding(),
-    }
-}
-
-/// Glyph names to characters, for `/Differences` arrays.
-///
-/// Covers the Latin punctuation and accented letters that real documents use;
-/// anything else is skipped rather than guessed.
-fn glyph_to_char(name: &[u8]) -> Option<char> {
-    if name.len() == 1 {
-        return Some(char::from(name[0]));
-    }
-    let name = core::str::from_utf8(name).ok()?;
-    let named = match name {
-        "space" => ' ',
-        "exclam" => '!',
-        "quotedbl" => '"',
-        "numbersign" => '#',
-        "dollar" => '$',
-        "percent" => '%',
-        "ampersand" => '&',
-        "quotesingle" => '\'',
-        "parenleft" => '(',
-        "parenright" => ')',
-        "asterisk" => '*',
-        "plus" => '+',
-        "comma" => ',',
-        "hyphen" => '-',
-        "period" => '.',
-        "slash" => '/',
-        "colon" => ':',
-        "semicolon" => ';',
-        "less" => '<',
-        "equal" => '=',
-        "greater" => '>',
-        "question" => '?',
-        "at" => '@',
-        "bracketleft" => '[',
-        "backslash" => '\\',
-        "bracketright" => ']',
-        "asciicircum" => '^',
-        "underscore" => '_',
-        "grave" => '`',
-        "braceleft" => '{',
-        "bar" => '|',
-        "braceright" => '}',
-        "asciitilde" => '~',
-        "bullet" => '\u{2022}',
-        "endash" => '\u{2013}',
-        "emdash" => '\u{2014}',
-        "quoteleft" => '\u{2018}',
-        "quoteright" => '\u{2019}',
-        "quotedblleft" => '\u{201C}',
-        "quotedblright" => '\u{201D}',
-        "ellipsis" => '\u{2026}',
-        "dagger" => '\u{2020}',
-        "daggerdbl" => '\u{2021}',
-        "section" => '\u{00A7}',
-        "paragraph" => '\u{00B6}',
-        "degree" => '\u{00B0}',
-        "plusminus" => '\u{00B1}',
-        "multiply" => '\u{00D7}',
-        "divide" => '\u{00F7}',
-        "copyright" => '\u{00A9}',
-        "registered" => '\u{00AE}',
-        "trademark" => '\u{2122}',
-        "eacute" => '\u{00E9}',
-        "egrave" => '\u{00E8}',
-        "agrave" => '\u{00E0}',
-        "ccedilla" => '\u{00E7}',
-        "udieresis" => '\u{00FC}',
-        "odieresis" => '\u{00F6}',
-        "adieresis" => '\u{00E4}',
-        "germandbls" => '\u{00DF}',
-        "fi" => '\u{FB01}',
-        "fl" => '\u{FB02}',
-        "zero" => '0',
-        "one" => '1',
-        "two" => '2',
-        "three" => '3',
-        "four" => '4',
-        "five" => '5',
-        "six" => '6',
-        "seven" => '7',
-        "eight" => '8',
-        "nine" => '9',
-        _ => {
-            // `uniXXXX` and `uXXXX` names carry their code point directly.
-            let hex = name
-                .strip_prefix("uni")
-                .or_else(|| name.strip_prefix('u'))?;
-            return char::from_u32(u32::from_str_radix(hex, 16).ok()?);
-        }
-    };
-    Some(named)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{find_operator, glyph_to_char, standard_encoding, win_ansi_encoding};
-
-    #[test]
-    fn win_ansi_uses_latin1_outside_the_punctuation_block() {
-        let encoding = win_ansi_encoding();
-        assert_eq!(encoding[usize::from(b'A')], Some('A'));
-        assert_eq!(encoding[0xE9], Some('\u{00E9}'), "e-acute");
-        assert_eq!(encoding[0x80], Some('\u{20AC}'), "euro");
-        assert_eq!(encoding[0x95], Some('\u{2022}'), "bullet");
-        assert_eq!(encoding[0x81], None, "undefined in cp1252");
-    }
-
-    #[test]
-    fn standard_encoding_is_ascii_with_the_two_quote_names_swapped() {
-        let encoding = standard_encoding();
-        assert_eq!(encoding[usize::from(b' ')], Some(' '));
-        assert_eq!(encoding[usize::from(b'~')], Some('~'));
-        assert_eq!(encoding[0x27], Some('\u{2019}'));
-        assert_eq!(encoding[0x60], Some('\u{2018}'));
-        assert_eq!(encoding[0x00], None);
-    }
-
-    #[test]
-    fn glyph_names_resolve_to_characters() {
-        assert_eq!(glyph_to_char(b"A"), Some('A'));
-        assert_eq!(glyph_to_char(b"7"), Some('7'));
-        assert_eq!(glyph_to_char(b"bullet"), Some('\u{2022}'));
-        assert_eq!(glyph_to_char(b"eacute"), Some('\u{00E9}'));
-        assert_eq!(glyph_to_char(b"uni20AC"), Some('\u{20AC}'));
-        assert_eq!(glyph_to_char(b"u0041"), Some('A'));
-        assert_eq!(glyph_to_char(b"nosuchglyph"), None);
-    }
+    use super::find_operator;
 
     #[test]
     fn inline_image_terminator_must_be_a_whole_operator() {

@@ -10,10 +10,12 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use pdf2::lexer::{is_delimiter, is_whitespace};
-use pdf2::{Document, Object, Page, Parser, Token};
+use pdf2::{Dictionary, Document, Encoding, Object, Page, Parser, Token};
 
 use crate::canvas::{Canvas, ClipMask, Color};
+use crate::font::Font;
 use crate::geom::{Matrix, Point};
+use crate::image::{resolve, Image};
 use crate::path::{dash_polyline, stroke_outline, Cap, Dash, Join, Path};
 use crate::raster::{clip_mask, fill_polygons};
 
@@ -118,6 +120,8 @@ pub fn render_page(
     let mut walker = Walker {
         canvas: &mut canvas,
         report: &mut report,
+        document,
+        resources: page.resources.clone(),
         state: State::new(base),
         stack: Vec::new(),
         path: Path::new(),
@@ -138,6 +142,15 @@ struct State {
     dash: Dash,
     fill: Color,
     stroke: Color,
+    font: Option<Font>,
+    font_size: f64,
+    char_spacing: f64,
+    word_spacing: f64,
+    horizontal_scale: f64,
+    leading: f64,
+    rise: f64,
+    text_matrix: Matrix,
+    line_matrix: Matrix,
 }
 
 impl State {
@@ -150,6 +163,15 @@ impl State {
             dash: Dash::solid(),
             fill: Color::BLACK,
             stroke: Color::BLACK,
+            font: None,
+            font_size: 0.0,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scale: 1.0,
+            leading: 0.0,
+            rise: 0.0,
+            text_matrix: Matrix::IDENTITY,
+            line_matrix: Matrix::IDENTITY,
         }
     }
 }
@@ -157,6 +179,8 @@ impl State {
 struct Walker<'a> {
     canvas: &'a mut Canvas,
     report: &'a mut Report,
+    document: &'a Document,
+    resources: Option<Dictionary>,
     state: State,
     stack: Vec<(State, ClipMask)>,
     path: Path,
@@ -326,6 +350,94 @@ impl Walker<'_> {
                     number(operands, 3),
                 );
             }
+            b"BT" => {
+                self.state.text_matrix = Matrix::IDENTITY;
+                self.state.line_matrix = Matrix::IDENTITY;
+            }
+            b"ET" => {}
+            b"Tf" => {
+                let name = match operands.first() {
+                    Some(Object::Name(name)) => name.clone(),
+                    _ => return Err(crate::Error::malformed("/Tf needs a font name")),
+                };
+                self.state.font_size = number(operands, 1);
+                self.state.font = self.load_font(&name);
+            }
+            b"Td" | b"TD" => {
+                let tx = number(operands, 0);
+                let ty = number(operands, 1);
+                self.state.line_matrix =
+                    Matrix::new(1.0, 0.0, 0.0, 1.0, tx, ty).multiply(self.state.line_matrix);
+                self.state.text_matrix = self.state.line_matrix;
+                if operator == b"TD" {
+                    self.state.leading = -ty;
+                }
+            }
+            b"T*" => {
+                self.state.line_matrix = Matrix::new(1.0, 0.0, 0.0, 1.0, 0.0, -self.state.leading)
+                    .multiply(self.state.line_matrix);
+                self.state.text_matrix = self.state.line_matrix;
+            }
+            b"Tm" => {
+                if let Some(matrix) = matrix_operand(operands) {
+                    self.state.line_matrix = matrix;
+                    self.state.text_matrix = matrix;
+                }
+            }
+            b"TL" => self.state.leading = number(operands, 0),
+            b"Tc" => self.state.char_spacing = number(operands, 0),
+            b"Tw" => self.state.word_spacing = number(operands, 0),
+            b"Tz" => self.state.horizontal_scale = number(operands, 0) / 100.0,
+            b"Ts" => self.state.rise = number(operands, 0),
+            b"Tj" => {
+                if let Some(Object::String(string)) = operands.first() {
+                    let bytes = string.as_bytes().to_vec();
+                    self.show_text(&bytes)?;
+                }
+            }
+            b"'" => {
+                self.state.line_matrix = Matrix::new(1.0, 0.0, 0.0, 1.0, 0.0, -self.state.leading)
+                    .multiply(self.state.line_matrix);
+                self.state.text_matrix = self.state.line_matrix;
+                if let Some(Object::String(string)) = operands.first() {
+                    let bytes = string.as_bytes().to_vec();
+                    self.show_text(&bytes)?;
+                }
+            }
+            b"\"" => {
+                self.state.word_spacing = number(operands, 0);
+                self.state.char_spacing = number(operands, 1);
+                self.state.line_matrix = Matrix::new(1.0, 0.0, 0.0, 1.0, 0.0, -self.state.leading)
+                    .multiply(self.state.line_matrix);
+                self.state.text_matrix = self.state.line_matrix;
+                if let Some(Object::String(string)) = operands.get(2) {
+                    let bytes = string.as_bytes().to_vec();
+                    self.show_text(&bytes)?;
+                }
+            }
+            b"TJ" => {
+                if let Some(Object::Array(items)) = operands.first() {
+                    for item in items {
+                        match item {
+                            Object::String(string) => {
+                                let bytes = string.as_bytes().to_vec();
+                                self.show_text(&bytes)?;
+                            }
+                            Object::Integer(adjustment) => {
+                                self.adjust_text(*adjustment as f64);
+                            }
+                            Object::Real(adjustment) => self.adjust_text(*adjustment),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            b"Do" => {
+                if let Some(Object::Name(name)) = operands.first() {
+                    let name = name.clone();
+                    self.draw_image(&name)?;
+                }
+            }
             b"BI" => {
                 skip_inline_image(parser)?;
                 self.report.note(operator);
@@ -373,6 +485,149 @@ impl Walker<'_> {
         }
         self.path = Path::new();
         Ok(())
+    }
+
+    fn adjust_text(&mut self, adjustment: f64) {
+        let tx = -adjustment / 1000.0 * self.state.font_size * self.state.horizontal_scale;
+        self.state.text_matrix =
+            Matrix::new(1.0, 0.0, 0.0, 1.0, tx, 0.0).multiply(self.state.text_matrix);
+    }
+
+    fn show_text(&mut self, bytes: &[u8]) -> crate::Result<()> {
+        let Some(font) = self.state.font.clone() else {
+            return Ok(());
+        };
+        for &code in bytes {
+            if let Some(glyph) = font.glyph(code) {
+                if !glyph.contours.is_empty() {
+                    let scale = Matrix::new(
+                        self.state.font_size * self.state.horizontal_scale,
+                        0.0,
+                        0.0,
+                        self.state.font_size,
+                        0.0,
+                        self.state.rise,
+                    );
+                    let transform = scale
+                        .multiply(self.state.text_matrix)
+                        .multiply(self.state.ctm);
+                    let polygons: Vec<Vec<Point>> = glyph
+                        .contours
+                        .iter()
+                        .map(|contour| {
+                            contour
+                                .iter()
+                                .map(|point| transform.apply(*point))
+                                .collect()
+                        })
+                        .collect();
+                    fill_polygons(
+                        self.canvas,
+                        &self.mask,
+                        &polygons,
+                        self.state.fill,
+                        false,
+                        1.0,
+                    );
+                }
+            }
+            let mut advance = font.advance(code) * self.state.font_size + self.state.char_spacing;
+            if code == b' ' {
+                advance += self.state.word_spacing;
+            }
+            advance *= self.state.horizontal_scale;
+            self.state.text_matrix =
+                Matrix::new(1.0, 0.0, 0.0, 1.0, advance, 0.0).multiply(self.state.text_matrix);
+        }
+        Ok(())
+    }
+
+    fn draw_image(&mut self, name: &[u8]) -> crate::Result<()> {
+        let Some(resources) = self.resources.clone() else {
+            self.report.note(b"Do");
+            return Ok(());
+        };
+        let xobjects = match resolve(self.document, resources.get(b"XObject")) {
+            Ok(Object::Dictionary(xobjects)) => xobjects,
+            _ => {
+                self.report.note(b"Do");
+                return Ok(());
+            }
+        };
+        let entry = match xobjects.get(name) {
+            Some(entry) => entry.clone(),
+            None => {
+                self.report.note(b"Do");
+                return Ok(());
+            }
+        };
+        let object = resolve(self.document, Some(&entry))?;
+        let Object::Stream(stream) = object else {
+            self.report.note(b"Do");
+            return Ok(());
+        };
+        if !matches!(stream.dict().get(b"Subtype"), Some(Object::Name(name)) if name == b"Image") {
+            self.report.note(b"Do");
+            return Ok(());
+        }
+        match Image::from_stream(self.document, &stream) {
+            Ok(image) => {
+                image.paint(self.canvas, &self.mask, self.state.ctm);
+            }
+            // An image we cannot decode is reported, not fatal: the rest of the
+            // page still renders.
+            Err(_) => self.report.note(b"Do"),
+        }
+        Ok(())
+    }
+
+    fn load_font(&mut self, name: &[u8]) -> Option<Font> {
+        let resources = self.resources.clone()?;
+        let fonts = match resolve(self.document, resources.get(b"Font")) {
+            Ok(Object::Dictionary(fonts)) => fonts,
+            _ => return None,
+        };
+        let entry = fonts.get(name)?.clone();
+        let font_object = resolve(self.document, Some(&entry)).ok()?;
+        let Object::Dictionary(font) = font_object else {
+            return None;
+        };
+        let encoding = self.encoding_for(&font);
+        if let Some(descriptor) = font.get(b"FontDescriptor") {
+            let descriptor = resolve(self.document, Some(descriptor)).ok()?;
+            if let Object::Dictionary(descriptor) = descriptor {
+                if let Some(font_file) = descriptor.get(b"FontFile2") {
+                    let data = match font_file {
+                        Object::Reference(id) => self.document.stream_data(*id).ok(),
+                        _ => None,
+                    };
+                    if let Some(data) = data {
+                        if let Some(font) = Font::true_type(encoding.clone(), data) {
+                            return Some(font);
+                        }
+                    }
+                }
+            }
+        }
+        Some(Font::builtin(encoding))
+    }
+
+    fn encoding_for(&self, font: &Dictionary) -> Encoding {
+        let Some(encoding_object) = font.get(b"Encoding") else {
+            return Encoding::standard();
+        };
+        let Ok(encoding_object) = resolve(self.document, Some(encoding_object)) else {
+            return Encoding::standard();
+        };
+        let mut encoding = Encoding::from_object(Some(&encoding_object)).unwrap_or_default();
+        if let Object::Dictionary(dict) = &encoding_object {
+            if let Some(differences) = dict.get(b"Differences") {
+                if let Ok(Object::Array(items)) = resolve(self.document, Some(differences)) {
+                    let _ = encoding.apply_differences(&items);
+                }
+            }
+        }
+        encoding
     }
 
     fn apply_pending_clip(&mut self) {

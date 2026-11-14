@@ -22,6 +22,18 @@ fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(repo(&format!("tests/fixtures/{name}"))).expect("read fixture")
 }
 
+fn ink(rendered: &RenderedPage, x0: u32, y0: u32, x1: u32, y1: u32) -> usize {
+    let mut count = 0;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            if pixel(rendered, x, y) != WHITE {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 fn render(relative: &str, page: usize, scale: f64) -> RenderedPage {
     let document = Document::open(fixture(relative)).expect("open fixture");
     render_page_number(
@@ -83,28 +95,42 @@ fn fills_strokes_clips_transforms_and_dashes_land_where_they_should() {
     assert_eq!(pixel(&rendered, 92, 40), MAGENTA);
     assert_eq!(pixel(&rendered, 98, 40), WHITE);
 
-    // The text line is not drawn yet, and everything else is background.
-    assert_eq!(pixel(&rendered, 25, 10), WHITE);
+    // The text line renders above the baseline at y = 10 device pixels.
+    assert!(ink(&rendered, 15, 0, 150, 12) > 50, "text ink");
     assert_eq!(pixel(&rendered, 5, 5), WHITE);
 }
 
 #[test]
-fn unsupported_operators_are_reported_not_fatal() {
-    let rendered = render("paths.pdf", 0, 1.0);
-    assert!(
-        rendered.report.unsupported_total() >= 4,
+fn the_fixtures_use_only_supported_operators() {
+    for name in ["paths.pdf", "images.pdf"] {
+        let rendered = render(name, 0, 1.0);
+        assert_eq!(
+            rendered.report.unsupported_total(),
+            0,
+            "{name}: {}",
+            rendered.report
+        );
+    }
+}
+
+#[test]
+fn unknown_operators_are_still_counted_not_fatal() {
+    let mut builder = pdf2::Document::new();
+    builder.add_page(
+        pdf2::Rect::new(0.0, 0.0, 50.0, 50.0),
+        "q 1 0 0 rg 5 5 20 20 re f /GS1 gs Q",
+    );
+    let bytes = builder.save().expect("save");
+    let document = Document::open(bytes).expect("open");
+    let rendered = render_page_number(&document, 0, &RenderOptions::default()).expect("render");
+    assert_eq!(
+        rendered.report.unsupported.get("gs"),
+        Some(&1),
         "{:?}",
         rendered.report
     );
-    assert_eq!(rendered.report.unsupported.get("Tj"), Some(&1));
-    assert_eq!(rendered.report.unsupported.get("Tf"), Some(&1));
-    assert!(
-        rendered.report.to_string().contains("Tj"),
-        "{}",
-        rendered.report
-    );
-    // The paths still painted: the red fill is there.
-    assert_eq!(pixel(&rendered, 30, 150), RED);
+    // The fill before it still painted.
+    assert_eq!(pixel(&rendered, 10, 40), RED);
 }
 
 #[test]

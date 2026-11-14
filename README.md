@@ -101,8 +101,10 @@ both and fails if their gzip size passes the budget in
 
 `crates/pdf2-render` rasterises a page into RGBA8 with the library's own
 tokenizer: paths, fills (non-zero and even-odd), strokes with caps/joins and
-dashes, clipping through `q`/`Q`, and the `cm` transform. Text and images are
-counted as unsupported until they land. Golden images pin the output:
+dashes, clipping through `q`/`Q`, the `cm` transform, text through simple-font
+encodings (embedded TrueType via `ttf-parser`, a built-in base-14 fallback
+otherwise) and `/Image` XObjects with nearest or bilinear sampling. Golden
+images pin the output:
 
 ```sh
 cargo run -p pdf2-render --bin pdf2-render-golden              # verify

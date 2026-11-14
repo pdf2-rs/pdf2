@@ -12,6 +12,7 @@ extern crate alloc;
 pub mod content;
 pub mod crypto;
 pub mod document;
+pub mod encoding;
 pub mod error;
 pub mod filter;
 pub mod lexer;
@@ -22,6 +23,7 @@ pub mod writer;
 
 pub use crypto::Encryption;
 pub use document::Document;
+pub use encoding::Encoding;
 pub use error::{Error, Result};
 pub use filter::{Filter, FilterSpec, Predictor};
 pub use lexer::{Lexer, Token};

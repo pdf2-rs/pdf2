@@ -389,6 +389,60 @@ def make_paths():
     write("paths.pdf", bytes(writer.out))
 
 
+IMAGES_CONTENT = (
+    b"q 80 0 0 80 20 20 cm /Im1 Do Q\n"
+    b"q 80 0 0 80 110 20 cm /Im2 Do Q\n"
+    b"BT /F1 16 Tf 20 150 Td (IMAGES 2026) Tj ET\n"
+)
+
+
+def image_pixels():
+    """An 8x8 RGB image: red/green on the top half, blue/white on the bottom."""
+    rows = []
+    for row in range(8):
+        for column in range(8):
+            if row < 4:
+                rows.extend((255, 0, 0) if column < 4 else (0, 255, 0))
+            else:
+                rows.extend((0, 0, 255) if column < 4 else (255, 255, 255))
+    return bytes(rows)
+
+
+def make_images():
+    """An image XObject drawn twice (nearest and bilinear) plus a text line."""
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R"
+        b" /Resources << /XObject << /Im1 5 0 R /Im2 6 0 R >>"
+        b" /Font << /F1 7 0 R >> >> >>",
+    )
+    writer.stream(4, b"", IMAGES_CONTENT)
+    image_dict = (
+        b"/Type /XObject /Subtype /Image /Width 8 /Height 8"
+        b" /ColorSpace /DeviceRGB /BitsPerComponent 8"
+    )
+    writer.stream(5, image_dict, image_pixels(), compress=True)
+    writer.stream(
+        6,
+        image_dict + b" /Interpolate true",
+        image_pixels(),
+        compress=True,
+    )
+    writer.obj(7, HELVETICA)
+    offsets = writer.offsets
+    xref = len(writer.out)
+    writer.out += b"xref\n0 %d\n" % (max(offsets) + 1)
+    writer.out += b"0000000000 65535 f \n"
+    for number in range(1, max(offsets) + 1):
+        writer.out += b"%010d 00000 n \n" % offsets[number]
+    writer.out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (max(offsets) + 1)
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
+    write("images.pdf", bytes(writer.out))
+
+
 if __name__ == "__main__":
     make_xref_stream_pdf()
     make_classic_twin()
@@ -397,3 +451,4 @@ if __name__ == "__main__":
     make_text()
     make_classic_xref()
     make_paths()
+    make_images()

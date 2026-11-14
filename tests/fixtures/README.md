@@ -29,6 +29,7 @@ Rules for every file in this directory:
 | `text.pdf` | one page whose `/Contents` is **uncompressed** and walks through `Tj`, `TJ` with a gap adjustment, `'`, `TL`/`T*`, `Tm`, two fonts (WinAnsiEncoding and a `/Differences` array) | `tests/content.rs` |
 | `encrypted-r6.pdf` | the object graph of `plain-twin.pdf` with `/V 5 /R 6` AES-256: catalog string, content stream and metadata stream encrypted; `/Encrypt` carries `/U`, `/O`, `/UE`, `/OE`, `/Perms`. User password `user`, owner password `owner` | `tests/encryption.rs` |
 | `plain-twin.pdf` | the same document in the clear, for text comparison | `tests/encryption.rs` |
+| `images.pdf` | two `/Image` XObjects (8×8 RGB, Flate; one with `/Interpolate true`) plus a line of text, for the renderer's image and font paths | `crates/pdf2-render/tests/golden.rs` |
 | `paths.pdf` | 200×200 page of paths, clips, transforms and dashes (plus one line of text) for the renderer's golden image | `crates/pdf2-render/tests/golden.rs` |
 | `page-tree.pdf` | three pages (5, 6, 7) under a nested tree: root `/MediaBox` + `/Resources`, node `/Rotate 90`, page overrides for `/MediaBox`, `/CropBox` and `/Rotate`, plus an XMP `/Metadata` stream | `tests/pages.rs` |
 
@@ -38,9 +39,11 @@ DEFLATE format `flate2` reads), so the fixtures do not depend on any PDF
 library. They stay small enough to read in an editor: `classic-xref.pdf` in
 particular is plain ASCII with its offsets visible in the table.
 
-`tests/fixtures/golden/paths.png` is the committed rendering of `paths.pdf`
-(200×200, scale 1); regenerate it with
-`cargo run -p pdf2-render --bin pdf2-render-golden -- --bless`.
+`tests/fixtures/golden/` holds the committed renderings: `paths.png` for
+`paths.pdf` and `images.png` for `images.pdf` (200×200, scale 1). Regenerate
+them with
+`cargo run -p pdf2-render --bin pdf2-render-golden -- --bless` and
+`cargo run -p pdf2-render --bin pdf2-render-golden -- --fixture tests/fixtures/images.pdf --out tests/fixtures/golden/images.png --bless`.
 
 The encryption pair comes from `cargo run --example make_encrypted_fixture`
 (`examples/make_encrypted_fixture.rs`): no `qpdf`, `mutool` or `gs` is installed
