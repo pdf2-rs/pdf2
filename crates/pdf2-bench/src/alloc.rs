@@ -63,20 +63,28 @@ mod tests {
 
     #[test]
     fn allocations_are_counted_between_snapshots() {
-        reset();
+        // The counters are process-global, so a test running in parallel can
+        // allocate between a snapshot and the next one. That only ever adds to
+        // the counters, so the comparisons below are growth assertions.
         let first = snapshot();
-        let buffer: Vec<u8> = vec![7; 4096];
+        let buffer: Vec<u8> = vec![7; 64 * 1024];
         let second = snapshot();
         assert!(second.0 > first.0, "{first:?} -> {second:?}");
-        assert!(second.1 >= first.1 + 4096, "{first:?} -> {second:?}");
+        assert!(second.1 >= first.1 + 64 * 1024, "{first:?} -> {second:?}");
         assert_eq!(buffer[0], 7);
-        // The counters are process-global, so a test running in parallel can
-        // allocate between a reset and a snapshot; only growth is asserted.
+    }
+
+    #[test]
+    fn a_reset_starts_the_counters_over() {
+        // Drop a large allocation so the reset has a signal far above any
+        // allocation a parallel test can add between the reset and the
+        // snapshot; asserting an exact zero would be racy.
+        let big: Vec<u8> = vec![1; 16 * 1024 * 1024];
+        let before = snapshot();
+        assert!(before.1 >= 16 * 1024 * 1024, "{before:?}");
         reset();
-        let after_reset = snapshot();
-        assert!(
-            after_reset.0 < second.0 || after_reset.0 == 0,
-            "{after_reset:?} vs {second:?}"
-        );
+        let after = snapshot();
+        assert!(after.1 < 16 * 1024 * 1024, "{before:?} -> {after:?}");
+        drop(big);
     }
 }
