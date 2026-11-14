@@ -80,6 +80,22 @@ real bugs:
    box canvas. The renderer now honours 90/180/270; `page-tree.pdf` page 2
    (which inherits `/Rotate 90`) exposed the change in the older golden test.
 
+## Fonts
+
+| What the PDF carries | What the renderer does |
+| --- | --- |
+| Simple font with `/FontFile2` (embedded TrueType) | glyph outlines from `ttf-parser`, placed by the PDF's encoding |
+| Simple font with `/Encoding` (`WinAnsiEncoding`, `/Differences`) | codes map through the encoding; `A` remapped to `/bullet` draws the bullet |
+| `/Widths` and the descriptor's `/MissingWidth` | used for advances, so spacing matches the file instead of a fixed 0.6 em |
+| Base-14 with no program (Helvetica and friends) | the built-in 5×7 bitmap alphabet below |
+| `/Type0` (CID) — most CJK text and many modern Latin files | **not drawn**: counted as `font:Type0` in the report |
+| `/Type3` | **not drawn**: `font:Type3` |
+| `/FontFile` (Type 1) and `/FontFile3` (CFF/OpenType) programs | **not parsed**: the bitmap fallback is drawn and `font:FontFile`/`font:FontFile3` is reported |
+| Text render modes other than fill (`Tr`), vertical writing | not implemented |
+
+The report is the honest part: a page that used a font this renderer cannot draw
+says so, rather than looking like a page of boxes with no explanation.
+
 ## The built-in text fallback
 
 A base-14 font with no embedded program is drawn with a 5×7 bitmap alphabet:

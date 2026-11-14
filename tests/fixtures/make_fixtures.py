@@ -520,6 +520,23 @@ CALIBRATION_TEXT = (
 )
 
 
+# /Widths in 1/1000 em, indexed from /FirstChar. The widths page's fonts differ
+# only in that table, so their glyph positions are arithmetic.
+def calibration_widths(first, last, overrides):
+    return b"[" + b" ".join(
+        b"%d" % overrides.get(code, 500) for code in range(first, last + 1)
+    ) + b"]"
+
+
+CALIBRATION_WIDTHS_TEXT = (
+    b"BT /F1 20 Tf 20 150 Td (I I) Tj ET\n"
+    b"BT /F2 20 Tf 20 100 Td (I I) Tj ET\n"
+    b"BT /F3 20 Tf 20 50 Td (Z Z) Tj ET\n"
+)
+
+CALIBRATION_UNSUPPORTED_TEXT = b"BT /F1 12 Tf 20 100 Td (hi) Tj ET\n"
+
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -534,13 +551,16 @@ def make_calibration():
     and word spacing measured against the same string at 100%.
 
     Object numbers: 1 catalog, 2 page tree, pages at 3/5/7/9/11/13 with their
-    content streams at 4/6/8/10/12/14, 15 the font, 16..19 the images.
+    content streams at 4/6/8/10/12/14, 15 the font, 16..19 the images, 20/22 the
+    /Widths and unsupported-font pages with their streams at 21/23, and 24..27
+    the fonts those pages use.
     """
     writer = Writer()
     writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
     writer.obj(
         2,
-        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R] /Count 6 >>",
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 20 0 R 22 0 R]"
+        b" /Count 8 >>",
     )
 
     def page(number, media, content, resources=b"", rotate=None):
@@ -592,6 +612,49 @@ def make_calibration():
 
     writer.obj(15, CALIBRATION_FONT)
     page(13, b"0 0 300 200", CALIBRATION_TEXT, b"/Font << /F1 15 0 R >>")
+
+    # Page 7: three fonts that differ only in /Widths, so the distance between
+    # two identical glyphs is the space advance — 250, 750 and, for a code the
+    # array does not cover, the descriptor's /MissingWidth of 900.
+    page(
+        20,
+        b"0 0 300 200",
+        CALIBRATION_WIDTHS_TEXT,
+        b"/Font << /F1 24 0 R /F2 25 0 R /F3 26 0 R >>",
+    )
+
+    # Page 8: a Type 0 (CID) font, which this renderer cannot draw yet; it has to
+    # be reported rather than painted with fallback glyphs.
+    page(22, b"0 0 300 200", CALIBRATION_UNSUPPORTED_TEXT, b"/Font << /F1 27 0 R >>")
+
+    def width_font(number, first, last, overrides, descriptor=b""):
+        writer.obj(
+            number,
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
+            b" /Encoding /WinAnsiEncoding /FirstChar %d /LastChar %d"
+            b" /Widths %s %s >>"
+            % (first, last, calibration_widths(first, last, overrides), descriptor),
+        )
+
+    width_font(24, 32, 73, {32: 250, 73: 333})
+    width_font(25, 32, 73, {32: 750, 73: 333})
+    width_font(
+        26,
+        65,
+        65,
+        {},
+        b" /FontDescriptor << /Type /FontDescriptor /FontName /Helvetica"
+        b" /Flags 32 /MissingWidth 900 /FontBBox [0 0 1000 1000]"
+        b" /ItalicAngle 0 /Ascent 700 /Descent -200 /CapHeight 700 /StemV 80 >>",
+    )
+    writer.obj(
+        27,
+        b"<< /Type /Font /Subtype /Type0 /BaseFont /NotoSansCJK"
+        b" /Encoding /Identity-H /DescendantFonts [<< /Type /Font"
+        b" /Subtype /CIDFontType2 /BaseFont /NotoSansCJK"
+        b" /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity)"
+        b" /Supplement 0 >> /DW 1000 >>] >>",
+    )
 
     offsets = writer.offsets
     xref = len(writer.out)

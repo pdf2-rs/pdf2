@@ -4,6 +4,21 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] — 2026-11-14
+
+Text gets the document's own metrics, and fonts that cannot be drawn are said out
+loud instead of being approximated:
+
+- **`/Widths` and `/MissingWidth`** are used for advances, so a base-14 font
+  spaces its text the way the file asks instead of a uniform 0.6 em.
+- **Unsupported font families are reported**: `/Type0` (CID) and `/Type3` are not
+  painted at all, and embedded Type 1 (`/FontFile`) and CFF (`/FontFile3`)
+  programs are painted with the fallback *and* counted, so a page that could not
+  be drawn says so through `Report`.
+- `tests/fixtures/calibration.pdf` gained a `/Widths` page and an unsupported
+  font page, both pinned by probes and goldens; `docs/RENDERING.md` has the
+  support matrix.
+
 ## [1.0.1] — 2026-11-14
 
 Renderer bug fixes, found by the new calibration fixture rather than by the
