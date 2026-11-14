@@ -141,3 +141,43 @@ jobs:
           else
             npm publish --access public --provenance
           fi
+
+  # The npm package has its own tag namespace, so it gets its own release: the
+  # title says npm, and the notes say which crate version the wasm was built
+  # from, which is the number that can differ.
+  release:
+    name: GitHub release
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create or update the release for this tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#npm-v}"
+          crate="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/pdf2-wasm/Cargo.toml | head -1)"
+          body="$(mktemp)"
+          {
+            printf 'The npm package `pdf2-wasm` %s is published, built from the\n' "$version"
+            printf '`pdf2-wasm` crate %s at this commit.\n\n' "$crate"
+            printf -- '- npm: `npm install pdf2-wasm@%s`\n' "$version"
+            printf -- '- package: https://www.npmjs.com/package/pdf2-wasm/v/%s\n' "$version"
+            printf -- '- demo: https://pdf2-rs.github.io/pdf2/\n'
+            printf -- '- provenance: signed by GitHub Actions, visible on the package page\n'
+          } > "$body"
+          args=(--title "pdf2-wasm $version (npm)" --notes-file "$body")
+          case "$version" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" "${args[@]}"
+          else
+            gh release create "$tag" --verify-tag "${args[@]}"
+          fi

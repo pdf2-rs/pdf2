@@ -114,6 +114,12 @@ release may publish either, both, or only one.
 `.github/workflows/publish.yml` using **trusted publishing** (OIDC, no stored
 token), in dependency order: `pdf2` → `pdf2-render` → `pdf2-cli` / `pdf2-wasm`.
 
+Every tag also gets a GitHub release, created by the workflow that published it
+(`GitHub release` job): the title names the crate and version, the notes are the
+`CHANGELOG.md` section plus the registry link, and a `-rc`/`-alpha` version is
+marked pre-release. `npm-v*` releases are titled `pdf2-wasm <version> (npm)` and
+say which crate version the wasm was built from.
+
 | Tag | Publishes | Version source |
 | --- | --- | --- |
 | `pdf2-v1.2.3` | `pdf2` | root `Cargo.toml` |
@@ -168,7 +174,11 @@ generated automatically. Tags are **`npm-v<version>`**, where the version is
 6. Verify from the registries, not from the logs: `cargo search`/the crates.io
    API, `npm view <package> version`, `curl -I` the docs.rs page, and the Pages
    demo.
-7. GitHub releases for the tags, with the CHANGELOG text.
+7. GitHub releases appear from the tag runs themselves. If a tag predates that
+   automation, backfill it with `gh release create <tag> --title "<crate>
+   <version>" --notes-file <file>` (or `gh release edit` to fix one), and check
+   `gh release list` afterwards: a tag without a release is a missing record of
+   something that already shipped.
 
 `docs/RELEASING.md` has the exact commands, the owner-only steps (trusted
 publisher configuration, npm account) and the traps hit so far.
