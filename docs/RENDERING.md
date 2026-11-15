@@ -119,7 +119,6 @@ using them is reported rather than silently guessed:
   `gs` operator is counted as unsupported;
 - text render modes other than fill (`Tr`), Type 3 fonts, and `TJ` kerning
   beyond the per-element adjustment;
-- `/CropBox` as the visible page box, and `/UserUnit`;
 - images above 8 bits per component, `/Mask`, and `/Interpolate` as anything
   other than bilinear sampling.
 

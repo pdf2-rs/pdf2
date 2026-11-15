@@ -164,6 +164,35 @@ impl Document {
             })
     }
 
+    /// The page's effective `/UserUnit`, defaulting to `1.0` (7.7.3.4).
+    ///
+    /// The attribute is inheritable, so the page dictionary's `/Parent` chain is
+    /// walked; a missing entry, a cycle (bounded at 32 levels) or a
+    /// non-positive value stops the walk at `1.0`.
+    pub fn page_user_unit(&self, page: &Page) -> Result<f64> {
+        let mut current = page.id;
+        for _ in 0..32 {
+            let Some(id) = current else {
+                break;
+            };
+            let Object::Dictionary(dictionary) = self.get_object(id)? else {
+                break;
+            };
+            if let Some(value) = dictionary.get(b"UserUnit") {
+                let value = self.resolve(Some(value))?.and_then(|value| value.as_real());
+                return Ok(match value {
+                    Some(value) if value.is_finite() && value > 0.0 => value,
+                    _ => 1.0,
+                });
+            }
+            current = match dictionary.get(b"Parent") {
+                Some(Object::Reference(parent)) => Some(*parent),
+                _ => None,
+            };
+        }
+        Ok(1.0)
+    }
+
     /// The decoded content of a page, with its streams joined by a newline.
     ///
     /// This is the input the content-stream interpreter takes.

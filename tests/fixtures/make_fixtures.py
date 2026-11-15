@@ -867,6 +867,41 @@ def make_book():
     writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
     write("book.pdf", bytes(writer.out))
 
+
+
+CROPBOX_CONTENT = (
+    b"q 1 0 0 rg 60 70 30 30 re f Q\n"
+    b"q 0 0 1 rg 200 220 30 30 re f Q\n"
+    b"q 0 0.6 0 rg 230 60 40 40 re f Q\n"
+)
+
+
+def make_cropbox():
+    """A page whose visible box and user unit are not the media box's.
+
+    `/MediaBox [0 0 300 200]` with `/CropBox [50 60 250 260]` and `/UserUnit 2`:
+    the raster is the crop box at twice its size (400x400), the origin is the
+    crop box's, and the content outside the crop box is not visible.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200]"
+        b" /CropBox [50 60 250 260] /UserUnit 2 /Contents 4 0 R >>",
+    )
+    writer.stream(4, b"", CROPBOX_CONTENT)
+    offsets = writer.offsets
+    xref = len(writer.out)
+    writer.out += b"xref\n0 %d\n" % (max(offsets) + 1)
+    writer.out += b"0000000000 65535 f \n"
+    for number in range(1, max(offsets) + 1):
+        writer.out += b"%010d 00000 n \n" % offsets[number]
+    writer.out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (max(offsets) + 1)
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
+    write("cropbox.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1078,3 +1113,4 @@ if __name__ == "__main__":
     make_images()
     make_calibration()
     make_book()
+    make_cropbox()

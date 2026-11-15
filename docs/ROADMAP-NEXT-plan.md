@@ -2,39 +2,43 @@
 
 "Done" means the items `docs/ROADMAP-NEXT.md` schedules for `1.2` — 2, 3, 4, 5,
 6, 6b, 7, 2b and 10c (item 1 shipped 2026-11-15) — are finished together with the
-release's own checkable outcomes: `cargo run -q -p xtask -- corpus` prints **21 of
-23 fully readable** and **23 of 23 parsed**, the oracle job exists and fails a page
-outside its tolerance, `docs/RENDERING.md` loses the composite-extraction limit,
+release's own checkable outcomes: `cargo run -q -p xtask -- corpus` prints **at
+least 21 of 23 fully readable** and **23 of 23 parsed** (21 is what the
+milestones reach: five `/ToUnicode` files, `90ms_rksj_h_sample.pdf` through item
+5 and the xref fix — `arial_unicode_en_cidfont.pdf` carries no mapping at all),
+the oracle job exists and fails a page outside its tolerance, `README.md` loses
+the composite-extraction and RC4/AES-128 limits,
 a `/CropBox`/`/UserUnit` fixture passes the oracle, extraction returns reading
 order, and the oracle job records render time against a committed budget. Out of
-scope: everything ranked for `1.3`/`1.4` (image codecs, painting completeness,
-Form XObjects, ICC, editing, annotations, validation), the MSRV move item 9 needs,
-any new dependency without a `no_std` and wasm-size verdict, and rewriting
+scope: everything the ranking leaves for later — `1.3`'s robustness at scale (8),
+image codecs (9) and painting completeness (10, 10b, 10d); `1.4`'s editing (11);
+the unscheduled annotations and validation (12, 13); the MSRV move item 9 needs;
+any new dependency without a `no_std` and wasm-size verdict; and rewriting
 `docs/ROADMAP-NEXT.md` itself — this file plans the work, it does not re-rank it.
 
 ## Research
 
-- The starting point is measured, not assumed: `cargo run -q -p xtask -- corpus` (2026-11-15) reports **23 files: 14 fully readable, 21 rendered**, with exactly three failure classes — 7 × composite (Type 0) fonts, 1 × cross-reference generation, 1 × encryption — so item 2's proof is a single number moving 14 → 21, and items 6 and 3 each own one file.
-- Composite extraction is refused at `src/content.rs:253` and `/ToUnicode` is documented unimplemented at `src/content.rs:12`; `extract_text` returns `Result<String>` (`src/content.rs:343`), with no spans — the API decision `2b` needs comes before its code, and item 2 must not quietly invent one.
+- The starting point is measured, not assumed: `cargo run -q -p xtask -- corpus` (2026-11-15) reports **23 files: 14 fully readable, 21 rendered**, with exactly three failure classes — 7 × composite (Type 0) fonts, 1 × `malformed cross-reference generation` (`ContentStreamCycleType3insideType3.pdf`), 1 × `malformed object number must be positive at offset 0` (`encrypted-attachment.pdf`, whose cause is its `startxref`, not its encryption — finding 4) — so the release's proof is a single number moving 14 → 21, and item 6 owns one file.
+- Composite extraction is refused at `src/content.rs:253` and `/ToUnicode` is documented unimplemented at `src/content.rs:12`; `extract_text` returns `Result<String>` (`src/content.rs:343`), with no spans — the API decision `2b` needs comes before its code, and item 2 must not quietly invent one. One of the seven composite files has no mapping to find: `arial_unicode_en_cidfont.pdf` has no `/ToUnicode`, its `/Encoding` is `/Identity-H` over a `/CIDToGIDMap` stream, and its single embedded TrueType program (decompressed, 2026-11-15) carries neither `cmap` nor `post` — so its text stays reported, and 21 of 23 comes from the five `/ToUnicode` files, `90ms_rksj_h_sample.pdf` (finding 6) and the xref fix.
 - `/ToUnicode` parsing has traps that other projects already paid for: hex strings appear with and without separators (`<0001><0070>` maps nothing in a whitespace tokenizer), `bfrange` increments the last byte of the destination and is *undefined* past `255 - (srcCode2 − srcCode1)`, destinations can be arrays, codes are 1–4 bytes chosen by the codespace, and overlapping ranges can demand millions of entries — <https://github.com/storytold/pdfcraft/pull/495>, <https://github.com/pdf-association/pdf-issues/issues/277> — the parser needs a byte-level lexer, checked arithmetic and hard bounds (≤ 1 Mi mappings, ≤ 64 Ki codespace ranges) from its first commit, not as hardening later.
-- Encryption is revision 6 only: `src/crypto.rs:64` rejects everything else, and `README.md:48` says RC4/AES-128 are refused by design — item 3 adds a second security handler (revisions 2–4, RC4 and AES-128) rather than enabling a flag, and needs its own generated fixture because no corpus file is readable today.
+- Encryption is revision 6 only: `src/crypto.rs:62` rejects any other `/R`, and `README.md:48` says RC4/AES-128 are refused by design — item 3 adds a second security handler (revisions 2–4, RC4 and AES-128), not a flag. The corpus file is not that case: `encrypted-attachment.pdf` is `/V 5 /R 6` with `/StmF`/`/StrF` `/Identity` and a `startxref` of 2242 against an `xref` keyword at 2223; with the offset repaired it fails on `an Identity crypt filter is not an encrypted document` (`src/crypto.rs:345`), which revisions 2–4 do not touch.
 - CFF/Type 1 is buildable inside the current MSRV: `skrifa` 0.50.0 and `read-fonts` 0.47.0 declare `rust-version = "1.85"`, are `MIT OR Apache-2.0`, expose `std` as an opt-out with `libm`, and skrifa carries a `type1` feature — crates.io API, 2026-11-15 — so item 4 does not inherit the `1.92` problem that blocks item 9's decoders.
 - The CMap data item has a licence prerequisite before any code: Adobe's CMap resources are BSD-3-Clause and `deny.toml:13-19` allows no BSD entry, so item 5 starts with the allow-list change and the notice (or a home outside the crate).
 - `/CropBox` is parsed and exposed (`src/page.rs:97`) but the renderer reads `/MediaBox` only (`crates/pdf2-render/src/walk.rs:183`), and `/UserUnit` appears nowhere in the page model (`grep -c user_unit src/page.rs` is 0) — item 6b touches the model and the renderer, and both halves need an oracle case to be provable.
 - The 1.x xref edge is a single file: `corpus/tier-a/ContentStreamCycleType3insideType3.pdf` fails with `malformed cross-reference generation at offset 2111` — item 6 needs one fixture reproducing the generation pattern, not a general xref rewrite.
 - The O(n²) object-stream trap the earlier research feared does **not** apply here: `compressed_object` calls `load_object_stream`, which early-returns once the stream is indexed (`src/document.rs:370-372`) — item 8 is about measuring scale under a budget, not repairing a known quadratic, and it is a `1.3` item either way.
 - The oracle tool measures distance only — no `Instant`, no `Duration` anywhere in `crates/pdf2-oracle/src/main.rs` — so item 10c is a measurement and a committed budget added to the existing job, not a new tool.
-- No Tier B job exists in `.github/workflows` (no `pdf.js`/`veraPDF` reference outside the corpus docs), so item 7 is a scheduled workflow over the pinned trees already identified (pdf.js `d60bc7426aa0`, Apache-2.0; veraPDF, CC BY 4.0), not new code.
+- No Tier B job exists in `.github/workflows` (no `pdf.js`/`veraPDF` step in any workflow; the pins and licences live in `docs/FEATURES.md` §Outside facts), so item 7 is a scheduled workflow over trees already identified (pdf.js `d60bc7426aa0`, Apache-2.0; veraPDF, CC BY 4.0), not new code.
 - The ledger is now a gate: `cargo run -q -p xtask -- ledger` runs inside `cargo gate` and in CI, and it fails when a roadmap rank has no `docs/FEATURES.md` row — so every item finished here must update its row in the same change, and no round may add a rank without one.
-- `cargo gate` is green on `main` today (run in this planning turn: 291-tests-and-then-some, fmt, clippy, docs, ledger) and is the check every round ends on.
+- `cargo gate` is green on `main` today (run in this planning turn: 327 tests, fmt, clippy, docs, ledger) and is the check every round ends on.
 
 ## Milestones
 
 - [x] M1: the `1.2` starting point is recorded from a run, not from prose — 23 corpus files, 21 render, 14 fully readable, three failure classes (`cargo run -q -p xtask -- corpus`, 2026-11-15).
-- [ ] M2: composite-font extraction works on the corpus — the seven files become fully readable, and the corpus prints 21/23 readable and 23/23 parsed.
-- [ ] M3: a generated fixture with bfchar, bfrange and an array destination extracts known text, its CMap has a codespace, and a malformed CMap is an error rather than a panic or a hang.
-- [ ] M4: encryption revisions 2–4 are read — `encrypted-attachment.pdf` opens, and a generated revision-4 fixture (RC4 and AES-128) decrypts the same strings as its plaintext twin.
-- [ ] M5: CFF and Type 1 programs render — the corpus CFF files stop reporting `font:FontFile*`, and their pages pass the oracle check.
+- [ ] M2: composite-font extraction works on the five corpus files that carry `/ToUnicode` — each returns its known text and the readable count rises by five from the 15 the xref fix (M8) leaves, so 20 of 23, because `ContentStreamCycleType3insideType3.pdf` already passes `check` and `text` once its generation entry is accepted; `arial_unicode_en_cidfont.pdf` has no `/ToUnicode` and no `cmap` in its program (finding 2), so it stays reported, and `90ms_rksj_h_sample.pdf` (needs the `/90ms-RKSJ-H` data) follows in M6 for 21.
+- [ ] M3: a generated fixture with bfchar, bfrange and an array destination parses to a known mapping, its CMap has a codespace, and a malformed CMap is an error rather than a panic or a hang — the same page extracts that text once Q5 wires the parser into `text()`.
+- [ ] M4: encryption revisions 2–4 are read — a generated revision-4 fixture (RC4 and AES-128) decrypts the same strings as its plaintext twin — and `encrypted-attachment.pdf`, the last file that fails to parse, opens once its actual blockers, the bad `startxref` and the `/Identity` crypt filters, are accepted, so 23 of 23 parse.
+- [ ] M5: CFF and Type 1 programs render — both corpus CFF pages (`cid_cff.pdf`, `Embedded_font.pdf`) stop reporting `font:CIDFontType0` and draw their outlines; their oracle cases wait for operators items 10 and 10b own (`Tr` on `Embedded_font.pdf`; `cs`/`scn`/`gs`/`BDC` on `cid_cff.pdf`), out of scope here.
 - [ ] M6: CJK text extracts from `90ms_rksj_h_sample.pdf`; the CMap data is licensed (allow-list entry and notice) and its size is recorded against the wasm budget.
 - [ ] M7: `/CropBox` and `/UserUnit` are honoured — a fixture with both renders as the oracle renders it.
 - [ ] M8: the 1.x cross-reference generation edge parses, and a fixture with the same generation pattern keeps it parsed.
@@ -43,21 +47,36 @@ any new dependency without a `no_std` and wasm-size verdict, and rewriting
 
 ## Round plan
 
-- [ ] Q1 -- [Q1, do now] Item 6b: `/CropBox` and `/UserUnit` in the page model and the renderer (0.5 rounds), with an oracle case that proves both.
-- [ ] Q2 -- [Q1, do now] Item 6: the 1.x cross-reference generation edge, with a fixture that reproduces it (1 round).
-- [ ] Q3 -- [Q2, split] Item 2, chunk 1: the `/ToUnicode` CMap parser, standing alone (finding 3).
+- [ ] Q1 -- [Q1, do now] Item 6b: `/CropBox` and `/UserUnit` in the page model and the renderer, plus the fixture and its line in `corpus/oracle-cases.txt` (one round; `pdf2-oracle` derives the allowed spread from the oracles it finds on every run, so no tolerance row is written by hand — `brew install poppler mupdf ghostscript` confirms the case locally, the `oracle` job otherwise).
+- [ ] Q2 -- [Q1, do now] Item 6: the 1.x cross-reference generation edge, with the fixture that keeps it parsed (1 round).
+  - [ ] the `malformed cross-reference generation` edge (`ContentStreamCycleType3insideType3.pdf`), and a fixture with the same generation pattern
+- [ ] Q3 -- [Q1, do now] Item 2b: write the API decision down before item 2's code — text only, or spans with boxes — and prove reading order with correct spaces on one corpus page (finding 2).
+  - [ ] the API decision and its consequence for `extract_text`'s `Result<String>`, recorded before Q4/Q5 touch extraction
+  - [ ] one corpus page extracts in reading order with correct spaces (M9) — a page that extracts today already, so nothing later is needed for it
+- [ ] Q4 -- [Q2, split] Item 2, chunk 1: the `/ToUnicode` CMap parser, standing alone (finding 3).
   - [ ] a byte-level CMap lexer (hex strings with and without separators, names, comments) with the two hard bounds
   - [ ] bfchar, bfrange, array destinations and codespace-driven code width; malformed input is an `Err`
   - [ ] unit tests plus the generated fixture page (M3) — no wiring into `text()` yet
-- [ ] Q4 -- [Q2, split] Item 2, chunk 2: wire it in and move the number (findings 1–2).
+- [ ] Q5 -- [Q2, split] Item 2, chunk 2: wire it in and move the number (findings 1–2).
   - [ ] two-byte code splitting for Identity-H, `/DescendantFonts`, CID widths
-  - [ ] `cargo xtask corpus` at 21 readable / 23 parsed; `docs/CORPUS.md`, the `docs/RENDERING.md` limit and the CHANGELOG updated
-- [ ] Q5 -- [Q2, split] Item 3: revisions 2–4 (RC4, AES-128) and the revision-4 fixture (finding 4).
-- [ ] Q6 -- [Q2, split] Item 4: CFF/Type 1 through `skrifa`, after the dependency's `no_std` and size verdict (finding 5).
-- [ ] Q7 -- [Q2, split] Item 5: the allow-list and notice first, then the CMap data and CJK extraction (finding 6).
-- [ ] Q8 -- [Q2, split] Item 2b: the API decision, then reading order and spaces on a corpus page (finding 2).
+  - [ ] the M3 fixture extracts its known text through `text()`
+  - [ ] `cargo run -q -p xtask -- corpus` readable up by exactly five — Q2 leaves 15, not 14, since the generation-repaired `ContentStreamCycleType3insideType3.pdf` exits 0 for both `check` and `text` — so 20 of 23, the five `/ToUnicode` files correct; `docs/CORPUS.md`, the README limit and the CHANGELOG updated
+  - [ ] `docs/CORPUS.md` names the two composite files still short of correct text — `arial_unicode_en_cidfont.pdf`, whose program has no `cmap` or `post` and therefore no mapping to find (finding 2), and `90ms_rksj_h_sample.pdf`, which needs the `/90ms-RKSJ-H` data (Q8)
+- [ ] Q6 -- [Q2, split] Item 3: revisions 2–4 and the corpus file's own blockers (finding 4).
+  - [ ] RC4 and AES-128 revisions 2–4, with a generated revision-4 fixture that round-trips its plaintext twin
+  - [ ] a `startxref` that lands inside the table is repaired, proven by a fixture — `encrypted-attachment.pdf` cannot be read until then (it is item 3's own blocker, not item 6's)
+  - [ ] `/StmF`/`/StrF` `/Identity`, the last blocker for `encrypted-attachment.pdf`, so the corpus file finally reads and `cargo run -q -p xtask -- corpus` reports 23 of 23 parsed
+  - [ ] `README.md`'s encryption claims corrected — the refusal at `:48` and the out-of-scope list at `:83-85` name the revisions now read — with the CHANGELOG entry
+- [ ] Q7 -- [Q2, split] Item 4: CFF/Type 1 through `skrifa`, after the dependency's `no_std` and size verdict (finding 5).
+  - [ ] the verdict first: `skrifa`'s `no_std` build, wasm size and licence recorded
+  - [ ] CFF/Type 1 programs render, so `cid_cff.pdf` and `Embedded_font.pdf` stop reporting `font:CIDFontType0` and render their outlines (M5)
+- [ ] Q8 -- [Q2, split] Item 5: the allow-list and notice first, then the CMap data and CJK extraction (finding 6).
+  - [ ] `deny.toml` allows BSD-3-Clause with Adobe's notice recorded, and `cargo gate` is green before any data arrives
+  - [ ] the CMap data ships with its wasm-budget size recorded, and `90ms_rksj_h_sample.pdf` extracts its text through the Q4/Q5 extraction path (M6)
 - [ ] Q9 -- [Q3, batch] Item 7: the scheduled Tier B corpus job and its histogram (finding 11).
 - [ ] Q10 -- [Q3, batch] Item 10c: render time in the oracle job, plus the committed budget (finding 10).
+  - [ ] the oracle job records per-page render time, so a budget has a number to be set from
+  - [ ] the budget is committed and the job fails above it
 
 ## Checks
 

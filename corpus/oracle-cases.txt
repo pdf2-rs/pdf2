@@ -14,3 +14,4 @@ tests/fixtures/calibration.pdf 5
 tests/fixtures/calibration.pdf 9
 tests/fixtures/calibration.pdf 10
 tests/fixtures/calibration.pdf 11
+tests/fixtures/cropbox.pdf 1
