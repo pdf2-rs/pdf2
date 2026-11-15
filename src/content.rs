@@ -12,6 +12,12 @@
 //! `/ToUnicode` CMaps and `/Widths`-based gap detection are not implemented, so
 //! line breaks come from text-positioning operators and spaces from the text
 //! itself or from large `TJ` adjustments.
+//!
+//! Lines are ordered geometrically — descending `y`, then ascending `x` — rather
+//! than by the order the content stream paints them, because a writer is free to
+//! paint a page bottom-up or in stripes; `ShowText-ShadingPattern.pdf` in the
+//! corpus paints 2, 1, 4, 3 and reads 1, 2, 3, 4. The decision and its limits are
+//! in `docs/adr/0002-text-extraction-shape.md`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -32,6 +38,15 @@ const WORD_GAP: f64 = 200.0;
 
 /// Movement in text space smaller than this is the same line.
 const LINE_TOLERANCE: f64 = 0.01;
+
+/// A run of text at one position, before the lines are put in reading order.
+#[derive(Debug, Default)]
+struct Line {
+    /// Text-space position of the line's first character.
+    x: f64,
+    y: f64,
+    text: String,
+}
 
 /// A simple font: one byte per code, resolved to characters.
 #[derive(Debug, Clone)]
@@ -56,9 +71,8 @@ struct TextInterpreter<'a> {
     /// Current text line origin, in text space.
     line_x: f64,
     line_y: f64,
-    /// Y of the last emitted text, for line-break detection.
-    last_y: Option<f64>,
-    output: String,
+    /// Lines in the order they were painted; sorted for the result.
+    lines: Vec<Line>,
 }
 
 impl<'a> TextInterpreter<'a> {
@@ -71,8 +85,7 @@ impl<'a> TextInterpreter<'a> {
             leading: 0.0,
             line_x: 0.0,
             line_y: 0.0,
-            last_y: None,
-            output: String::new(),
+            lines: Vec::new(),
         }
     }
 
@@ -96,7 +109,54 @@ impl<'a> TextInterpreter<'a> {
                 }
             }
         }
-        Ok(self.output)
+        Ok(self.reading_order())
+    }
+
+    /// The painted lines, ordered for a reader rather than for the painter.
+    ///
+    /// Descending `y` is top to bottom in default user space; `x` breaks ties so
+    /// that a line's fragments stay left to right. A page with several columns
+    /// sorts left-to-right within a band — an approximation this crate states in
+    /// the ADR rather than guesses at with a layout engine.
+    fn reading_order(mut self) -> String {
+        self.lines.retain(|line| !line.text.is_empty());
+        self.lines.sort_by(|left, right| {
+            right
+                .y
+                .partial_cmp(&left.y)
+                .unwrap_or(core::cmp::Ordering::Equal)
+                .then(
+                    left.x
+                        .partial_cmp(&right.x)
+                        .unwrap_or(core::cmp::Ordering::Equal),
+                )
+        });
+        let mut output = String::new();
+        for line in &self.lines {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            output.push_str(&line.text);
+        }
+        output
+    }
+
+    /// The line at the current text position, created on first use.
+    fn line(&mut self) -> &mut Line {
+        if let Some(index) = self
+            .lines
+            .iter()
+            .position(|line| difference(line.y, self.line_y) <= LINE_TOLERANCE)
+        {
+            return &mut self.lines[index];
+        }
+        self.lines.push(Line {
+            x: self.line_x,
+            y: self.line_y,
+            text: String::new(),
+        });
+        #[allow(clippy::unwrap_used)]
+        self.lines.last_mut().unwrap()
     }
 
     fn execute(
@@ -186,29 +246,28 @@ impl<'a> TextInterpreter<'a> {
     fn adjust(&mut self, adjustment: f64) {
         // Positive values move the pen left, so a wide negative adjustment is
         // how writers usually encode a space inside a `TJ` array.
-        if -adjustment >= WORD_GAP && !self.output.ends_with(' ') {
-            self.output.push(' ');
+        if -adjustment < WORD_GAP {
+            return;
+        }
+        let line = self.line();
+        if !line.text.is_empty() && !line.text.ends_with(' ') {
+            line.text.push(' ');
         }
     }
 
     fn show(&mut self, bytes: &[u8]) {
-        if self
-            .last_y
-            .is_none_or(|y| difference(y, self.line_y) > LINE_TOLERANCE)
-        {
-            if !self.output.is_empty() && !self.output.ends_with('\n') {
-                self.output.push('\n');
-            }
-            self.last_y = Some(self.line_y);
-        }
+        // Collect first so the borrow of `font` ends before `line()` is called.
         let Some(font) = &self.font else {
             return;
         };
+        let mut run = String::with_capacity(bytes.len());
         for &code in bytes {
             if let Some(character) = font.character(code) {
-                self.output.push(character);
+                run.push(character);
             }
         }
+        let line = self.line();
+        line.text.push_str(&run);
     }
 
     fn load_font(&mut self, name: &[u8]) -> Result<Font> {

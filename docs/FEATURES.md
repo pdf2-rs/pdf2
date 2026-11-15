@@ -117,7 +117,7 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–1
 | Text render modes (`Tr`) other than fill | scheduled 10 | Folded into item 10 (painting completeness) when the ledger's first pass found it unowned. Owner: item 10 |
 | Type 3 fonts | scheduled 10 | Same: measured in the corpus (`Type3WordSpacing.pdf` renders with skips). Owner: item 10 |
 | Vertical writing mode | unplanned | No corpus sample; rare outside CJK vertical documents |
-| Extraction quality: reading order, spaces from advances, ligatures, spans/positions | scheduled 2b | Item 2 fixes *mapping*; this is the class of complaint behind most of `pdf-extract`'s 78 issues. Needs an API decision (text vs spans) Owner: item 2b (an API decision comes first) |
+| Extraction quality: reading order, spaces from advances, ligatures, spans/positions | shipped (partial) | **Reading order shipped** (geometric line order, `src/content.rs`; `reading-order.pdf`, `ShowText-ShadingPattern.pdf`); **spans refused for 1.2** and the rest scheduled: the decision and its reasons are `docs/adr/0002-text-extraction-shape.md`, advances arrive with item 2 (composite `/Widths`). Owner: item 2b (partial 2026-11-15) | Needs an API decision (text vs spans) Owner: item 2b (an API decision comes first) |
 | Font subsetting (write) | not applicable | The writer does not embed fonts; callers supply programs |
 
 ## Painting and page geometry

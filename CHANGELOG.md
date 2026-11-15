@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **Extracted text is in reading order** (`9.4`): the interpreter accumulates
+  positioned lines and sorts them (descending `y`, then `x`) before joining, so a
+  page painted out of order reads top to bottom. The corpus page
+  `ShowText-ShadingPattern.pdf`, painted 2, 1, 4, 3, now extracts 1, 2, 3, 4. The
+  public API is unchanged — text only, no spans — and
+  `docs/adr/0002-text-extraction-shape.md` records that decision, its limits and
+  what would revisit it.
 - **A free entry's generation above 16 bits is clamped** (`7.5.8`): the brain of
   the xref table's free-list head is never used for a lookup, and some writers
   say 65536 where the standard says 65535; the file now reads instead of failing
@@ -60,6 +67,13 @@ RC4/AES-128 revisions are not implemented).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **Extracted text is in reading order** (`9.4`): the interpreter accumulates
+  positioned lines and sorts them (descending `y`, then `x`) before joining, so a
+  page painted out of order reads top to bottom. The corpus page
+  `ShowText-ShadingPattern.pdf`, painted 2, 1, 4, 3, now extracts 1, 2, 3, 4. The
+  public API is unchanged — text only, no spans — and
+  `docs/adr/0002-text-extraction-shape.md` records that decision, its limits and
+  what would revisit it.
 - **A free entry's generation above 16 bits is clamped** (`7.5.8`): the brain of
   the xref table's free-list head is never used for a lookup, and some writers
   say 65536 where the standard says 65535; the file now reads instead of failing
