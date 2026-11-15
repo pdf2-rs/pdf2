@@ -288,6 +288,10 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
                 options.budget = Some(PathBuf::from(value(index)?));
                 index += 2;
             }
+            "--summary" => {
+                options.summary = Some(PathBuf::from(value(index)?));
+                index += 2;
+            }
             "--help" | "-h" => {
                 println!("{USAGE}");
                 std::process::exit(0);
