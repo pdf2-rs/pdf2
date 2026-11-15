@@ -48,17 +48,49 @@ Working today:
   the `/Perms` tamper check is verified. Deprecated revisions (RC4, AES-128,
   `/R 5`) are refused with an error rather than half-implemented.
 
+- PDF 1.x as well as 2.0: the header gate accepts both (`%PDF-1.4`–`%PDF-2.x`),
+  and a committed corpus of 23 real files measures what that means:
+  **21 parse and render, 14 are fully readable** (`cargo xtask corpus`,
+  [`docs/CORPUS.md`](docs/CORPUS.md)).
+
+## Compared with
+
+The honest version, including the column where we lose. Detail, sources and
+check dates: [`docs/COMPETITORS.md`](docs/COMPETITORS.md); what each gap would
+cost: [`docs/GAPS.md`](docs/GAPS.md); how claims are checked:
+[`docs/PROOF.md`](docs/PROOF.md).
+
+| | this crate | [hayro](https://github.com/LaurenzV/hayro) | [pdfium-render](https://github.com/ajrcarey/pdfium-render) | [lopdf](https://github.com/J-F-Liu/lopdf) |
+| --- | --- | --- | --- | --- |
+| Shape | one crate and one model: read, extract, render in the sibling crate, write new | read + render, read-only by design | C library wrapped in Rust: read, edit, render, extract | edit and rewrite; no rendering or extraction |
+| PDF 1.x and 2.0 | 1.x and 2.x | 1.x–2.0 in practice | 1.x–2.0 | 1.x–2.0 |
+| Text extraction | simple fonts today; composite fonts are the next release's theme | not offered | yes, through pdfium | not offered |
+| Rendering | paths, curves, fills, strokes, clips, transforms, text, images; **no image codecs, shadings, transparency** | the strongest pure-Rust renderer: image codecs, shadings, transparency, 1 600+ visual tests | the strongest overall, being Chromium's engine | none |
+| Editing an opened file | no: `save()` builds new documents only | no, by design | yes | yes |
+| No C, no `unsafe`, `no_std`, wasm | yes, with size budgets in CI | no | no | no |
+| Licence | Unlicense OR MIT | Apache-2.0 | MIT/Apache-2.0 | MIT |
+| Adoption (2026-11-14) | 1 664 downloads | 5 384 557 | 3 954 648 | 30 289 120 |
+
+If you need the best possible rendering today, use hayro or pdfium. If you need
+to edit a document, use lopdf. If you need the same model to read a file, say
+what it contains, draw it and write it again — in one dependency, without C, and
+in places a C library cannot go — that is the gap this crate is trying to fill,
+and [`docs/ROADMAP-NEXT.md`](docs/ROADMAP-NEXT.md) says how it closes.
+
 ## Limits
 
-Deliberately out of scope: rendering, PDF/A conformance, RC4 and AES-128, the
-`Info` dictionary, form filling, JavaScript, XFA and image codecs (DCT, JPX,
-CCITT, JBIG2). A file that needs one of these is reported as an error rather
-than silently misread.
+Deliberately out of scope for the `pdf2` library: rasterising (that is
+`crates/pdf2-render`, which shares the same model), PDF/A conformance, RC4 and
+AES-128, the `Info` dictionary, form filling, JavaScript, XFA and image codecs
+(DCT, JPX, CCITT, JBIG2). A file that needs one of these is reported as an error
+rather than silently misread, and [`docs/CORPUS.md`](docs/CORPUS.md) counts how
+often that happens on real files.
 
 Known limits inside the supported surface:
 
 - Text extraction: composite (Type0) fonts and `/ToUnicode` CMaps are reported
-  as unsupported; the upper half of `MacRomanEncoding` is not decoded; glyph
+  as unsupported (the renderer draws them; closing that split is the next
+  release's theme, see [`docs/ROADMAP-NEXT.md`](docs/ROADMAP-NEXT.md)); the upper half of `MacRomanEncoding` is not decoded; glyph
   names outside the built-in table are skipped rather than guessed. Spaces are
   recognised from the text itself and from wide `TJ` adjustments, not from glyph
   advance widths.
