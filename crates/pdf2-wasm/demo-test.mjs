@@ -131,6 +131,14 @@ function connect(url) {
     socket.addEventListener('open', done, { once: true });
     socket.addEventListener('error', fail, { once: true });
   });
+  // A browser that dies mid-run closes the socket without answering: reject
+  // everything in flight instead of waiting forever.
+  socket.addEventListener('close', () => {
+    for (const { reject } of pending.values()) {
+      reject(new Error('the DevTools connection closed'));
+    }
+    pending.clear();
+  });
   socket.addEventListener('message', (event) => {
     const message = JSON.parse(event.data);
     if (message.id && pending.has(message.id)) {
@@ -198,6 +206,12 @@ async function main() {
     origin = `http://127.0.0.1:${server.address().port}`;
   }
   const { chrome, profile, browserUrl } = await launchChrome();
+  // A hard stop: a hung browser must fail the job in minutes, not hours.
+  const watchdog = setTimeout(() => {
+    console.error('demo test failed: no progress within 180 s; killing the browser');
+    chrome.kill('SIGKILL');
+    process.exit(1);
+  }, 180_000);
   const cdp = connect(browserUrl);
 
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
@@ -607,6 +621,7 @@ async function main() {
     }
     check(errors.length === 0, 'the page logs no errors', errors.slice(0, 3).join(' | '));
   } finally {
+    clearTimeout(watchdog);
     cdp.close();
     chrome.kill('SIGKILL');
     server?.close();
