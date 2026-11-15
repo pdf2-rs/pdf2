@@ -17,6 +17,14 @@ use std::process::{Command, ExitCode};
 const GATE_STEPS: &[&str] = &["format", "clippy", "test", "features", "docs", "ledger"];
 
 fn main() -> ExitCode {
+    // Every chore names paths relative to the workspace root (`docs/…`,
+    // `corpus/…`, `crates/…`), and `cargo run` keeps the caller's directory, so
+    // a gate run from a subdirectory used to fail on a missing file. Resolve the
+    // root from this crate's manifest and work from there.
+    if let Err(error) = enter_workspace_root() {
+        eprintln!("error: {error}");
+        return ExitCode::from(1);
+    }
     let mut args = std::env::args().skip(1).collect::<Vec<_>>();
     let full = args.iter().any(|arg| arg == "--full");
     args.retain(|arg| arg != "--full");
@@ -74,6 +82,16 @@ Usage:
   cargo xtask bless     re-render the committed golden PNGs
 
 Exit codes: 0 all good, 1 a step failed.";
+
+/// Change into the workspace root, where every chore's paths are relative.
+fn enter_workspace_root() -> Result<(), String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root
+        .canonicalize()
+        .map_err(|error| format!("workspace root {}: {error}", root.display()))?;
+    std::env::set_current_dir(&root)
+        .map_err(|error| format!("changing to {}: {error}", root.display()))
+}
 
 fn gate(full: bool) -> Result<(), String> {
     println!(
