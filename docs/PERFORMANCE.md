@@ -86,6 +86,28 @@ What the numbers say:
 - Per-page allocations are flat at ~92 allocations per generated page, which is
   the number to watch when touching the object model.
 
+## Render time
+
+The oracle job times each case's render and compares it with
+`corpus/render-budget.tsv`; a page over its budget fails the job with `SLOW`,
+the same way a page outside its pixel tolerance fails with `OVER`. The timed
+region is the render alone — parsing is what the benchmark suite measures — and
+the number is printed beside the verdict so a failure says how far over it went.
+
+The committed budgets were set from the first measured run (2026-11-15,
+`ubuntu-latest`, release build, 144 dpi) at **twice** the measured time, or 25 ms
+where the page renders in a couple of milliseconds and runner noise dominates:
+
+| Case | Measured | Budget |
+| --- | --- | --- |
+| `book#1` (embedded TrueType, prose page) | 436.8 ms | 900 ms |
+| `calibration#3` (Bézier circle, dashes) | 8.8 ms | 25 ms |
+| `calibration#1`, `#2` (colour, caps and joins) | 1.2–2.0 ms | 25 ms |
+| `calibration#4`, `#5`, `#9`–`#11` | 0.7–1.1 ms | 25 ms |
+
+`book#1` dominates because it parses and rasterises an embedded font's outlines
+for a page of text; that is the case a regression would show up in first.
+
 ## Wasm sizes
 
 The smoke crate measures two wasm artifacts and fails when they grow past the

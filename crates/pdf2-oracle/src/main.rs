@@ -82,7 +82,10 @@ fn run() -> Result<(), String> {
     let budget = match &options.budget {
         Some(path) if path.exists() => read_budget(path)?,
         Some(path) => {
-            eprintln!("warning: {} not found; timing is measured but not gated", path.display());
+            eprintln!(
+                "warning: {} not found; timing is measured but not gated",
+                path.display()
+            );
             std::collections::BTreeMap::new()
         }
         None => std::collections::BTreeMap::new(),
@@ -321,7 +324,8 @@ Options:
 
 /// The committed per-page render budgets: `case<TAB>milliseconds`.
 fn read_budget(path: &Path) -> Result<std::collections::BTreeMap<String, f64>, String> {
-    let text = std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let mut budget = std::collections::BTreeMap::new();
     for line in text.lines() {
         let line = line.trim();
