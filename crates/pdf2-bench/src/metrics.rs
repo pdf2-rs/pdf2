@@ -77,7 +77,8 @@ static NOTE_PRINTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 fn unsupported_pages(group: &Group) -> Result<usize, String> {
     let mut skipped = 0;
     for file in &group.files {
-        let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD).map_err(|error| error.to_string())?;
+        let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD)
+            .map_err(|error| error.to_string())?;
         let pages = document.pages().map_err(|error| error.to_string())?;
         for page in &pages {
             match document.extract_text(page) {
@@ -103,7 +104,8 @@ fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String>
     let (pages, allocations, alloc_bytes) = allocation_pass(group)?;
     let read = median_timing(runs, || {
         for file in &group.files {
-            let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD).map_err(|error| error.to_string())?;
+            let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD)
+                .map_err(|error| error.to_string())?;
             let pages = document.pages().map_err(|error| error.to_string())?;
             for page in &pages {
                 document
@@ -121,7 +123,8 @@ fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String>
     })?;
     let walk = median_timing(runs, || {
         for file in &group.files {
-            let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD).map_err(|error| error.to_string())?;
+            let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD)
+                .map_err(|error| error.to_string())?;
             let pages = document.pages().map_err(|error| error.to_string())?;
             for page in &pages {
                 document
@@ -133,7 +136,8 @@ fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String>
     })?;
     let extraction = median_timing(runs, || {
         for file in &group.files {
-            let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD).map_err(|error| error.to_string())?;
+            let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD)
+                .map_err(|error| error.to_string())?;
             let pages = document.pages().map_err(|error| error.to_string())?;
             for page in &pages {
                 if let Err(error) = document.extract_text(page) {
@@ -161,7 +165,8 @@ fn allocation_pass(group: &Group) -> Result<(u64, u64, u64), String> {
     alloc::reset();
     let mut pages = 0_u64;
     for file in &group.files {
-        let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD).map_err(|error| error.to_string())?;
+        let document = Document::open_with_password(file.clone(), FIXTURE_PASSWORD)
+            .map_err(|error| error.to_string())?;
         let page_list = document.pages().map_err(|error| error.to_string())?;
         pages += page_list.len() as u64;
         for page in &page_list {
