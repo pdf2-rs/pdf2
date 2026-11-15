@@ -78,6 +78,8 @@ any new dependency without a `no_std` and wasm-size verdict; and rewriting
   - [x] the oracle job records per-page render time, so a budget has a number to be set from — `crates/pdf2-oracle` times the render alone, prints `ms` beside the verdict, and writes it into the summary CSV; a missing budget file warns rather than fails so a new machine can produce the number.
   - [x] the budget is committed and the job fails above it — `corpus/render-budget.tsv` (twice the measured time, 25 ms floor; measured 2026-11-15 on `ubuntu-latest`: `book#1` 436.8 ms, `calibration#3` 8.8 ms, the rest around a millisecond), the `oracle` job and `ci.yml` pass `--budget`, a page over it fails with `SLOW`, and `docs/PERFORMANCE.md` §Render time records the numbers and the rule for raising them.
 
+- [x] Release: ship it — `pdf2` **1.2.0**, `pdf2-render` **1.2.0**, `pdf2-cli` **1.2.0**, `pdf2-wasm` **1.1.0** (crate) and **1.1.0** (npm), each requiring `pdf2` 1.2.0; one tag per push (`pdf2-v1.2.0`, `render-v1.2.0`, `cli-v1.2.0`, `wasm-v1.1.0`, `npm-v1.1.0`). Verified from the artefacts, not the logs: crates.io reports `max_version` 1.2.0 for all four, `npm view pdf2-wasm version` is 1.1.0, docs.rs serves `pdf2`, `pdf2-render`, `pdf2-cli` and `pdf2-wasm` 200, every tag has a GitHub release with `pdf2 1.2.0` carrying **Latest**, the deployed Pages demo passes every interaction check (`DEMO_URL=… node crates/pdf2-wasm/demo-test.mjs`), and a **fresh consumer crate** depending on the published `pdf2 1.2.0` + `pdf2-render 1.2.0` extracts `日本語テスト` from the corpus page and renders `cid_cff.pdf` with no missing-font note — which is also the check that `exclude = ["vendor"]` did not drop the generated table.
+
 ## Checks
 
 - `cargo gate`
