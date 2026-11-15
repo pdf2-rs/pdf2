@@ -16,6 +16,12 @@ allow = [
     "Apache-2.0",
     "Zlib",
     "0BSD",
+    # Adobe's CMap resources (`vendor/adobe-cmaps/`) are BSD-3-Clause, and
+    # `cargo deny` gates the workspace's dependencies, not vendored data — the
+    # entry is here so a future dependency under the same licence is not a
+    # surprise, and the notice that has to ship with the data is in
+    # `THIRD-PARTY-NOTICES.md`.
+    "BSD-3-Clause",
 ]
 
 [bans]
