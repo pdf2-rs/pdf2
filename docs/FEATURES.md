@@ -72,9 +72,10 @@ Checked 2026-11-15 — `cargo test --workspace` (322 tests, including `tests/doc
 | Linearisation (write) | unplanned | No demand evidence; `qpdf` owns the use case |
 | Incremental update (write) | scheduled 11 | `src/writer.rs` builds new documents only |
 | `7.9` Common data structures — dates, names, strings, rectangles | shipped, partial | `Rect` and the name/string objects are modelled (`src/object.rs`); **dates are not**: no `Date` type exists, so `/CreationDate` and `/ModDate` are unread strings |
-| `7.10` Functions (type 0–4, used by shadings and separations) | unplanned | Nothing evaluates PDF functions; shadings (item 10) cannot be drawn without it |
-| `7.11` Embedded files and file specifications (`/EmbeddedFiles`, `/Filespec`) | unplanned | No `EmbeddedFiles` or `/Filespec` handling anywhere; attachments are invisible |
-| `7.12` Extensions dictionary | unplanned | No `Extensions` handling; extension levels are ignored rather than reported |
+| `7.10` Functions (type 0–4, used by shadings and separations) | scheduled 10 | Nothing evaluates PDF functions; shadings cannot be drawn without them, so the row rides with item 10. Owner: item 10 |
+| `7.11` Embedded files and file specifications (`/EmbeddedFiles`, `/Filespec`) | unplanned | No `EmbeddedFiles` or `/Filespec` handling anywhere; attachments are invisible. Owner: none |
+| `7.12` Extensions dictionary | unplanned | No `Extensions` handling; extension levels are ignored rather than reported. Owner: none |
+| `7.5.8` Cross-reference generation numbers (the 1.x generation edge) | scheduled 6 | `corpus/tier-a/ContentStreamCycleType3insideType3.pdf` fails with `malformed cross-reference generation at offset 2111`; the roadmap's item 6 owns the fix. Owner: item 6 |
 
 ## Filters and images
 
@@ -88,7 +89,7 @@ Checked 2026-11-15 — `cargo test -p pdf2 --test filters`; the four image filte
 | `/CCITTFaxDecode` | scheduled 9 | `ccitt_EndOfBlock_false.pdf` |
 | `/JBIG2Decode` | scheduled 9 | No committed sample; `jbig2-bench` shows decoder divergence |
 | Images above 8 bits per component | unplanned | `crates/pdf2-render/src/image.rs` accepts 8 only; rare in practice, needs a corpus count first |
-| `/SMask`, `/Mask` (soft mask, colour key) | unplanned | `colorkeymask.pdf` renders today without the mask — visibly wrong; cheap to fold into item 10 once transparency lands |
+| `/SMask`, `/Mask` (soft mask, colour key) | scheduled 10 | `colorkeymask.pdf` renders today without the mask — visibly wrong; it folds into item 10 with transparency. Owner: item 10 |
 | `/Interpolate` beyond bilinear | unplanned | Nearest and bilinear are both implemented; other filters are viewer-defined |
 
 ## Colour
@@ -98,7 +99,7 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration page 1 golden) a
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | DeviceGray, DeviceRGB, DeviceCMYK (naive), `/ICCBased` by component count | shipped | `src/content.rs`, `crates/pdf2-render/src/image.rs` |
-| ICC colour management (profiles actually applied) | unplanned | The oracle gate measures an **8% spread** on the CMYK page; the oracles disagree because they manage colour. This is a fidelity decision the next version must take, not a bug. |
+| ICC colour management (profiles actually applied) | scheduled 10b | The oracle gate measures an **8% spread** on the CMYK page; the oracles disagree because they manage colour. Owner: item 10b |
 | `8.6.6.4` `/Separation`, `/DeviceN`, spot colours — and `10.8` rendering for separations | unplanned | No corpus sample yet; would ride with ICC management. Separations need both the colour space and the rendering rule: a separation tint is a function, and `10.8` says how it becomes device colour when no separation device exists. |
 
 ## Fonts and text
@@ -113,10 +114,10 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–1
 | Composite fonts **extraction** (`/ToUnicode`, two-byte codes) | scheduled 2 | `src/content.rs:253`; 7 of 23 corpus files |
 | Predefined CMaps (CJK) | scheduled 5 | Needs ~250 KB of data. The licence question is answered in §Outside facts: Adobe's CMaps are **BSD-3-Clause**, `deny.toml` does not allow it, so the allow-list entry (and the notice) or a home outside the crate is a prerequisite, not an afterthought |
 | CFF and Type 1 program parsing | scheduled 4 | `font:FontFile3`/`font:FontFile` reported today |
-| Text render modes (`Tr`) other than fill | unplanned | In `docs/RENDERING.md`'s unproven list with **no roadmap item** — should be folded into item 10 |
-| Type 3 fonts | unplanned | Same: measured in the corpus (`Type3WordSpacing.pdf` renders with skips), no owner |
+| Text render modes (`Tr`) other than fill | scheduled 10 | Folded into item 10 (painting completeness) when the ledger's first pass found it unowned. Owner: item 10 |
+| Type 3 fonts | scheduled 10 | Same: measured in the corpus (`Type3WordSpacing.pdf` renders with skips). Owner: item 10 |
 | Vertical writing mode | unplanned | No corpus sample; rare outside CJK vertical documents |
-| Extraction quality: reading order, spaces from advances, ligatures, spans/positions | unplanned | Item 2 fixes *mapping*; this is the class of complaint behind most of `pdf-extract`'s 78 issues. Needs an API decision (text vs spans) before it can be scheduled |
+| Extraction quality: reading order, spaces from advances, ligatures, spans/positions | scheduled 2b | Item 2 fixes *mapping*; this is the class of complaint behind most of `pdf-extract`'s 78 issues. Needs an API decision (text vs spans) Owner: item 2b (an API decision comes first) |
 | Font subsetting (write) | not applicable | The writer does not embed fonts; callers supply programs |
 
 ## Painting and page geometry
@@ -127,14 +128,15 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration pages 1–5, `te
 | --- | --- | --- |
 | Paths, curves, fills (both rules), strokes with caps/joins/miter limit, dashes, clipping, transforms | shipped | pages 1–3, `docs/RENDERING.md` |
 | `/MediaBox` origin, `/Rotate` 0/90/180/270 | shipped | pages 4–5 |
-| `/CropBox` as the visible box | unplanned | Parsed and exposed (`src/page.rs:97`), ignored by the renderer; cheap, no evidence either way |
-| `/UserUnit` | unplanned | Not parsed at all; affects page size and content scale |
+| `/CropBox` as the visible box | scheduled 6b | Parsed and exposed (`src/page.rs:97`), ignored by the renderer; cheap, no evidence either way. Owner: item 6b |
+| `/UserUnit` | scheduled 6b | Not parsed at all; affects page size and content scale. Owner: item 6b |
 | Shadings and patterns | scheduled 10 | `ShowText-ShadingPattern.pdf`, `axial_shading_many_inputs.pdf` render with skips |
 | Transparency groups, soft masks, blend modes (`11`) | scheduled 10 | `alphatrans.pdf`, `blendmode.pdf` |
-| `8.10` **Form XObjects** (`/Subtype /Form`) | unplanned | **Not drawn at all**: `Do` calls `draw_image`, which reports `Do` and returns for any subtype that is not `/Image` — `crates/pdf2-render/src/walk.rs:534` (the `Do` dispatch) and `:701` (inside `draw_image`, the `/Subtype /Image` test that bails out) — so a page whose vector content lives in a Form XObject draws nothing. No roadmap item owns it. |
-| `8.11` **Optional content** (layers, `/OCProperties`) | unplanned | No `OCProperties` or `OCG` handling exists anywhere in `src/` or `crates/`; layer visibility is not modelled, so a page with layers draws every layer or none. No roadmap item owns it. |
-| `10.5` **Transfer functions** and `10.6` **Halftones** | unplanned | Neither exists: `TransferFunction` and `Halftone` appear nowhere in `src/` or `crates/`. For screen output both are largely moot; for print fidelity they are not, and `10.8` separations need `10.5` |
-| `10.7` **Scan conversion** — anti-aliasing, glyph cache, render speed budget | unplanned | Coverage is decided at pixel centres, with no anti-aliasing (`crates/pdf2-render/src/raster.rs:108`, `docs/RENDERING.md`), which is why the oracle gate compares at 4×4 blocks. The speed half has no item either: ADR non-goal 1 refuses *competing* on speed, which is not the same as having no target; a budget in the oracle job would make it measurable. |
+| `8.10` **Form XObjects** (`/Subtype /Form`) | unplanned | **Not drawn at all**: `Do` calls `draw_image`, which reports `Do` and returns for any subtype that is not `/Image` — `crates/pdf2-render/src/walk.rs:534` (the `Do` dispatch) and `:701` (inside `draw_image`, the `/Subtype /Image` test that bails out) — so a page whose vector content lives in a Form XObject draws nothing. Owner: none — the ledger's decision 8 asks the roadmap to assign it. |
+| `8.11` **Optional content** (layers, `/OCProperties`) | unplanned | No `OCProperties` or `OCG` handling exists anywhere in `src/` or `crates/`; layer visibility is not modelled, so a page with layers draws every layer or none. Owner: none — the ledger's decision 8 asks the roadmap to assign it. |
+| `10.5` **Transfer functions** and `10.6` **Halftones** | unplanned | Neither exists: `TransferFunction` and `Halftone` appear nowhere in `src/` or `crates/`. For screen output both are largely moot; for print fidelity they are not, and `10.8` separations need `10.5`. Owner: none (print-only, no demand evidence) |
+| `10.7` **Scan conversion** — anti-aliasing, glyph cache | unplanned | Coverage is decided at pixel centres, with no anti-aliasing (`crates/pdf2-render/src/raster.rs:108`, `docs/RENDERING.md`), which is why the oracle gate compares at 4×4 blocks. The speed half has no item either: ADR non-goal 1 refuses *competing* on speed, which is not the same as having no target; Owner: none for anti-aliasing; the *speed* half is item 10c below. |
+| Render-time budget (no AA, no glyph cache, no time gate) | scheduled 10c | The oracle job can record render time per page; the roadmap's item 10c owns the budget. Owner: item 10c |
 
 ## Documents and metadata
 
@@ -154,7 +156,7 @@ Checked 2026-11-15 — no shipped row in this table; the absences were re-confir
 | --- | --- | --- |
 | `12.2` Viewer preferences | unplanned | No `ViewerPreferences` in the model; a viewer's concern that a library does not need, and nothing else depends on it |
 | `12.3` Document-level navigation — outlines, destinations, `/OpenAction` | unplanned | No `Outlines`, `Dests` or `OpenAction` handling anywhere; bookmarks are invisible |
-| `12.4` Page-level navigation — link annotations and `/Dest` | unplanned | Rides with `12.5` (item 12) |
+| `12.4` Page-level navigation — link annotations and `/Dest` | scheduled 12 | Rides with `12.5`. Owner: item 12 |
 | `12.5` Annotations — read, render, appearance streams | scheduled 12 | Nothing in the tree today |
 | `12.6` Actions — `/GoTo`, `/URI`, JavaScript | unplanned | Actions are not modelled; JavaScript is refused (ADR non-goal 3) |
 | `12.7` Forms — read, render, **fill** | scheduled 12 | The ADR's non-goal 3 refuses *authoring*; filling is not authoring, and the ADR says so |
@@ -189,7 +191,7 @@ Checked 2026-11-15 — no shipped row in this table (metadata is verified in §D
 | `14.10` Web capture | not applicable | Legacy PDF 1.x capture format; no processor keeps it |
 | `14.11` Prepress — output intents, separations | unplanned | No `/OutputIntents`; separations ride with `8.6.6.4`/`10.8`. Note: `docs/SPEC-MAP.md` keys `14.11.2` to clipping paths, which is a map error — recorded here, not repaired (out of scope) |
 | `14.12` Document parts | unplanned | PDF 2.0 document parts are not modelled |
-| `14.13` Associated files | unplanned | Not modelled, and item 12's annotation work would need it for file attachments |
+| `14.13` Associated files | scheduled 12 | Not modelled; item 12's file-attachment annotations need it. Owner: item 12 |
 
 ## Normative annexes
 
@@ -230,10 +232,11 @@ Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|
 | wasm: open, page count/size, text, metadata, render to pixels/canvas, render report | shipped | `crates/pdf2-wasm` |
 | wasm/npm API growth (spans, page boxes, structured errors) | unplanned | Follows the extraction-quality decision above |
 | Fixtures with arithmetic (calibration, book) | shipped | `tests/fixtures`, `docs/RENDERING.md` |
-| Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/` (23 files, hashed), `corpus/tolerances.tsv`, `crates/pdf2-oracle`, the `oracle` job; last run green 2026-11-15. The tolerances are only comparable on the engines recorded in §Outside facts (poppler 26.01.0, mupdf 1.27.0, ghostscript 10.06.0) |
+| Tier B corpus in CI (pdf.js full tree, veraPDF) | scheduled 7 | Formula and licences are in §Outside facts; the roadmap's item 7 owns the scheduled run. Owner: item 7 |
+| Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/` (23 files, hashed), `corpus/tolerances.tsv`, `crates/pdf2-oracle`, the `oracle` job; last run green 2026-11-15. Owner: item 1 (shipped). The tolerances are only comparable on the engines recorded in §Outside facts (poppler 26.01.0, mupdf 1.27.0, ghostscript 10.06.0) |
 | Tier B corpus in CI (pdf.js full, veraPDF) | scheduled 7 | |
 | Fuzzing (five targets, nightly), deny, semver, bench gates | shipped | `fuzz/fuzz_targets` (5), `.github/workflows/{fuzz,ci}.yml`; last nightly fuzz run green 2026-11-15 |
-| Validation (PDF/A, PDF 2.0 conformance) | unplanned | Different buyer; `veraPDF` is the reference (roadmap item 13 keeps it unscheduled) |
+| Validation (PDF/A, PDF 2.0 conformance) | unplanned | Different buyer; `veraPDF` is the reference. Owner: none — roadmap item 13 keeps it unscheduled. Owner: none — roadmap item 13 keeps it unscheduled |
 
 ## Decisions this ledger forces
 
