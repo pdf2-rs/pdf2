@@ -1,6 +1,6 @@
 [package]
 name = "pdf2-render"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 rust-version = "1.87"
 description = "Rasteriser for the pdf2 crate: paths, clips, transforms and (soon) images and text."
@@ -12,7 +12,7 @@ categories = ["graphics"]
 
 [dependencies]
 miniz_oxide = "0.9"
-pdf2 = { path = "../..", version = "1.0.0" }
+pdf2 = { path = "../..", version = "1.1.0" }
 ttf-parser = "0.25.1"
 
 [lints]
