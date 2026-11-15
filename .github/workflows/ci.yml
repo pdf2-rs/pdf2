@@ -96,7 +96,19 @@ jobs:
         run: |
           cargo +stable package -p pdf2 --list
           cargo +stable package -p pdf2
-          cargo +stable package -p pdf2-cli
+          # The CLI requires the library version in this tree. Between a version
+          # bump and its first publish (the release pull request itself) that
+          # version is not on crates.io yet, so packaging cannot resolve it.
+          # The publish workflow packages every crate in dependency order once
+          # the library lands; any other packaging failure still fails here.
+          if ! output="$(cargo +stable package -p pdf2-cli 2>&1)"; then
+            if grep -q 'failed to select a version for the requirement `pdf2 =' <<<"$output"; then
+              echo "::notice::pdf2-cli needs the library version published first; the publish workflow packages it"
+            else
+              echo "$output"
+              exit 1
+            fi
+          fi
 
   no-std:
     name: no_std (${{ matrix.target }})
