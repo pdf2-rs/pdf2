@@ -103,6 +103,17 @@ mutool draw -r 144 -o /tmp/mupdf.png corpus/tier-a/<file>.pdf 1
 The CLI has no `render` subcommand yet; if the Q4 batch run needs one, it is
 added there rather than documented here as if it existed.
 
+## Where the oracle cannot judge
+
+- **`/CropBox` and `/UserUnit`.** `cropbox.pdf` is 200×200 pt with `/UserUnit 2`
+  inside a 300×200 media box. At 144 dpi this renderer and poppler both produce
+  **800×800**; mupdf in its default invocation produces **600×400**, because it
+  ignores the crop box and the user unit for the raster size. Two engines that
+  disagree about the page's dimensions cannot judge a third, so the page is
+  proven by its arithmetic and its golden, and it is kept out of
+  `corpus/oracle-cases.txt` with a comment. Re-add it if the mupdf invocation
+  gains a crop-box switch.
+
 ## What this does not prove
 
 - It does not prove the absence of bugs outside the corpus, and it says nothing

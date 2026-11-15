@@ -128,7 +128,7 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration pages 1–5, `te
 | --- | --- | --- |
 | Paths, curves, fills (both rules), strokes with caps/joins/miter limit, dashes, clipping, transforms | shipped | pages 1–3, `docs/RENDERING.md` |
 | `/MediaBox` origin, `/Rotate` 0/90/180/270 | shipped | pages 4–5 |
-| `/CropBox` as the visible box | shipped | `crates/pdf2-render/src/walk.rs` uses `crop_box.or(media_box)`: `tests/fixtures/cropbox.pdf` renders 400×400 with the crop box at the origin and content clipped at its edge (`crates/pdf2-render/tests/golden.rs`), and the case is in `corpus/oracle-cases.txt`. Owner: item 6b (shipped 2026-11-15) |
+| `/CropBox` as the visible box | shipped | `crates/pdf2-render/src/walk.rs` uses `crop_box.or(media_box)`: `tests/fixtures/cropbox.pdf` renders 400×400 with the crop box at the origin and content clipped at its edge (`crates/pdf2-render/tests/golden.rs`), and the oracle gate cannot judge it — poppler agrees with this renderer's 800×800 at 144 dpi, mupdf ignores crop box and user unit and gives 600×400 (`docs/PROOF.md`), so the page is proven by arithmetic instead. Owner: item 6b (shipped 2026-11-15) |
 | `/UserUnit` | shipped | `Document::page_user_unit` (`src/page.rs`, inheritable, defaulting to 1) multiplies the renderer's scale; the cropbox fixture at `/UserUnit 2` proves it (`tests/pages.rs`, `golden.rs`). Owner: item 6b (shipped 2026-11-15) |
 | Shadings and patterns | scheduled 10 | `ShowText-ShadingPattern.pdf`, `axial_shading_many_inputs.pdf` render with skips |
 | Transparency groups, soft masks, blend modes (`11`) | scheduled 10 | `alphatrans.pdf`, `blendmode.pdf` |
