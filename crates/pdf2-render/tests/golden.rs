@@ -149,11 +149,13 @@ fn a_page_without_content_is_uniformly_background() {
     // page-tree.pdf page 2 has no /Contents at all, and it inherits /Rotate 90
     // from its parent, so the canvas is the media box turned a quarter.
     let rendered = render("page-tree.pdf", 1, 1.0);
+    // Its `/CropBox [10 20 190 280]` is the visible box now — 180x260, turned a
+    // quarter by the inherited `/Rotate 90`.
     assert_eq!(
         (rendered.canvas.width(), rendered.canvas.height()),
-        (792, 612)
+        (260, 180)
     );
-    for (x, y) in [(0, 0), (791, 0), (396, 306), (791, 611)] {
+    for (x, y) in [(0, 0), (259, 0), (130, 90), (259, 179)] {
         assert_eq!(pixel(&rendered, x, y), WHITE, "({x}, {y})");
     }
     assert_eq!(rendered.report.unsupported_total(), 0);
@@ -228,6 +230,55 @@ fn a_book_page_is_set_in_its_embedded_serif_font() {
     assert!(
         golden == png,
         "book.png differs; re-run with BLESS=1 if the change is intended"
+    );
+}
+
+#[test]
+fn the_crop_box_and_user_unit_define_the_visible_page() {
+    // MediaBox [0 0 300 200], CropBox [50 60 250 260], UserUnit 2: the raster is
+    // the crop box at twice its size (400x400), with the crop box at the origin,
+    // and content past its right edge is cut off by the canvas.
+    let rendered = render("cropbox.pdf", 0, 1.0);
+    assert_eq!(
+        (rendered.canvas.width(), rendered.canvas.height()),
+        (400, 400)
+    );
+    assert_eq!(
+        rendered.report.unsupported_total(),
+        0,
+        "{}",
+        rendered.report
+    );
+    // Red: user (60,70)-(90,100) -> device (20,320)-(80,380).
+    assert_eq!(pixel(&rendered, 50, 350), RED);
+    // Blue: user (200,220)-(230,250) -> device (300,20)-(360,60).
+    assert_eq!(pixel(&rendered, 330, 40), BLUE);
+    // Green: user (230,60)-(270,100) crosses the crop's right edge at x = 250,
+    // so it reaches the canvas edge and stops there.
+    assert_eq!(pixel(&rendered, 390, 390), [0, 153, 0, 255], "0.6 green");
+    assert_eq!(pixel(&rendered, 399, 399), [0, 153, 0, 255]);
+    assert_eq!(
+        pixel(&rendered, 200, 200),
+        WHITE,
+        "inside the crop, unpainted"
+    );
+    // Two whole 60x60 rectangles and one clipped to 40x80 at the crop edge.
+    assert_eq!(
+        ink(&rendered, 0, 0, 400, 400),
+        3_600 + 3_600 + 3_200,
+        "ink area"
+    );
+
+    let png = encode_png(&rendered.canvas);
+    let golden_path = repo("tests/fixtures/golden/cropbox.png");
+    if std::env::var_os("BLESS").is_some() {
+        std::fs::write(&golden_path, &png).expect("bless golden");
+        return;
+    }
+    let golden = std::fs::read(&golden_path).expect("read golden");
+    assert!(
+        golden == png,
+        "cropbox.png differs; re-run with BLESS=1 if the change is intended"
     );
 }
 

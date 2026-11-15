@@ -179,9 +179,15 @@ pub fn render_page(
     } else {
         1.0
     };
+    // The visible box is `/CropBox` when the page states one (14.11.2): it
+    // defines the raster and the origin, and the media box only bounds it.
     let media = page
-        .media_box
+        .crop_box
+        .or(page.media_box)
         .unwrap_or(pdf2::Rect::new(0.0, 0.0, 612.0, 792.0));
+    // `/UserUnit` scales default user space (7.7.3.4), so it multiplies the
+    // device resolution rather than the page's coordinates.
+    let scale = scale * document.page_user_unit(page).unwrap_or(1.0);
     // `/Rotate` turns the page clockwise for display, so a quarter turn swaps
     // the canvas dimensions.
     let rotate = page.rotate.rem_euclid(360);

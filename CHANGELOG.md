@@ -4,6 +4,16 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — in progress
+
+- **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
+  crop box rather than the media box, so a page with a crop box draws the region
+  a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **`/UserUnit` is honoured** (`7.7.3.4`): `Document::page_user_unit` reads the
+  inheritable attribute (defaulting to 1) and the renderer multiplies its scale
+  by it, so a page that declares a unit scale rasters at the size the file
+  intends.
+
 ## [1.1.1] — 2026-11-14
 
 Tool releases that pick up the PDF 1.x reader: `pdf2-render` 1.1.1,
@@ -38,6 +48,16 @@ RC4/AES-128 revisions are not implemented).
 - The demo imports the wasm module with a build stamp from `build.json`:
   GitHub Pages serves fixed filenames with a cache lifetime, and a cached wasm
   from an older build drew blank pages where the current one draws text.
+
+## [1.2.0] — in progress
+
+- **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
+  crop box rather than the media box, so a page with a crop box draws the region
+  a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **`/UserUnit` is honoured** (`7.7.3.4`): `Document::page_user_unit` reads the
+  inheritable attribute (defaulting to 1) and the renderer multiplies its scale
+  by it, so a page that declares a unit scale rasters at the size the file
+  intends.
 
 ## [1.1.1] — 2026-11-14
 

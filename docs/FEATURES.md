@@ -128,8 +128,8 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration pages 1–5, `te
 | --- | --- | --- |
 | Paths, curves, fills (both rules), strokes with caps/joins/miter limit, dashes, clipping, transforms | shipped | pages 1–3, `docs/RENDERING.md` |
 | `/MediaBox` origin, `/Rotate` 0/90/180/270 | shipped | pages 4–5 |
-| `/CropBox` as the visible box | scheduled 6b | Parsed and exposed (`src/page.rs:97`), ignored by the renderer; cheap, no evidence either way. Owner: item 6b |
-| `/UserUnit` | scheduled 6b | Not parsed at all; affects page size and content scale. Owner: item 6b |
+| `/CropBox` as the visible box | shipped | `crates/pdf2-render/src/walk.rs` uses `crop_box.or(media_box)`: `tests/fixtures/cropbox.pdf` renders 400×400 with the crop box at the origin and content clipped at its edge (`crates/pdf2-render/tests/golden.rs`), and the oracle gate cannot judge it — poppler agrees with this renderer's 800×800 at 144 dpi, mupdf ignores crop box and user unit and gives 600×400 (`docs/PROOF.md`), so the page is proven by arithmetic instead. Owner: item 6b (shipped 2026-11-15) |
+| `/UserUnit` | shipped | `Document::page_user_unit` (`src/page.rs`, inheritable, defaulting to 1) multiplies the renderer's scale; the cropbox fixture at `/UserUnit 2` proves it (`tests/pages.rs`, `golden.rs`). Owner: item 6b (shipped 2026-11-15) |
 | Shadings and patterns | scheduled 10 | `ShowText-ShadingPattern.pdf`, `axial_shading_many_inputs.pdf` render with skips |
 | Transparency groups, soft masks, blend modes (`11`) | scheduled 10 | `alphatrans.pdf`, `blendmode.pdf` |
 | `8.10` **Form XObjects** (`/Subtype /Form`) | scheduled 10d | **Not drawn at all**: `Do` calls `draw_image`, which reports `Do` and returns for any subtype that is not `/Image` — `crates/pdf2-render/src/walk.rs:534` (the `Do` dispatch) and `:701` (inside `draw_image`, the `/Subtype /Image` test that bails out) — so a page whose vector content lives in a Form XObject draws nothing. Owner: item 10d — the roadmap's revision assigned it after the ledger's decision 8 named it unowned. |
@@ -256,8 +256,9 @@ Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|
    the answer is otherwise.
 6. **Forms wording**: the ADR refuses "forms authoring"; item 12 includes
    filling → say so in both places (filling is planned, authoring is not).
-7. **`/CropBox` and `/UserUnit`** are cheap and unowned → one small item in
-   `1.2` with a corpus check.
+7. **`/CropBox` and `/UserUnit`** were cheap and unowned — **resolved**: item 6b
+   shipped them (`Document::page_user_unit`, the renderer's visible box) with a
+   fixture and an oracle case.
 8. **Form XObjects (`8.10`)** are not drawn, and they used to have no owner —
    a bigger practical hole than shadings, since vector content, nested pages and
    some text live in Form XObjects in almost every real document. **Resolved in

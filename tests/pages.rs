@@ -300,3 +300,24 @@ fn a_catalog_without_pages_is_an_error() {
     assert!(document.pages().is_err());
     assert!(!document.has_metadata().expect("no metadata"));
 }
+
+#[test]
+fn the_user_unit_is_read_from_the_page_and_defaults_to_one() {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/cropbox.pdf"
+    ))
+    .expect("read cropbox.pdf");
+    let document = pdf2::Document::open(bytes).expect("open");
+    let page = document.page(0).expect("page");
+    assert_eq!(document.page_user_unit(&page).expect("user unit"), 2.0);
+
+    let plain = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/text.pdf"
+    ))
+    .expect("read text.pdf");
+    let document = pdf2::Document::open(plain).expect("open");
+    let page = document.page(0).expect("page");
+    assert_eq!(document.page_user_unit(&page).expect("user unit"), 1.0);
+}
