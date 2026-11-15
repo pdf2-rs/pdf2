@@ -313,7 +313,7 @@ fn composite_fonts_we_cannot_read_are_refused_by_name() {
             "vertical composite",
         ),
         (
-            "<< /Type /Font /Subtype /Type0 /BaseFont /Mincho /Encoding /90ms-RKSJ-H              /ToUnicode 5 0 R /DescendantFonts [5 0 R] >>",
+            "<< /Type /Font /Subtype /Type0 /BaseFont /Mincho /Encoding /90pv-RKSJ-H              /ToUnicode 5 0 R /DescendantFonts [5 0 R] >>",
             "CMap-encoded composite",
         ),
     ] {
@@ -336,4 +336,22 @@ fn composite_fonts_we_cannot_read_are_refused_by_name() {
             .expect_err(expected);
         assert!(error.to_string().contains(expected), "{error}");
     }
+}
+
+#[test]
+fn a_predefined_cmap_font_extracts_cjk() {
+    // The corpus file sets `/Encoding /90ms-RKSJ-H` over an Adobe-Japan1 CID
+    // font with no `/ToUnicode`: the text can only come from the predefined CMap
+    // the crate ships (`cargo xtask cmaps`).
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/corpus/tier-a/90ms_rksj_h_sample.pdf"
+    );
+    let bytes = std::fs::read(path).expect("read the corpus file");
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(
+        document.extract_text(&page).expect("text"),
+        "Hello ASCII\n\u{65E5}\u{672C}\u{8A9E}\u{30C6}\u{30B9}\u{30C8}"
+    );
 }

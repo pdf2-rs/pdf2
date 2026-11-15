@@ -9,6 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **CJK text extracts through a predefined CMap** (item 5): the Adobe-Japan1
+  `90ms-RKSJ-H` code → text table ships as generated data (`cargo xtask cmaps`,
+  7 876 mappings, 19 967 B), so a page that encodes Shift-JIS without a
+  `/ToUnicode` map extracts its text — `90ms_rksj_h_sample.pdf` now reads
+  `日本語テスト`, moving the corpus to **22 of 23 fully readable**. Adobe's CMap
+  resources are BSD-3-Clause: the notice travels in `THIRD-PARTY-NOTICES.md`,
+  `deny.toml` allows the licence, and the wasm budget moved 150 → 160 KiB with
+  the +13.5 KB gzip measured and explained in `docs/PERFORMANCE.md`. Other CMaps
+  are refused by name until their data is added.
 - **CFF fonts draw their outlines** (`9.6.5`, item 4): a `/CIDFontType0C`
   program — bare CFF with no OpenType container — is wrapped in the smallest
   sfnt `ttf-parser` will read, and its charset is inverted so a CID finds its
@@ -101,6 +110,15 @@ RC4/AES-128 revisions are not implemented).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **CJK text extracts through a predefined CMap** (item 5): the Adobe-Japan1
+  `90ms-RKSJ-H` code → text table ships as generated data (`cargo xtask cmaps`,
+  7 876 mappings, 19 967 B), so a page that encodes Shift-JIS without a
+  `/ToUnicode` map extracts its text — `90ms_rksj_h_sample.pdf` now reads
+  `日本語テスト`, moving the corpus to **22 of 23 fully readable**. Adobe's CMap
+  resources are BSD-3-Clause: the notice travels in `THIRD-PARTY-NOTICES.md`,
+  `deny.toml` allows the licence, and the wasm budget moved 150 → 160 KiB with
+  the +13.5 KB gzip measured and explained in `docs/PERFORMANCE.md`. Other CMaps
+  are refused by name until their data is added.
 - **CFF fonts draw their outlines** (`9.6.5`, item 4): a `/CIDFontType0C`
   program — bare CFF with no OpenType container — is wrapped in the smallest
   sfnt `ttf-parser` will read, and its charset is inverted so a CID finds its

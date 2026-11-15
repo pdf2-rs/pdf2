@@ -27,14 +27,14 @@ everything else; no other code is version-gated), measured with
 | Measure | Files | Note |
 | --- | --- | --- |
 | parse (`pdf2 info`) | 23 of 23 | every file opens |
-| fully readable (`check` + `text`) | 21 of 23 | two remain, both composite fonts with no text to find (below) |
+| fully readable (`check` + `text`) | 22 of 23 | one remains: a composite font whose program has no `cmap` and whose page carries no `/ToUnicode` |
 | page 1 rendered | 23 of 23 | every file draws |
 
 Failure taxonomy, and every class maps to a gap already in the scorecard:
 
 | Class | Files | Which |
 | --- | --- | --- |
-| `unsupported: CMap-encoded composite (Type0) fonts` | 1 | `90ms_rksj_h_sample.pdf` — needs the `/90ms-RKSJ-H` resource, which is item 5's CMap data |
+
 | `unsupported: composite (Type0) fonts without a /ToUnicode map` | 1 | `arial_unicode_en_cidfont.pdf` — its embedded program carries neither a `cmap` nor a `post` table, so there is no mapping to find |
 
 
@@ -42,10 +42,12 @@ Failure taxonomy, and every class maps to a gap already in the scorecard:
 the header (`only PDF 2.x is supported`); opening the header gate gave 21 parsed
 / 14 fully readable with seven composite-font refusals; the xref generation edge
 (item 6) gave 22 / 15; composite extraction (item 2) gave 22 / 20; the encryption
-work (item 3) gave **23 / 21** — its `startxref` repair and its acceptance of
+work (item 3) gave 23 / 21 — its `startxref` repair and its acceptance of
 `/Identity` crypt filters were the last two blockers, and neither was the RC4 /
-AES-128 support the file looked like it needed. Two failures remain, both
-composite fonts with no mapping to extract.
+AES-128 support the file looked like it needed. Item 5's CMap data gave **23 / 22**: `90ms_rksj_h_sample.pdf` now reads
+`日本語テスト`. One failure remains — `arial_unicode_en_cidfont.pdf`, whose program
+has neither a `cmap` nor a `post` table and whose page carries no `/ToUnicode`, so
+there is nothing to map.
 
 Read that table as the first honest measurement of the library on real files: the
 renderer is much further along than the extractor, and the three failure classes
@@ -163,3 +165,19 @@ oddity:
 
 Both were real reader bugs on our side, and both are now pinned by fixtures
 (`startxref-hint.pdf`, and the `/Identity` case in `src/crypto.rs`'s tests).
+
+### The CJK page, and where its text comes from
+
+`90ms_rksj_h_sample.pdf` sets `/Encoding /90ms-RKSJ-H` over an Adobe-Japan1
+`CIDFontType2` and carries **no** `/ToUnicode`. The text is recovered the way a
+reader without that map has to: the encoding CMap turns Shift-JIS bytes into
+CIDs, and the CID → text table turns those into characters. Both halves are
+data (`vendor/adobe-cmaps/`, BSD-3-Clause, notice in `THIRD-PARTY-NOTICES.md`),
+composed at generation time by `cargo xtask cmaps` into one 19 967 B table with
+7 876 mappings.
+
+The ranking in that generator is worth stating: `UniJIS-UCS2-H` maps both U+65E5
+(日) and U+2F47 (the Kangxi radical that looks the same) to one CID, and taking
+the first match in file order read the radical. Ordinary code points now rank
+above compatibility and radical blocks, which is how the page reads
+`日本語テスト` rather than `⽇本語テスト`.
