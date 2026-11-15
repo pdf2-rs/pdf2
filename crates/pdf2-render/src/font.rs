@@ -1,5 +1,14 @@
-//! Fonts for text rendering: a provider trait, a built-in base-14 fallback and
-//! TrueType outlines through `ttf-parser`.
+//! Fonts for text rendering: a provider trait, a built-in base-14 fallback,
+//! TrueType outlines through `ttf-parser`, and CFF outlines — CID-keyed or
+//! plain — by wrapping the bare CFF program in the smallest OpenType container
+//! `ttf-parser` will read.
+//!
+//! The wrapper exists because PDF carries two shapes of CFF: `/Subtype
+//! /OpenType` (already an sfnt, read directly) and `/Subtype /CIDFontType0C` or
+//! `/Type1C` (a bare CFF table, which `ttf-parser` refuses: "Invalid sfnt
+//! version"). Five synthesised tables — `head`, `hhea`, `maxp`, `hmtx` and the
+//! program itself — are enough, and the decision, its measurements and what it
+//! refuses are in `docs/adr/0003-cff-without-a-dependency.md`.
 
 use pdf2::Encoding;
 
@@ -24,6 +33,18 @@ pub enum Font {
         /// Code → character table.
         encoding: Encoding,
     },
+    /// An embedded CFF program, wrapped so the outlines come out of the same
+    /// code path as TrueType. CID-keyed fonts select glyphs through their
+    /// charset, not by using the CID as a glyph id.
+    Cff {
+        /// Code → character table, for the (rare) simple CFF font.
+        encoding: Encoding,
+        /// The program as sfnt bytes.
+        data: Vec<u8>,
+        /// CID → glyph id from the CFF charset, empty when the font is not
+        /// CID-keyed.
+        cid_to_gid: Vec<(u16, u16)>,
+    },
     /// An embedded TrueType program.
     TrueType {
         /// Code → character table.
@@ -38,6 +59,34 @@ impl Font {
     /// The built-in fallback with an encoding.
     pub fn builtin(encoding: Encoding) -> Self {
         Self::Builtin { encoding }
+    }
+
+    /// An embedded CFF program, bare or already wrapped in OpenType.
+    ///
+    /// `/CIDFontType0C` and `/Type1C` programs are a CFF table with no container;
+    /// they are wrapped here so the same outline code reads them.
+    pub fn cff(encoding: Encoding, data: Vec<u8>) -> Option<Self> {
+        let wrapped = data.starts_with(b"OTTO");
+        let table: Vec<u8> = if wrapped {
+            cff_table_of_sfnt(&data)?.to_vec()
+        } else {
+            data.clone()
+        };
+        let (charset_at, glyphs) = cff_layout(&table)?;
+        let cid_to_gid = cff_charset(&table, charset_at, glyphs);
+        let program = if wrapped {
+            data
+        } else {
+            wrap_cff(&table, glyphs)?
+        };
+        // Parse once here so a program that cannot be read is rejected at load,
+        // not at the first glyph.
+        ttf_parser::Face::parse(&program, 0).ok()?;
+        Some(Self::Cff {
+            encoding,
+            data: program,
+            cid_to_gid,
+        })
     }
 
     /// An embedded TrueType program, rejected when it cannot be parsed.
@@ -60,6 +109,20 @@ impl Font {
                 let glyph_id = face.glyph_index(character)?;
                 glyph_from_face(data, glyph_id)
             }
+            Self::Cff {
+                encoding,
+                data,
+                cid_to_gid,
+            } => {
+                // A simple (non-CID) CFF font reaches its glyphs through the
+                // charset's names; a CID-keyed one through the CID it is asked
+                // for, which is the composite path.
+                let character = encoding.character(code)?;
+                let face = ttf_parser::Face::parse(data, 0).ok()?;
+                let _ = cid_to_gid;
+                let glyph_id = face.glyph_index(character)?;
+                glyph_from_face(data, glyph_id)
+            }
         }
     }
 
@@ -77,8 +140,288 @@ impl Font {
         match self {
             Self::Builtin { .. } => None,
             Self::TrueType { data, .. } => glyph_from_face(data, ttf_parser::GlyphId(id)),
+            Self::Cff {
+                data, cid_to_gid, ..
+            } => {
+                // In a CID-keyed CFF the charset maps glyph ids to CIDs, so a
+                // CID has to be looked up rather than used as the glyph id.
+                let glyph = cid_to_gid
+                    .iter()
+                    .find(|(cid, _)| *cid == id)
+                    .map_or(id, |(_, gid)| *gid);
+                glyph_from_face(data, ttf_parser::GlyphId(glyph))
+            }
         }
     }
+}
+
+/// Wrap a bare CFF table in the smallest OpenType container `ttf-parser` reads.
+///
+/// The synthesised tables say only what outlines need: 1000 units per em (CFF's
+/// default `/FontMatrix` is 0.001), the glyph count from the CFF `CharStrings`
+/// INDEX, and zero advances, because a CID font's advances come from `/W` in the
+/// PDF. Checksums are left zero: `ttf-parser` does not read them, and inventing
+/// them would be a claim nobody checks.
+fn wrap_cff(cff: &[u8], glyphs: u16) -> Option<Vec<u8>> {
+    let mut head = [0_u8; 54];
+    head[0..4].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+    head[4..8].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+    head[12..16].copy_from_slice(&0x5F0F_3CF5_u32.to_be_bytes());
+    head[18..20].copy_from_slice(&1000_u16.to_be_bytes());
+    let mut hhea = [0_u8; 36];
+    hhea[0..4].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+    hhea[34..36].copy_from_slice(&glyphs.to_be_bytes());
+    let mut maxp = [0_u8; 6];
+    maxp[0..4].copy_from_slice(&0x0000_5000_u32.to_be_bytes());
+    maxp[4..6].copy_from_slice(&glyphs.to_be_bytes());
+    let hmtx = vec![0_u8; usize::from(glyphs) * 4];
+
+    let tables: [(&[u8; 4], &[u8]); 5] = [
+        (b"CFF ", cff),
+        (b"head", &head),
+        (b"hhea", &hhea),
+        (b"hmtx", &hmtx),
+        (b"maxp", &maxp),
+    ];
+    let count = u16::try_from(tables.len()).ok()?;
+    let mut out = Vec::with_capacity(cff.len() + 256);
+    out.extend_from_slice(&0x4F54_544F_u32.to_be_bytes());
+    out.extend_from_slice(&count.to_be_bytes());
+    let pow2 = 1_u32 << u32::from(count).ilog2();
+    #[allow(clippy::cast_possible_truncation)]
+    let search_range = pow2 * 16;
+    out.extend_from_slice(&u16::try_from(search_range).ok()?.to_be_bytes());
+    #[allow(clippy::cast_possible_truncation)]
+    let entry_selector = count.trailing_zeros() as u16;
+    out.extend_from_slice(&entry_selector.to_be_bytes());
+    #[allow(clippy::cast_possible_truncation)]
+    let range_shift = (u32::from(count) * 16).saturating_sub(search_range) as u16;
+    out.extend_from_slice(&range_shift.to_be_bytes());
+
+    let mut offset = 12 + usize::from(count) * 16;
+    let mut body: Vec<u8> = Vec::with_capacity(cff.len() + 128);
+    for (tag, data) in &tables {
+        let mut table = data.to_vec();
+        while !table.len().is_multiple_of(4) {
+            table.push(0);
+        }
+        out.extend_from_slice(*tag);
+        out.extend_from_slice(&0_u32.to_be_bytes());
+        out.extend_from_slice(&u32::try_from(offset).ok()?.to_be_bytes());
+        out.extend_from_slice(&u32::try_from(data.len()).ok()?.to_be_bytes());
+        offset += table.len();
+        body.extend_from_slice(&table);
+    }
+    out.extend_from_slice(&body);
+    Some(out)
+}
+
+/// The `CFF ` table inside an OpenType file.
+fn cff_table_of_sfnt(data: &[u8]) -> Option<&[u8]> {
+    let count = usize::from(u16::from_be_bytes([*data.get(4)?, *data.get(5)?]));
+    for index in 0..count {
+        let at = 12 + index * 16;
+        if data.get(at..at + 4)? == b"CFF " {
+            let offset = u32::from_be_bytes([
+                *data.get(at + 8)?,
+                *data.get(at + 9)?,
+                *data.get(at + 10)?,
+                *data.get(at + 11)?,
+            ]);
+            let length = u32::from_be_bytes([
+                *data.get(at + 12)?,
+                *data.get(at + 13)?,
+                *data.get(at + 14)?,
+                *data.get(at + 15)?,
+            ]);
+            let start = usize::try_from(offset).ok()?;
+            let end = start.checked_add(usize::try_from(length).ok()?)?;
+            return data.get(start..end);
+        }
+    }
+    None
+}
+
+/// A CFF table's charset offset and glyph count.
+fn cff_layout(cff: &[u8]) -> Option<(usize, u16)> {
+    let header_size = usize::from(*cff.get(2)?);
+    let (_, after_name) = cff_index(cff, header_size)?;
+    let (top_count, after_top) = cff_index(cff, after_name)?;
+    if top_count == 0 {
+        return None;
+    }
+    let (_, after_strings) = cff_index(cff, after_top)?;
+    let (_, after_global_subrs) = cff_index(cff, after_strings)?;
+    let _ = after_global_subrs;
+    let top_dict = cff_index_item(cff, after_name, 0)?;
+    let charstrings_at = top_dict_operator(top_dict, 17)?;
+    let (glyphs, _) = cff_index(cff, charstrings_at)?;
+    let charset_at = top_dict_operator(top_dict, 15).unwrap_or(0);
+    Some((charset_at, u16::try_from(glyphs).ok()?))
+}
+
+/// The CID → glyph id pairs a CID-keyed CFF charset declares.
+///
+/// Formats 0, 1 and 2 are read; the three predefined charsets (offsets 0, 1 and
+/// 2) are the standard Latin character sets, which are not CID-keyed, so they
+/// yield no pairs and the CID is used as the glyph id.
+fn cff_charset(cff: &[u8], at: usize, glyphs: u16) -> Vec<(u16, u16)> {
+    let mut pairs = Vec::new();
+    if at < 3 {
+        return pairs;
+    }
+    let Some(&format) = cff.get(at) else {
+        return pairs;
+    };
+    let mut index = at + 1;
+    let mut gid = 1u16;
+    match format {
+        0 => {
+            while gid < glyphs {
+                let cid = cff
+                    .get(index..index + 2)
+                    .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]));
+                let Some(cid) = cid else { break };
+                pairs.push((cid, gid));
+                gid += 1;
+                index += 2;
+            }
+        }
+        1 | 2 => {
+            while gid < glyphs {
+                let width = if format == 1 { 1 } else { 2 };
+                let first = cff
+                    .get(index..index + 2)
+                    .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]));
+                let left = cff.get(index + 2..index + 2 + width).map(|bytes| {
+                    if width == 1 {
+                        u16::from(bytes[0])
+                    } else {
+                        u16::from_be_bytes([bytes[0], bytes[1]])
+                    }
+                });
+                let (Some(first), Some(left)) = (first, left) else {
+                    break;
+                };
+                for offset in 0..=left {
+                    if gid >= glyphs {
+                        break;
+                    }
+                    pairs.push((first.wrapping_add(offset), gid));
+                    gid += 1;
+                }
+                index += 2 + width;
+            }
+        }
+        _ => {}
+    }
+    pairs
+}
+
+/// A CFF INDEX: its entry count and the offset just past it.
+fn cff_index(data: &[u8], at: usize) -> Option<(usize, usize)> {
+    let count = usize::from(u16::from_be_bytes([*data.get(at)?, *data.get(at + 1)?]));
+    if count == 0 {
+        return Some((0, at + 2));
+    }
+    let off_size = usize::from(*data.get(at + 2)?);
+    if !(1..=4).contains(&off_size) {
+        return None;
+    }
+    let offsets_at = at + 3;
+    let data_at = offsets_at + (count + 1) * off_size;
+    let mut last = 0;
+    for index in 0..off_size {
+        last = (last << 8) | usize::from(*data.get(offsets_at + count * off_size + index)?);
+    }
+    Some((count, data_at + last.saturating_sub(1)))
+}
+
+/// One entry of a CFF INDEX, by position.
+fn cff_index_item(data: &[u8], at: usize, item: usize) -> Option<&[u8]> {
+    let count = usize::from(u16::from_be_bytes([*data.get(at)?, *data.get(at + 1)?]));
+    if item >= count {
+        return None;
+    }
+    let off_size = usize::from(*data.get(at + 2)?);
+    let offsets_at = at + 3;
+    let data_at = offsets_at + (count + 1) * off_size;
+    let read = |position: usize| -> Option<usize> {
+        let base = offsets_at + position * off_size;
+        let mut value = 0;
+        for index in 0..off_size {
+            value = (value << 8) | usize::from(*data.get(base + index)?);
+        }
+        Some(value)
+    };
+    let start = read(item)?;
+    let end = read(item + 1)?;
+    data.get(data_at + start - 1..data_at + end - 1)
+}
+
+/// The last operand of `operator` inside a CFF Top DICT.
+fn top_dict_operator(dict: &[u8], operator: u8) -> Option<usize> {
+    let mut operands: Vec<f64> = Vec::new();
+    let mut index = 0;
+    while index < dict.len() {
+        let byte = *dict.get(index)?;
+        index += 1;
+        match byte {
+            28 => {
+                let value = i16::from_be_bytes([*dict.get(index)?, *dict.get(index + 1)?]);
+                operands.push(f64::from(value));
+                index += 2;
+            }
+            29 => {
+                let mut bytes = [0_u8; 4];
+                for (offset, slot) in bytes.iter_mut().enumerate() {
+                    *slot = *dict.get(index + offset)?;
+                }
+                operands.push(f64::from(i32::from_be_bytes(bytes)));
+                index += 4;
+            }
+            32..=246 => operands.push(f64::from(byte) - 139.0),
+            247..=250 => {
+                let next = f64::from(*dict.get(index)?);
+                operands.push((f64::from(byte) - 247.0) * 256.0 + next + 108.0);
+                index += 1;
+            }
+            251..=254 => {
+                let next = f64::from(*dict.get(index)?);
+                operands.push(-(f64::from(byte) - 251.0) * 256.0 - next - 108.0);
+                index += 1;
+            }
+            30 => {
+                // A real number; no Top DICT operand this module reads needs
+                // one, so it is consumed and ignored.
+                while index < dict.len() {
+                    let nibble = dict[index];
+                    index += 1;
+                    if nibble & 0x0F == 0x0F || nibble >> 4 == 0x0F {
+                        break;
+                    }
+                }
+                operands.push(f64::NAN);
+            }
+            0..=21 => {
+                if byte == 12 {
+                    index += 1;
+                }
+                if byte == operator {
+                    if let Some(value) = operands.last() {
+                        if value.is_finite() && *value >= 0.0 {
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            return Some(*value as usize);
+                        }
+                    }
+                    return None;
+                }
+                operands.clear();
+            }
+            _ => operands.clear(),
+        }
+    }
+    None
 }
 
 /// An outline for a glyph id, from a parsed TrueType program.
@@ -621,6 +964,65 @@ mod tests {
             glyph.contours.len(),
             20,
             "the notdef box is a hollow 5×7 frame"
+        );
+    }
+}
+
+#[cfg(test)]
+mod cff_tests {
+    use super::{cff_layout, top_dict_operator, wrap_cff, Font};
+
+    /// A three-glyph bare CFF built by hand: header, one-entry Name INDEX, a Top
+    /// DICT pointing at its CharStrings, empty String and Global Subr INDEXes,
+    /// and three empty charstrings (`endchar`).
+    fn synthetic_cff() -> Vec<u8> {
+        let mut cff = vec![1, 0, 4, 4];
+        // Name INDEX: one entry, "A".
+        cff.extend_from_slice(&[0, 1, 1, 1, 2, b'A']);
+        // Top DICT INDEX: one entry of 6 bytes, CharStrings at offset 25.
+        cff.extend_from_slice(&[0, 1, 1, 1, 7]);
+        cff.extend_from_slice(&[29, 0, 0, 0, 25, 17]);
+        // String INDEX and Global Subr INDEX: both empty.
+        cff.extend_from_slice(&[0, 0]);
+        cff.extend_from_slice(&[0, 0]);
+        assert_eq!(cff.len(), 25, "the CharStrings offset above");
+        // CharStrings INDEX: three entries, all empty.
+        cff.extend_from_slice(&[0, 3, 1, 1, 1, 1, 1]);
+        cff
+    }
+
+    #[test]
+    fn a_bare_cff_becomes_a_face_ttf_parser_reads() {
+        let cff = synthetic_cff();
+        let (charset_at, glyphs) = cff_layout(&cff).expect("layout");
+        assert_eq!((charset_at, glyphs), (0, 3), "predefined charset, 3 glyphs");
+        let wrapped = wrap_cff(&cff, glyphs).expect("wrap");
+        let face = ttf_parser::Face::parse(&wrapped, 0).expect("parse the wrapper");
+        assert_eq!(face.number_of_glyphs(), 3);
+        assert_eq!(face.units_per_em(), 1000);
+        assert!(Font::cff(pdf2::Encoding::standard(), cff).is_some());
+    }
+
+    #[test]
+    fn a_program_without_charstrings_is_refused() {
+        // The same file with its Top DICT truncated: no CharStrings operator.
+        let cff = synthetic_cff();
+        assert!(cff_layout(&cff[..8]).is_none());
+        assert!(Font::cff(pdf2::Encoding::standard(), vec![0, 1]).is_none());
+    }
+
+    #[test]
+    fn the_top_dict_operator_reader_handles_each_number_encoding() {
+        // 29 = 32-bit integer, 28 = 16-bit, 32..=246 = byte - 139.
+        assert_eq!(top_dict_operator(&[29, 0, 0, 1, 0, 17], 17), Some(256));
+        assert_eq!(top_dict_operator(&[28, 1, 0, 17], 17), Some(256));
+        assert_eq!(top_dict_operator(&[139 + 42, 17], 17), Some(42));
+        // 251..=254 encode negative numbers, which no offset may be.
+        assert_eq!(top_dict_operator(&[251, 0, 17], 17), None);
+        assert_eq!(
+            top_dict_operator(&[29, 0, 0, 0, 9], 17),
+            None,
+            "no operator"
         );
     }
 }

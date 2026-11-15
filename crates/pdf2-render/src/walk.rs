@@ -248,6 +248,9 @@ struct State {
     horizontal_scale: f64,
     leading: f64,
     rise: f64,
+    /// `Tr`: 0 fill, 1 stroke, 2 both, 3 neither (invisible), 4–7 the same with
+    /// clipping (9.3).
+    text_mode: i64,
     text_matrix: Matrix,
     line_matrix: Matrix,
 }
@@ -272,6 +275,7 @@ impl State {
             horizontal_scale: 1.0,
             leading: 0.0,
             rise: 0.0,
+            text_mode: 0,
             text_matrix: Matrix::IDENTITY,
             line_matrix: Matrix::IDENTITY,
         }
@@ -494,6 +498,19 @@ impl Walker<'_> {
             b"Tw" => self.state.word_spacing = number(operands, 0),
             b"Tz" => self.state.horizontal_scale = number(operands, 0) / 100.0,
             b"Ts" => self.state.rise = number(operands, 0),
+            b"Tr" => {
+                let mode = number(operands, 0);
+                let mode = if mode.is_finite() {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let mode = mode as i64;
+                    mode.clamp(0, 7)
+                } else {
+                    0
+                };
+                // Modes 4–7 add clipping, which the rasteriser does not model
+                // yet; the fill and stroke halves are what a page shows.
+                self.state.text_mode = mode;
+            }
             b"Tj" => {
                 if let Some(Object::String(string)) = operands.first() {
                     let bytes = string.as_bytes().to_vec();
@@ -643,6 +660,12 @@ impl Walker<'_> {
         if glyph.contours.is_empty() {
             return;
         }
+        // `Tr` 3 and 7 draw nothing; 1, 5 stroke only; 2, 6 fill and stroke.
+        let mode = self.state.text_mode;
+        let invisible = matches!(mode, 3 | 7);
+        if invisible {
+            return;
+        }
         let scale = Matrix::new(
             self.state.font_size * self.state.horizontal_scale,
             0.0,
@@ -664,14 +687,44 @@ impl Walker<'_> {
                     .collect()
             })
             .collect();
-        fill_polygons(
-            self.canvas,
-            &self.mask,
-            &polygons,
-            self.state.fill,
-            false,
-            1.0,
-        );
+        let filled = matches!(mode, 0 | 2 | 4 | 6);
+        if filled {
+            fill_polygons(
+                self.canvas,
+                &self.mask,
+                &polygons,
+                self.state.fill,
+                false,
+                1.0,
+            );
+        }
+        if matches!(mode, 1 | 2 | 5 | 6) {
+            // A stroked glyph uses the text state's line width, cap and join.
+            let mut outline = Vec::new();
+            for polygon in &polygons {
+                let mut closed = polygon.clone();
+                if let Some(first) = closed.first().copied() {
+                    closed.push(first);
+                }
+                outline.extend(stroke_outline(
+                    &[closed],
+                    self.state.line_width,
+                    self.state.cap,
+                    self.state.join,
+                    self.state.miter_limit,
+                ));
+            }
+            if !outline.is_empty() {
+                fill_polygons(
+                    self.canvas,
+                    &self.mask,
+                    &outline,
+                    self.state.stroke,
+                    false,
+                    1.0,
+                );
+            }
+        }
     }
 
     /// Move the text position by `advance` in unscaled text space.
@@ -829,26 +882,38 @@ impl Walker<'_> {
             Some(Object::Name(name)) => name.clone(),
             _ => Vec::new(),
         };
-        if subtype != b"CIDFontType2" {
-            // CIDFontType0 is CFF, whose charstrings this renderer cannot read.
+        // CIDFontType2 is TrueType, CIDFontType0 is CFF; both draw once the
+        // program is wrapped, so the only difference here is which descriptor
+        // entry carries it.
+        if subtype != b"CIDFontType2" && subtype != b"CIDFontType0" {
             return LoadedFont {
-                note: Some("font:CIDFontType0"),
+                note: Some("font:CIDFontType0-unknown"),
                 ..LoadedFont::default()
             };
         }
+        let is_cff = subtype == b"CIDFontType0";
         let program = descendant
             .get(b"FontDescriptor")
             .and_then(|descriptor| resolve(self.document, Some(descriptor)).ok())
             .and_then(|descriptor| match descriptor {
                 Object::Dictionary(descriptor) => {
-                    descriptor.get(b"FontFile2").and_then(|file| match file {
+                    let entry: &[u8] = if is_cff { b"FontFile3" } else { b"FontFile2" };
+                    descriptor.get(entry).and_then(|file| match file {
                         Object::Reference(id) => self.document.stream_data(*id).ok(),
                         _ => None,
                     })
                 }
                 _ => None,
             })
-            .and_then(|data| Font::true_type(Encoding::standard(), data));
+            .and_then(|data| {
+                if is_cff {
+                    // CFF arrives bare (`/CIDFontType0C`) or wrapped (`/OpenType`);
+                    // `Font::cff` accepts both.
+                    Font::cff(Encoding::standard(), data)
+                } else {
+                    Font::true_type(Encoding::standard(), data)
+                }
+            });
         let Some(program) = program else {
             return LoadedFont {
                 note: Some("font:Type0-no-program"),

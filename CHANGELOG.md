@@ -9,6 +9,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **CFF fonts draw their outlines** (`9.6.5`, item 4): a `/CIDFontType0C`
+  program — bare CFF with no OpenType container — is wrapped in the smallest
+  sfnt `ttf-parser` will read, and its charset is inverted so a CID finds its
+  glyph instead of being used as a glyph id. The two corpus pages that reported
+  `font:CIDFontType0` (`cid_cff.pdf`, `Embedded_font.pdf`) now render. **No new
+  dependency**: `skrifa` needs the same container and was measured to reject a
+  bare CFF (`Invalid sfnt version 0x01000404`) — see
+  `docs/adr/0003-cff-without-a-dependency.md`.
+- **`Tr` (text rendering mode) is honoured** (`9.3`): modes 1, 2, 5 and 6 stroke
+  the glyphs, 3 and 7 draw nothing, and the mode is saved with the graphics
+  state. Invisible text layers no longer leak into renders, and `Tr 0` is no
+  longer reported as an unsupported operator.
 - **Encrypted files from revisions 2–4 are read** (`7.6.2`–`7.6.4`): `/V 1`,
   `/V 2` and `/V 4` — RC4 with 40- to 128-bit keys, and AES-128-CBC — with the
   file key MD5 derives from the padded password, `/O`, `/P` and the trailer's
@@ -89,6 +101,18 @@ RC4/AES-128 revisions are not implemented).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **CFF fonts draw their outlines** (`9.6.5`, item 4): a `/CIDFontType0C`
+  program — bare CFF with no OpenType container — is wrapped in the smallest
+  sfnt `ttf-parser` will read, and its charset is inverted so a CID finds its
+  glyph instead of being used as a glyph id. The two corpus pages that reported
+  `font:CIDFontType0` (`cid_cff.pdf`, `Embedded_font.pdf`) now render. **No new
+  dependency**: `skrifa` needs the same container and was measured to reject a
+  bare CFF (`Invalid sfnt version 0x01000404`) — see
+  `docs/adr/0003-cff-without-a-dependency.md`.
+- **`Tr` (text rendering mode) is honoured** (`9.3`): modes 1, 2, 5 and 6 stroke
+  the glyphs, 3 and 7 draw nothing, and the mode is saved with the graphics
+  state. Invisible text layers no longer leak into renders, and `Tr 0` is no
+  longer reported as an unsupported operator.
 - **Encrypted files from revisions 2–4 are read** (`7.6.2`–`7.6.4`): `/V 1`,
   `/V 2` and `/V 4` — RC4 with 40- to 128-bit keys, and AES-128-CBC — with the
   file key MD5 derives from the padded password, `/O`, `/P` and the trailer's
