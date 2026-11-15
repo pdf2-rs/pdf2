@@ -7,7 +7,11 @@ has exactly one status:
 - **shipped** — in the tree and exercised by a test or the corpus;
 - **scheduled** — an item in `docs/ROADMAP-NEXT.md` (number given);
 - **refused** — a non-goal in `docs/adr/0001-differentiators.md` (line given);
-- **unplanned** — nothing owns it yet, with the reason and what would change that.
+- **unplanned** — nothing owns it yet, with the reason and what would change that;
+- **not applicable** — the clause describes no behaviour this library can have
+  (a registry, a viewer-only feature, or a legacy construct with no reader);
+- *partial* qualifies a status: the clause is mostly answered, and the cell says
+  what is not.
 
 Clause numbers are ISO 32000-2:2020; module paths live in
 [`docs/SPEC-MAP.md`](SPEC-MAP.md), which already keys clauses to files — this
@@ -16,6 +20,25 @@ ledger names the clause and the evidence, it does not repeat the map.
 Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 `crates/pdf2-render/src/` (rendering), `crates/pdf2-cli/src/` (tooling),
 `crates/pdf2-wasm/src/` (browser API), `docs/CORPUS.md` (measured behaviour).
+
+## Clause coverage
+
+Check against the standard's contents: every clause from 7 to 14 and every
+normative annex has rows answering for it. Clauses 1–6 (scope, references,
+terms, notation, version designations, conformance) describe the document, not
+behaviour.
+
+| Clause | Rows that answer for it |
+| --- | --- |
+| `7` Syntax (`7.2`–`7.12`) | lexical, objects, filters, file structure, encryption, document structure, content streams — §File structure and objects; `7.9` dates are not modelled, `7.10` functions `unplanned` (shadings need them), `7.11` embedded files `unplanned`, `7.12` extensions `unplanned` |
+| `8` Graphics (`8.1`–`8.11`) | painting rows, colour spaces, images (`8.9`), Form XObjects (`8.10`) `unplanned`, optional content (`8.11`) `unplanned` — §Painting and page geometry, §Colour, §Images |
+| `9` Text (`9.1`–`9.10`) | fonts, encodings, `/Widths`, extraction — §Fonts and text |
+| `10` Rendering (`10.1`–`10.8`) | colour conversion and ICC (`10.3`–`10.4`) — §Colour; transfer functions (`10.5`) and halftones (`10.6`) `unplanned`; scan conversion (`10.7`) `unplanned`; separations (`10.8`) with `8.6.6.4` |
+| `11` Transparency (`11.1`–`11.7`) | the transparency row, `scheduled 10` — §Painting and page geometry |
+| `12` Interactive features (`12.1`–`12.11`) | §Interactive features |
+| `13` Multimedia (`13.1`–`13.7`) | §Multimedia |
+| `14` Document interchange (`14.1`–`14.13`) | §Document interchange, plus the metadata and `Info` rows in §File structure and objects |
+| Annexes `D`, `E`, `F`, `I`, `K`, `L`, `O`, `Q` | §Normative annexes |
 
 ## File structure and objects
 
@@ -28,6 +51,10 @@ Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 | Linearised files (read) | shipped by construction | Linearisation is an ordering; the parser does not care |
 | Linearisation (write) | unplanned | No demand evidence; `qpdf` owns the use case |
 | Incremental update (write) | scheduled 11 | `src/writer.rs` builds new documents only |
+| `7.9` Common data structures — dates, names, strings, rectangles | shipped, partial | `Rect` and the name/string objects are modelled (`src/object.rs`); **dates are not**: no `Date` type exists, so `/CreationDate` and `/ModDate` are unread strings |
+| `7.10` Functions (type 0–4, used by shadings and separations) | unplanned | Nothing evaluates PDF functions; shadings (item 10) cannot be drawn without it |
+| `7.11` Embedded files and file specifications (`/EmbeddedFiles`, `/Filespec`) | unplanned | No `EmbeddedFiles` or `/Filespec` handling anywhere; attachments are invisible |
+| `7.12` Extensions dictionary | unplanned | No `Extensions` handling; extension levels are ignored rather than reported |
 
 ## Filters and images
 
@@ -78,19 +105,68 @@ Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 | Transparency groups, soft masks, blend modes (`11`) | scheduled 10 | `alphatrans.pdf`, `blendmode.pdf` |
 | `8.10` **Form XObjects** (`/Subtype /Form`) | unplanned | **Not drawn at all**: `Do` calls `draw_image`, which reports `Do` and returns for any subtype that is not `/Image` — `crates/pdf2-render/src/walk.rs:534` (the `Do` dispatch) and `:701` (inside `draw_image`, the `/Subtype /Image` test that bails out) — so a page whose vector content lives in a Form XObject draws nothing. No roadmap item owns it. |
 | `8.11` **Optional content** (layers, `/OCProperties`) | unplanned | No `OCProperties` or `OCG` handling exists anywhere in `src/` or `crates/`; layer visibility is not modelled, so a page with layers draws every layer or none. No roadmap item owns it. |
+| `10.5` **Transfer functions** and `10.6` **Halftones** | unplanned | Neither exists: `TransferFunction` and `Halftone` appear nowhere in `src/` or `crates/`. For screen output both are largely moot; for print fidelity they are not, and `10.8` separations need `10.5` |
 | `10.7` **Scan conversion** — anti-aliasing, glyph cache, render speed budget | unplanned | Coverage is decided at pixel centres, with no anti-aliasing (`crates/pdf2-render/src/raster.rs:108`, `docs/RENDERING.md`), which is why the oracle gate compares at 4×4 blocks. The speed half has no item either: ADR non-goal 1 refuses *competing* on speed, which is not the same as having no target; a budget in the oracle job would make it measurable. |
 
-## Documents, forms, signing
+## Documents and metadata
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
-| Page tree with inherited attributes, XMP read, `Info` dictionary | shipped | `src/page.rs`; `Info` is legacy 2.0 |
-| Annotations: read, render, appearance streams | scheduled 12 | Nothing in the tree today |
-| Forms: read, render, **fill** | scheduled 12 | The ADR's non-goal 3 says "forms authoring"; filling is not authoring — the wording is corrected there |
-| Forms authoring, JavaScript, XFA | refused | ADR non-goal 3 |
-| Digital signatures (read and write) | refused | ADR non-goal 3; a signature implementation is a security product with its own review burden |
-| 3D content | refused | ADR non-goal 3 |
-| Tagged PDF: structure tree, accessibility (PDF/UA), reading order as structure | unplanned | Absent from the roadmap *and* from the refusals — the one genuine decision this ledger forces |
+| `7.7.3` Page tree with inherited attributes | shipped | `src/page.rs`, `tests/pages.rs` |
+| `14.3` Metadata: XMP (`/Metadata`) read | shipped | `src/page.rs` (`Document::metadata`), `tests/document.rs` |
+| `14.3` `Info` dictionary (legacy) | refused | Deliberately out of scope in `README.md` (limits): it is not read and the writer emits none — XMP is the PDF 2.0 replacement. The earlier version of this row claimed it as *shipped*, which was false. |
+
+## Interactive features (`12`)
+
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| `12.2` Viewer preferences | unplanned | No `ViewerPreferences` in the model; a viewer's concern that a library does not need, and nothing else depends on it |
+| `12.3` Document-level navigation — outlines, destinations, `/OpenAction` | unplanned | No `Outlines`, `Dests` or `OpenAction` handling anywhere; bookmarks are invisible |
+| `12.4` Page-level navigation — link annotations and `/Dest` | unplanned | Rides with `12.5` (item 12) |
+| `12.5` Annotations — read, render, appearance streams | scheduled 12 | Nothing in the tree today |
+| `12.6` Actions — `/GoTo`, `/URI`, JavaScript | unplanned | Actions are not modelled; JavaScript is refused (ADR non-goal 3) |
+| `12.7` Forms — read, render, **fill** | scheduled 12 | The ADR's non-goal 3 refuses *authoring*; filling is not authoring, and the ADR says so |
+| `12.8` Digital signatures | refused | ADR non-goal 3; a signature implementation is a security product with its own review burden |
+| `12.9` Measurement properties (PDF 2.0) | unplanned | Not modelled |
+| `12.10` Geospatial features (PDF 2.0) | unplanned | Not modelled |
+| `12.11` Document requirements (PDF 2.0) | unplanned | Not modelled |
+
+## Multimedia (`13`)
+
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| `13.2` Multimedia, `13.7` Rich media | unplanned | Not modelled; rendering rich media is a viewer's job |
+| `13.3` Sounds | unplanned | Not modelled; playback is a viewer feature |
+| `13.4` Movies | unplanned | Not modelled; superseded by rich media in PDF 2.0 practice |
+| `13.5` Alternate presentations | unplanned | Not modelled |
+| `13.6` 3D artwork | refused | ADR non-goal 3 |
+
+## Document interchange (`14`)
+
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| `14.2` Procedure sets | not applicable | Operator sets for PDF 1.0 viewers; a processor has nothing to do with them |
+| `14.4` File identifiers (`/ID`) | unplanned | No `/ID` is read or written; the writer emits none |
+| `14.5` Page-piece dictionaries | unplanned | Private producer data; not retained, and the writer does not carry unknown page keys forward |
+| `14.6` Marked content — `BMC`/`BDC`/`EMC`, `/ActualText`, `/Artifact` | unplanned | Marked-content operators are not interpreted, so `/ActualText` never replaces what extraction returns and artefacts are extracted as text |
+| `14.7` Logical structure, `14.8` Tagged PDF, `14.9` Accessibility support | refused | ADR non-goal 7 |
+| `14.10` Web capture | not applicable | Legacy PDF 1.x capture format; no processor keeps it |
+| `14.11` Prepress — output intents, separations | unplanned | No `/OutputIntents`; separations ride with `8.6.6.4`/`10.8`. Note: `docs/SPEC-MAP.md` keys `14.11.2` to clipping paths, which is a map error — recorded here, not repaired (out of scope) |
+| `14.12` Document parts | unplanned | PDF 2.0 document parts are not modelled |
+| `14.13` Associated files | unplanned | Not modelled, and item 12's annotation work would need it for file attachments |
+
+## Normative annexes
+
+| Annex | Status | Evidence / owner |
+| --- | --- | --- |
+| `D` Character sets and encodings | shipped, partial | `src/encoding.rs`: `StandardEncoding`, `WinAnsiEncoding`, `/Differences`; the upper half of `MacRoman` and glyph names outside the built-in table are skipped (README limits) |
+| `E` PDF Name Registry | not applicable | A registry of names and abbreviations; no behaviour to implement |
+| `F` Linearized PDF | not applicable | Linearisation is an ordering; the parser reads such files by construction (see the linearisation row in §File structure and objects), and no writer emits it |
+| `I` PDF versions and compatibility | shipped | `src/document.rs` accepts `%PDF-1.x` and `%PDF-2.x`, refuses the rest (`tests/document.rs`) |
+| `K` XFA forms | refused | ADR non-goal 3 |
+| `L` Parent-child relationships between structure elements | refused | ADR non-goal 7 (structure trees) |
+| `O` Fragment identifiers | unplanned | No fragment/destination handling; URIs with fragments are opaque strings to the library |
+| `Q` Method for determining transparency on a page | unplanned | Rides with item 10: without transparency groups, there is nothing to determine |
 
 ## Encryption
 
