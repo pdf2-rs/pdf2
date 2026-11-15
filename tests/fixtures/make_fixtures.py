@@ -1034,8 +1034,13 @@ def make_startxref_hint():
     writer = Writer()
     writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
     writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-    writer.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+    )
     writer.stream(4, b"", b"BT /F1 12 Tf 10 50 Td (hint) Tj ET")
+    writer.obj(5, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     xref = len(writer.out)
     writer.out += b"xref\n0 %d\n" % (max(writer.offsets) + 1)
     writer.out += b"0000000000 65535 f \n"
