@@ -202,3 +202,16 @@ fn a_free_entry_generation_above_the_u16_range_is_clamped() {
     let document = pdf2::Document::open(bytes).expect("open");
     assert_eq!(document.pages().expect("pages").len(), 1);
 }
+
+#[test]
+fn a_startxref_that_points_inside_the_table_is_repaired() {
+    // The fixture's `startxref` is 19 bytes into the table; the reader falls back
+    // to the nearest `xref` keyword before it, which is the corpus file's pattern.
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/startxref-hint.pdf"
+    ))
+    .expect("read startxref-hint.pdf");
+    let document = pdf2::Document::open(bytes).expect("open");
+    assert_eq!(document.pages().expect("pages").len(), 1);
+}

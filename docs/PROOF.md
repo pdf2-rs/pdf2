@@ -145,6 +145,11 @@ added there rather than documented here as if it existed.
   the three that are not are one encrypted file, one CMap-encoded CJK font
   (needs item 5's data) and one font with no mapping to find. Progress is
   recorded, not restated: [`docs/CORPUS.md`](CORPUS.md).
+- **Fourth run, after the encryption work** (`cargo xtask corpus`, 2026-11-15):
+  **23 of 23 parse and render, 21 are fully readable**. The two that are not are
+  composite fonts with nothing to map (`arial_unicode_en_cidfont.pdf`, whose
+  program has no `cmap`; `90ms_rksj_h_sample.pdf`, which needs item 5's CMap
+  data) — no longer an encryption case, which is what the corpus said it was.
 - **Calibrated 2026-11-15**, in CI (poppler, mupdf, Ghostscript at 144 DPI,
   compared at 4×4 blocks): the inter-oracle spread and our distance on nine
   cases are recorded in `corpus/tolerances.tsv` and `corpus/oracle-summary.csv`;

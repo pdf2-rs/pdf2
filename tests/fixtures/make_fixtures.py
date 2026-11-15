@@ -1021,6 +1021,32 @@ def make_tounicode():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("tounicode.pdf", bytes(writer.out))
 
+
+
+def make_startxref_hint():
+    """A table whose `startxref` points *inside* the table, not at `xref`.
+
+    The corpus file `encrypted-attachment.pdf` does exactly this (offset 2242
+    against `xref` at 2223), and refusing it for a bad hint rejects a file that is
+    otherwise fine. The reader falls back to the nearest `xref` keyword before the
+    hint; this fixture is that pattern without the encryption.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>")
+    writer.stream(4, b"", b"BT /F1 12 Tf 10 50 Td (hint) Tj ET")
+    xref = len(writer.out)
+    writer.out += b"xref\n0 %d\n" % (max(writer.offsets) + 1)
+    writer.out += b"0000000000 65535 f \n"
+    for number in range(1, max(writer.offsets) + 1):
+        writer.out += b"%010d 00000 n \n" % writer.offsets[number]
+    writer.out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (max(writer.offsets) + 1)
+    # Deliberately wrong: 19 bytes into the table, which is where a writer that
+    # counted the wrong offset lands.
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % (xref + 19)
+    write("startxref-hint.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1236,3 +1262,4 @@ if __name__ == "__main__":
     make_generation_edge()
     make_reading_order()
     make_tounicode()
+    make_startxref_hint()

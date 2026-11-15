@@ -9,6 +9,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **Encrypted files from revisions 2–4 are read** (`7.6.2`–`7.6.4`): `/V 1`,
+  `/V 2` and `/V 4` — RC4 with 40- to 128-bit keys, and AES-128-CBC — with the
+  file key MD5 derives from the padded password, `/O`, `/P` and the trailer's
+  `/ID`, the per-object key each string and stream needs, and the owner-password
+  path of Algorithm 7. `/R 5` stays refused. Two generated revision-4 fixtures
+  (RC4 and AES-128) decrypt to the same object graph as their plaintext twin.
+- **A `startxref` that points inside the table is repaired** (`7.5.5`): the
+  nearest `xref` keyword before the hint is tried before the file is refused, so
+  a writer that counted the wrong offset no longer costs the whole document.
+  `tests/fixtures/startxref-hint.pdf` pins the pattern, and the corpus's last
+  unparseable file now reads: **23 of 23 parse, 21 of 23 fully readable**.
+- **`/StmF` and `/StrF` `/Identity` mean no ciphertext** (`7.6.5`): a file that
+  declares both is legal, holds nothing encrypted, and no longer has to be
+  refused for failing a password check it does not have.
 - **Composite (Type0) fonts extract text** (`9.7`, `9.10.3`): a font with an
   Identity encoding and a `/ToUnicode` map now decodes — codes split by the
   CMap's code space, text from `bfchar`/`bfrange`, and CID advances from `/W` and
@@ -75,6 +89,20 @@ RC4/AES-128 revisions are not implemented).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **Encrypted files from revisions 2–4 are read** (`7.6.2`–`7.6.4`): `/V 1`,
+  `/V 2` and `/V 4` — RC4 with 40- to 128-bit keys, and AES-128-CBC — with the
+  file key MD5 derives from the padded password, `/O`, `/P` and the trailer's
+  `/ID`, the per-object key each string and stream needs, and the owner-password
+  path of Algorithm 7. `/R 5` stays refused. Two generated revision-4 fixtures
+  (RC4 and AES-128) decrypt to the same object graph as their plaintext twin.
+- **A `startxref` that points inside the table is repaired** (`7.5.5`): the
+  nearest `xref` keyword before the hint is tried before the file is refused, so
+  a writer that counted the wrong offset no longer costs the whole document.
+  `tests/fixtures/startxref-hint.pdf` pins the pattern, and the corpus's last
+  unparseable file now reads: **23 of 23 parse, 21 of 23 fully readable**.
+- **`/StmF` and `/StrF` `/Identity` mean no ciphertext** (`7.6.5`): a file that
+  declares both is legal, holds nothing encrypted, and no longer has to be
+  refused for failing a password check it does not have.
 - **Composite (Type0) fonts extract text** (`9.7`, `9.10.3`): a font with an
   Identity encoding and a `/ToUnicode` map now decodes — codes split by the
   CMap's code space, text from `bfchar`/`bfrange`, and CID advances from `/W` and
