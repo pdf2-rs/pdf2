@@ -157,10 +157,8 @@ fn run() -> Result<(), String> {
             mean: (spread.mean * 1.1).max(FLOOR_MEAN),
             over: (spread.over * 1.1).max(FLOOR_OVER),
         };
-        let over_time = match budget.get(&case.name) {
-            Some(limit) if elapsed_ms > *limit && !options.calibrate => true,
-            _ => false,
-        };
+        let over_time = !options.calibrate
+            && matches!(budget.get(&case.name), Some(limit) if elapsed_ms > *limit);
         let within = median.over <= allowed.over && median.mean <= allowed.mean;
         let verdict = if options.calibrate {
             "calibrated"
