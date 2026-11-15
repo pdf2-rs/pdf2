@@ -234,9 +234,9 @@ Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|
 | wasm: open, page count/size, text, metadata, render to pixels/canvas, render report | shipped | `crates/pdf2-wasm` |
 | wasm/npm API growth (spans, page boxes, structured errors) | unplanned | Follows the extraction-quality decision above |
 | Fixtures with arithmetic (calibration, book) | shipped | `tests/fixtures`, `docs/RENDERING.md` |
-| Tier B corpus in CI (pdf.js full tree, veraPDF) | scheduled 7 | Formula and licences are in §Outside facts; the roadmap's item 7 owns the scheduled run. Owner: item 7 |
+| Tier B corpus in CI (pdf.js full tree, veraPDF) | shipped | `.github/workflows/tier-b.yml` (weekly + dispatch with a file cap) fetches pdf.js `test/pdfs` at `d60bc7426aa0` (Apache-2.0) and the veraPDF corpus (CC BY 4.0), and `cargo run -q -p xtask -- tier-b <dir>…` publishes `tier-b-report.md` — files, readable share, failure classes with an example each. First measured sample: **184 of 200 pdf.js files readable (92.0%)**, `docs/CORPUS.md` §Tier B. Owner: item 7 (shipped 2026-11-15) |
 | Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/` (23 files, hashed), `corpus/tolerances.tsv`, `crates/pdf2-oracle`, the `oracle` job; last run green 2026-11-15. Owner: item 1 (shipped). The tolerances are only comparable on the engines recorded in §Outside facts (poppler 26.01.0, mupdf 1.27.0, ghostscript 10.06.0) |
-| Tier B corpus in CI (pdf.js full, veraPDF) | scheduled 7 | |
+| Tier B histogram as a gate | refused | It publishes a distribution and never fails a merge: a tree of other people's broken files is evidence, not a test suite (`docs/CORPUS.md` §Tier B). Owner: none — item 7 keeps it a measurement |
 | Fuzzing (five targets, nightly), deny, semver, bench gates | shipped | `fuzz/fuzz_targets` (5), `.github/workflows/{fuzz,ci}.yml`; last nightly fuzz run green 2026-11-15 |
 | Validation (PDF/A, PDF 2.0 conformance) | unplanned | Different buyer; `veraPDF` is the reference. Owner: none — roadmap item 13 keeps it unscheduled. Owner: none — roadmap item 13 keeps it unscheduled |
 

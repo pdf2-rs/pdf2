@@ -1,0 +1,77 @@
+name: Tier B corpus
+
+# A measurement, not a gate: hundreds of real files from other projects'
+# corpora, counted by failure class, published as a histogram. `docs/CORPUS.md`
+# says what the trees are and `docs/PROOF.md` how the numbers are used.
+on:
+  schedule:
+    # Mondays, after the weekly oracle calibration.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Maximum files per tree (0 = every file)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tier-b
+  cancel-in-progress: true
+
+jobs:
+  tier-b:
+    name: Tier B histogram
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: tier-b
+
+      - name: Fetch pdf.js test corpus (Apache-2.0, pinned)
+        run: |
+          # Pinned to the same commit as Tier A (`corpus/manifest.json`), so the
+          # small committed corpus and this survey describe one tree.
+          commit=d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a
+          curl -sSL -o pdfjs.tgz "https://github.com/mozilla/pdf.js/archive/$commit.tar.gz"
+          tar xzf pdfjs.tgz "pdf.js-$commit/test/pdfs"
+          echo "PDFJS=pdf.js-$commit/test/pdfs" >> "$GITHUB_ENV"
+
+      - name: Fetch veraPDF corpus (CC BY 4.0)
+        run: |
+          curl -sSL -o verapdf.tgz "https://github.com/veraPDF/veraPDF-corpus/archive/refs/heads/staging.tar.gz"
+          tar xzf verapdf.tgz
+          echo "VERAPDF=veraPDF-corpus-staging" >> "$GITHUB_ENV"
+
+      - name: Measure and publish the histogram
+        env:
+          LIMIT: ${{ inputs.limit || '0' }}
+        run: |
+          limit_args=""
+          if [ "$LIMIT" != "0" ]; then limit_args="--limit $LIMIT"; fi
+          # shellcheck disable=SC2086
+          cargo run -q -p xtask -- tier-b "$PDFJS" "$VERAPDF" $limit_args | tee tier-b.txt
+          {
+            echo "## Tier B corpus"
+            echo
+            cat tier-b-report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        uses: actions/upload-artifact@v5
+        with:
+          name: tier-b-report
+          path: |
+            tier-b-report.md
+            tier-b.txt
+          retention-days: 90

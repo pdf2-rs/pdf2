@@ -42,6 +42,7 @@ fn main() -> ExitCode {
         "wasm-package" => wasm_package(),
         "demo" => demo(),
         "corpus" => corpus(),
+        "tier-b" => tier_b(&args[1..]),
         "bench" => bench(),
         "fixtures" => fixtures(),
         "cmaps" => cmaps(),
@@ -77,6 +78,8 @@ Usage:
                         build the npm package into crates/pdf2-wasm/pkg
   cargo xtask demo      build the demo and drive it in a real browser
   cargo xtask corpus    run the Tier A corpus through the CLI and the renderer
+  cargo xtask tier-b <dir>...
+                        measure a Tier B tree and write a failure histogram
   cargo xtask ledger    check that docs/FEATURES.md and the roadmap agree
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
@@ -543,6 +546,161 @@ mod ledger {
             );
         }
     }
+}
+
+/// Measure a Tier B tree: every PDF under the given directories, one `check`
+/// per file, and a histogram of what failed and why.
+///
+/// This is a measurement, not a gate: the point is a published distribution over
+/// hundreds of real files, so the numbers have somewhere to come from that is not
+/// this repository's own fixtures. Classes are normalised — offsets and paths
+/// stripped — so that "malformed cross-reference generation" is one bar rather
+/// than one bar per byte position.
+fn tier_b(roots: &[String]) -> Result<(), String> {
+    if roots.is_empty() {
+        return Err("usage: cargo xtask tier-b <dir>... [--limit N]".to_owned());
+    }
+    let mut limit = usize::MAX;
+    let mut directories: Vec<&String> = Vec::new();
+    let mut index = 0;
+    while index < roots.len() {
+        if roots[index] == "--limit" {
+            limit = roots
+                .get(index + 1)
+                .and_then(|value| value.parse().ok())
+                .ok_or_else(|| "--limit needs a number".to_owned())?;
+            index += 2;
+            continue;
+        }
+        directories.push(&roots[index]);
+        index += 1;
+    }
+
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for root in &directories {
+        collect_pdfs(std::path::Path::new(root), &mut files)?;
+    }
+    files.sort();
+    files.truncate(limit);
+    if files.is_empty() {
+        return Err("no PDFs found under the given directories".to_owned());
+    }
+    run("cargo", &["build", "-q", "-p", "pdf2-cli"])?;
+
+    let mut classes: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut examples: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    let mut readable = 0;
+    for path in &files {
+        let output = std::process::Command::new("target/debug/pdf2")
+            .arg("check")
+            .arg(path)
+            .output()
+            .map_err(|error| format!("pdf2 check: {error}"))?;
+        let success = output.status.success();
+        // The per-page cause is on stdout and the summary on stderr, so both are
+        // read: the histogram wants the cause.
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let class = if success {
+            readable += 1;
+            "readable".to_owned()
+        } else {
+            normalise_failure(&text)
+        };
+        examples
+            .entry(class.clone())
+            .or_insert_with(|| path.to_string_lossy().into_owned());
+        *classes.entry(class).or_insert(0) += 1;
+    }
+
+    let mut ranked: Vec<(String, usize)> = classes.into_iter().collect();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    let total = files.len();
+    let mut report = String::new();
+    report.push_str("# Tier B corpus report\n\n");
+    report.push_str(&format!(
+        "{} files, {} readable ({:.1}%), {} failing.\n\n",
+        total,
+        readable,
+        100.0 * readable as f64 / total as f64,
+        total - readable
+    ));
+    report.push_str("| Files | Share | Class | Example |\n| --- | --- | --- | --- |\n");
+    for (class, count) in &ranked {
+        report.push_str(&format!(
+            "| {count} | {:.1}% | {} | {} |\n",
+            100.0 * *count as f64 / total as f64,
+            class,
+            examples.get(class).map_or("", String::as_str)
+        ));
+    }
+    std::fs::write("tier-b-report.md", &report).map_err(|error| error.to_string())?;
+    println!("{report}");
+    println!("wrote tier-b-report.md");
+    Ok(())
+}
+
+/// Every `.pdf` below `root`, skipping anything that is not a directory entry.
+fn collect_pdfs(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> Result<(), String> {
+    if !root.exists() {
+        return Err(format!("{}: no such directory", root.display()));
+    }
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(directory) = stack.pop() {
+        let entries = std::fs::read_dir(&directory)
+            .map_err(|error| format!("{}: {error}", directory.display()))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+            {
+                out.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A failure message with its coordinates removed, so equal causes rank together.
+fn normalise_failure(message: &str) -> String {
+    // `check` prints one `page N: text: …` line per unreadable page and a summary
+    // `error:` line at the end; the page line carries the cause.
+    let line = message
+        .lines()
+        .find(|line| line.contains(": text: ") || line.contains(": content: "))
+        .or_else(|| message.lines().find(|line| line.contains("error:")))
+        .or_else(|| message.lines().next())
+        .unwrap_or("")
+        .trim();
+    if let Some(at) = line.find(": text: ").or_else(|| line.find(": content: ")) {
+        let marker = if line[at..].starts_with(": text: ") {
+            ": text: "
+        } else {
+            ": content: "
+        };
+        return line[at + marker.len()..].trim().to_owned();
+    }
+    let line = line.strip_prefix("error: ").unwrap_or(line);
+    // Drop the file path prefix and any " at offset N" or "at line N".
+    let mut text = match line.find(':') {
+        Some(at) if !line[..at].contains(' ') => line[at + 1..].trim().to_owned(),
+        _ => line.to_owned(),
+    };
+    while let Some(at) = text.find(" at offset ") {
+        let rest = &text[at + " at offset ".len()..];
+        let end = rest
+            .find(|character: char| !character.is_ascii_digit())
+            .unwrap_or(rest.len());
+        text.replace_range(at..at + " at offset ".len() + end, "");
+    }
+    text
 }
 
 /// Measure what the library does with the committed corpus: one line per file,
