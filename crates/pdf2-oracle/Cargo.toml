@@ -1,0 +1,13 @@
+[package]
+name = "pdf2-oracle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Compare this renderer with independent engines (poppler, mupdf, Ghostscript) and gate on the measured tolerance."
+
+[dependencies]
+pdf2 = { path = "../..", version = "1.1.0" }
+pdf2-render = { path = "../pdf2-render", version = "1.1.1" }
+
+[lints]
+workspace = true
