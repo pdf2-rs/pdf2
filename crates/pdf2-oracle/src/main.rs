@@ -83,7 +83,10 @@ fn run() -> Result<(), String> {
             .map_err(|error| format!("{}: {error}", case.path.display()))?;
         let document = Document::open(bytes.clone())
             .map_err(|error| format!("{}: {error}", case.path.display()))?;
-        let ours = render_ours(&document, case.page, scale)?;
+        // The case list is 1-based, like a reader's page number; the renderer
+        // takes an index.
+        let ours = render_ours(&document, case.page.saturating_sub(1), scale)
+            .map_err(|error| format!("{}: {error}", case.name))?;
         let mut oracle_images = Vec::new();
         for oracle in &oracles.list {
             let image = oracle.render(&case.path, case.page, options.dpi)?;
