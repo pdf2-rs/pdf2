@@ -103,6 +103,13 @@ mutool draw -r 144 -o /tmp/mupdf.png corpus/tier-a/<file>.pdf 1
 The CLI has no `render` subcommand yet; if the Q4 batch run needs one, it is
 added there rather than documented here as if it existed.
 
+## What the oracle also measures: time
+
+The same job that compares pixels times each case's render and checks it against
+`corpus/render-budget.tsv` (`docs/PERFORMANCE.md` §Render time). Distance says
+the picture is right; time says it is still drawn at the speed the committed
+number promises. Both fail the job, and both print the number they failed on.
+
 ## Where the oracle cannot judge
 
 - **`/CropBox` and `/UserUnit`.** `cropbox.pdf` is 200×200 pt with `/UserUnit 2`

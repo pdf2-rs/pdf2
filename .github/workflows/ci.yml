@@ -247,7 +247,8 @@ jobs:
         run: |
           cargo +stable build --release -p pdf2-oracle
           ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt \
-            --tolerances corpus/tolerances.tsv
+            --tolerances corpus/tolerances.tsv \
+            --budget corpus/render-budget.tsv
 
   deny:
     name: Licences and advisories

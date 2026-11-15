@@ -1,0 +1,21 @@
+# Per-page render budget for the oracle cases, in milliseconds (item 10c).
+#
+# Measured 2026-11-15 on the GitHub `ubuntu-latest` runner, release build, 144 dpi,
+# by the oracle job in calibrate mode; the budget is twice the measured time, or
+# 25 ms where the page is fast enough that a runner's noise dominates. The point
+# is to catch a page that got ten times slower, not to police a millisecond: the
+# renderer has no anti-aliasing and the cases are small.
+#
+# Raise a number deliberately, in its own commit, with the reason. A budget that
+# creeps after every regression measures nothing.
+#
+# case<TAB>budget_ms
+book#1	900
+calibration#1	25
+calibration#2	25
+calibration#3	25
+calibration#4	25
+calibration#5	25
+calibration#9	25
+calibration#10	25
+calibration#11	25
