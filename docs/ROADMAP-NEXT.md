@@ -5,6 +5,12 @@ scorecard (`docs/GAPS.md`), and the measured corpus (`docs/CORPUS.md`). No new
 external numbers appear here — every value below is a fact already recorded in
 those three files.
 
+[`docs/FEATURES.md`](FEATURES.md) is the completeness check on this ranking: every
+feature area of ISO 32000-2, the API and the tooling is marked shipped,
+scheduled (with the item number below), refused (with the ADR line), or
+unplanned. Its seven forced decisions are folded in here, which is why some items
+below carry a letter.
+
 **The theme of the next release, `1.2`, is text and rendering agreement.** The
 corpus made the case better than any estimate could: of 23 real files, **21
 render and 14 are fully readable**, and seven of the nine failures are the *same*
@@ -31,19 +37,25 @@ with dependencies breaking ties.
 | 3 | **`/Encrypt` revisions 2–4** (RC4, AES-128) | 1 of 23 corpus files; every PDF 1.x reader implements them, and this library has AES-256 revision 6 only (gap 4b) | 2 | `encrypted-attachment.pdf` opens; a fixture encrypted with revision 4 is read; `docs/RENDERING.md` limits table updated | — |
 | 4 | **CFF / Type 1 outlines** | The renderer reports `font:FontFile3`/`font:FontFile` instead of drawing; `skrifa` (50.0M downloads) and `read-fonts` (52.9M) already parse both, `std` optional | 2 | No `font:FontFile*` report on the corpus CFF files, and their pages pass the oracle check from item 1 | 1 (to verify), D2's dependency verdict |
 | 5 | **Predefined CMaps and CJK text** | The corpus CJK sample (`90ms_rksj_h_sample.pdf`) is one of the seven; hayro ships 61 CMaps (~250 KB brotli) to make this work | 2 | The CJK sample extracts its text; the shipped data is measured against the wasm budget | 2 |
+| 6b | **`/CropBox` and `/UserUnit`** | Parsed (`src/page.rs:97`) but the renderer uses `/MediaBox` only and never reads `/UserUnit`; the oracle gate can measure the difference on a page with either | 0.5 | A fixture with a crop box and a user unit renders as the oracle does | 1 (to verify) |
 | 6 | **1.x cross-reference generation edge** | 1 corpus file (`ContentStreamCycleType3insideType3.pdf`) fails with `malformed cross-reference generation at offset 2111` | 1 | That file parses; the regression is a fixture with the same generation pattern | — |
 | 7 | **Tier B corpus run in CI** | 23 committed files are evidence; 690 pdf.js files and veraPDF's corpus (CC BY 4.0) are a measurement | 1 | A scheduled job fetches the pinned trees, runs `check`/`text`/render, and publishes a class histogram | 2, 6 (for signal) |
+| 2b | **Extraction quality** (reading order, spaces from advances, ligatures, spans and positions) | Item 2 fixes *mapping*; this is the class behind most of `pdf-extract`'s 78 issues, and it needs an API decision (text only, or spans with boxes) before it can be built | 2 | A corpus page extracts in reading order with correct spaces; the API is documented | 2 |
 | 8 | **Robustness at scale** (object-stream complexity, parser limits, timeouts) | A 65 542-object stream took 37 s in a sibling project before an O(N²) fix; five fuzz targets exist, no complexity test | 2 | A synthetic large-object-stream fixture parses under a stated time budget; a fuzz target covers it | — |
 | 9 | **Image decoders behind features** (DCT, JPX, CCITT, JBIG2) | Four corpus files currently render **blank**; the decoders exist as permissive crates (`hayro-jpeg2000`, `hayro-jbig2`, `hayro-ccitt`, `zune-jpeg`) | 3 | Those four pages have ink and pass the oracle check; each decoder is a feature, and the `no_std` and wasm-size verdicts are recorded | 1 (to verify) |
-| 10 | **Shadings, patterns, transparency** | Corpus shading, blend-mode and alpha files render today only because the operators are skipped; `hayro` covers them | 6 | Oracle diff on those corpus pages; `docs/RENDERING.md`'s "still unproven" list shrinks | 1 |
+| 10 | **Painting completeness**: shadings, patterns, transparency, soft and colour-key masks, `Tr` render modes, Type 3 fonts | Corpus shading, blend-mode, alpha and mask files render today only because the operators are skipped; `Tr` modes and Type 3 were in `docs/RENDERING.md`'s unproven list with no owner until the ledger found them | 7 | Oracle diff on those corpus pages; `docs/RENDERING.md`'s "still unproven" list shrinks to `/UserUnit` and >8-bit images | 1 |
+| 10b | **Colour management (ICC)** | The oracle calibration measures an **8% spread** on the CMYK page: the engines manage colour and we do not. This is a fidelity decision, not a bug | 4 | Our distance to the median oracle on the colour page drops toward the inter-oracle spread | 1, 10 |
+| 10c | **Renderer performance budget** | No item exists: no glyph cache, no anti-aliasing, no time budget. ADR non-goal 1 refuses *racing* hayro, not having a number | 2 | The oracle job records render time per page and fails above a committed budget; a 200-page document stays within it | 1 |
 | 11 | **Editing an opened document** (object mutation, incremental saves) | `lopdf` 30 289 120 downloads is the demand; `src/writer.rs` only builds new files (gap 5) | 5+ | Open a corpus file, add a page, save, reopen: the same page count in our reader and an oracle's | — (a release of its own) |
 | 12 | **Annotations and forms** (read, render, fill) | `pdfium-render` 3 954 648 downloads covers them; nothing here does | 5 | An annotated corpus page renders its appearance streams; a form field can be set and re-read | 11 for filling |
 | 13 | **Conformance validation** (PDF/A, PDF 2.0) | `veraPDF` is the Java reference, `qpdf --check` has 5 588★; no Rust validator | 4 | Not scheduled: different buyer, no rendering synergy | — |
 
 ## What `1.2` contains, and what it does not
 
-**In**: items 1–7. Together they turn "14 of 23 readable" into "21 of 23", put
-oracles under the claims, and make the proof gate run on every release.
+**In**: items 1–7, plus 2b (extraction quality), 6b (`/CropBox`, `/UserUnit`) and
+10c (a render-time budget). Together they turn "14 of 23 readable" into "21 of
+23", put oracles under the claims, give rendering a number to hit, and make the
+proof gate run on every release.
 
 **Out, deliberately**: image codecs and painting features (they change what is
 *drawn*, and item 1 has to exist before that can be judged); editing (a theme of
@@ -62,6 +74,9 @@ CMYK colour page, where the engines themselves disagree).
 - The oracle job exists in CI and fails a page outside its calibrated tolerance.
 - `docs/RENDERING.md` no longer lists composite extraction as unsupported, and
   its limits table names the encryption revisions that are now read.
+- A `/CropBox`/`/UserUnit` fixture passes the oracle check, extraction returns
+  reading order with correct spaces, and the oracle job records render time
+  against a committed budget.
 - No new dependency lands without the `no_std` build and the wasm-size budget
   recorded in `docs/PERFORMANCE.md`.
 

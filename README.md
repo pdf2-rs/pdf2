@@ -58,7 +58,8 @@ Working today:
 The honest version, including the column where we lose. Detail, sources and
 check dates: [`docs/COMPETITORS.md`](docs/COMPETITORS.md); what each gap would
 cost: [`docs/GAPS.md`](docs/GAPS.md); how claims are checked:
-[`docs/PROOF.md`](docs/PROOF.md).
+[`docs/PROOF.md`](docs/PROOF.md); what is shipped, scheduled, refused or
+unplanned, feature by feature: [`docs/FEATURES.md`](docs/FEATURES.md).
 
 | | this crate | [hayro](https://github.com/LaurenzV/hayro) | [pdfium-render](https://github.com/ajrcarey/pdfium-render) | [lopdf](https://github.com/J-F-Liu/lopdf) |
 | --- | --- | --- | --- | --- |
