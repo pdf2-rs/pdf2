@@ -4,6 +4,13 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-11-14
+
+Tool releases that pick up the PDF 1.x reader: `pdf2-render` 1.1.1,
+`pdf2-cli` 1.1.0, `pdf2-wasm` 1.0.5 and npm `pdf2-wasm` 1.0.8 all require
+`pdf2` 1.1.0 or newer, so a fresh resolve gets a renderer, a CLI and a wasm
+build that open PDF 1.x files instead of refusing them at the header.
+
 ## [1.1.0] — 2026-11-14
 
 **Reads PDF 1.x.** The header check accepted only `%PDF-2.x`, so the library
@@ -31,6 +38,13 @@ RC4/AES-128 revisions are not implemented).
 - The demo imports the wasm module with a build stamp from `build.json`:
   GitHub Pages serves fixed filenames with a cache lifetime, and a cached wasm
   from an older build drew blank pages where the current one draws text.
+
+## [1.1.1] — 2026-11-14
+
+Tool releases that pick up the PDF 1.x reader: `pdf2-render` 1.1.1,
+`pdf2-cli` 1.1.0, `pdf2-wasm` 1.0.5 and npm `pdf2-wasm` 1.0.8 all require
+`pdf2` 1.1.0 or newer, so a fresh resolve gets a renderer, a CLI and a wasm
+build that open PDF 1.x files instead of refusing them at the header.
 
 ## [1.1.0] — 2026-11-14
 
