@@ -1052,6 +1052,34 @@ def make_startxref_hint():
     writer.out += b"startxref\n%d\n%%%%EOF\n" % (xref + 19)
     write("startxref-hint.pdf", bytes(writer.out))
 
+
+
+def make_text_mode():
+    """Two identical lines, one painted and one in `Tr 3` (invisible).
+
+    The PDF text rendering mode decides whether glyphs are filled, stroked or
+    drawn at all; a renderer that ignores it paints text a viewer hides, which is
+    how watermarks and OCR layers leak into images.
+    """
+    content = (
+        b"BT /F1 12 Tf\n"
+        b"1 0 0 1 20 150 Tm 0 Tr (AB) Tj\n"
+        b"1 0 0 1 20 100 Tm 3 Tr (CD) Tj\n"
+        b"ET"
+    )
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", content)
+    writer.obj(5, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("text-mode.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1268,3 +1296,4 @@ if __name__ == "__main__":
     make_reading_order()
     make_tounicode()
     make_startxref_hint()
+    make_text_mode()

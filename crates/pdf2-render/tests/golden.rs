@@ -309,3 +309,19 @@ fn the_golden_cli_blesses_and_verifies() {
     assert_eq!(failed.status.code(), Some(1), "a mismatch is exit 1");
     let _ = std::fs::remove_file(&out);
 }
+
+#[test]
+fn an_invisible_text_mode_paints_nothing() {
+    // `text-mode.pdf` draws the same size of text twice: `Tr 0` at y = 150 and
+    // `Tr 3` at y = 100. Only the first band may hold any ink.
+    let rendered = render("text-mode.pdf", 0, 1.0);
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "Tr is a supported operator"
+    );
+    let painted = ink(&rendered, 0, 20, 200, 60);
+    let hidden = ink(&rendered, 0, 80, 200, 120);
+    assert!(painted > 20, "the visible line is drawn: {painted}");
+    assert_eq!(hidden, 0, "Tr 3 draws no ink at all");
+}
