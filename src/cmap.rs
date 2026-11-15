@@ -32,6 +32,7 @@ pub(crate) const MAX_CODESPACE_RANGES: u32 = 1 << 16;
 const MAX_CODE_BYTES: usize = 4;
 
 /// Character codes mapped to the text they stand for.
+#[derive(Debug, Clone)]
 pub(crate) struct ToUnicode {
     /// Mappings, keyed by code width and code value (big-endian).
     mappings: BTreeMap<(u8, u32), String>,

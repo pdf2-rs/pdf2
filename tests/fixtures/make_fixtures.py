@@ -994,7 +994,8 @@ def make_tounicode():
     """
     content = (
         b"BT /F1 12 Tf 50 700 Td "
-        b"<00030004001000110012002000210022> Tj ET"
+        b"<00030004001000110012002000210022> Tj "
+        b"120 0 Td <0003> Tj ET"
     )
     writer = Writer()
     writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
@@ -1015,7 +1016,7 @@ def make_tounicode():
         7,
         b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Helvetica "
         b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
-        b"/DW 1000 >>",
+        b"/DW 1000 /W [3 [500 700]] >>",
     )
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("tounicode.pdf", bytes(writer.out))

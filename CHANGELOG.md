@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **Composite (Type0) fonts extract text** (`9.7`, `9.10.3`): a font with an
+  Identity encoding and a `/ToUnicode` map now decodes — codes split by the
+  CMap's code space, text from `bfchar`/`bfrange`, and CID advances from `/W` and
+  `/DW` so a gap between runs becomes a space. Five corpus files that reported
+  `unsupported: composite (Type0) fonts` now extract their text, moving the
+  corpus from 15 to 20 fully readable of 23. CMap-encoded CJK fonts
+  (`/90ms-RKSJ-H`) and composite fonts without a `/ToUnicode` map are still
+  reported, by name.
 - **Extracted text is in reading order** (`9.4`): the interpreter accumulates
   positioned lines and sorts them (descending `y`, then `x`) before joining, so a
   page painted out of order reads top to bottom. The corpus page
@@ -67,6 +75,14 @@ RC4/AES-128 revisions are not implemented).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **Composite (Type0) fonts extract text** (`9.7`, `9.10.3`): a font with an
+  Identity encoding and a `/ToUnicode` map now decodes — codes split by the
+  CMap's code space, text from `bfchar`/`bfrange`, and CID advances from `/W` and
+  `/DW` so a gap between runs becomes a space. Five corpus files that reported
+  `unsupported: composite (Type0) fonts` now extract their text, moving the
+  corpus from 15 to 20 fully readable of 23. CMap-encoded CJK fonts
+  (`/90ms-RKSJ-H`) and composite fonts without a `/ToUnicode` map are still
+  reported, by name.
 - **Extracted text is in reading order** (`9.4`): the interpreter accumulates
   positioned lines and sorts them (descending `y`, then `x`) before joining, so a
   page painted out of order reads top to bottom. The corpus page

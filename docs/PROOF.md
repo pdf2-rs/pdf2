@@ -140,6 +140,11 @@ added there rather than documented here as if it existed.
   into three classes — composite (Type 0) extraction on 7 files, one xref edge
   case, one 1.x-era encryption case. The measurement is reproducible with
   `cargo xtask corpus`.
+- **Third run, after the xref edge and composite extraction** (`cargo xtask
+  corpus`, 2026-11-15): 22 of 23 parse and render and **20 are fully readable**;
+  the three that are not are one encrypted file, one CMap-encoded CJK font
+  (needs item 5's data) and one font with no mapping to find. Progress is
+  recorded, not restated: [`docs/CORPUS.md`](CORPUS.md).
 - **Calibrated 2026-11-15**, in CI (poppler, mupdf, Ghostscript at 144 DPI,
   compared at 4×4 blocks): the inter-oracle spread and our distance on nine
   cases are recorded in `corpus/tolerances.tsv` and `corpus/oracle-summary.csv`;

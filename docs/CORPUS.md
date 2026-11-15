@@ -26,17 +26,23 @@ everything else; no other code is version-gated), measured with
 
 | Measure | Files | Note |
 | --- | --- | --- |
-| parse (`pdf2 info`) | 21 of 23 | two fail before the header is useful: one xref edge case, one encrypted file |
-| fully readable (`check` + `text`) | 14 of 23 | |
-| page 1 rendered | 21 of 23 | the two that do not parse do not draw either |
+| parse (`pdf2 info`) | 22 of 23 | one encrypted file still fails before the header is useful |
+| fully readable (`check` + `text`) | 20 of 23 | three remain: one encrypted, two composite fonts (below) |
+| page 1 rendered | 22 of 23 | the file that does not parse does not draw either |
 
 Failure taxonomy, and every class maps to a gap already in the scorecard:
 
 | Class | Files | Which |
 | --- | --- | --- |
-| `unsupported: composite (Type0) fonts` (text extraction) | 7 | `90ms_rksj_h_sample`, `ArabicCIDTrueType`, `Embedded_font`, `arial_unicode_ab_cidfont`, `arial_unicode_en_cidfont`, `cid_cff`, `cidfont_cmap_overflow` — all seven **do render** |
-| `malformed cross-reference generation at offset 2111` | 1 | `ContentStreamCycleType3insideType3.pdf` — a 1.x xref edge case |
-| `malformed object number must be positive at offset 0` | 1 | `encrypted-attachment.pdf` — 1.x-era RC4/AES-128 `/Encrypt`, which this library does not implement (it has AES-256 revision 6 only) |
+| `unsupported: CMap-encoded composite (Type0) fonts` | 1 | `90ms_rksj_h_sample.pdf` — needs the `/90ms-RKSJ-H` resource, which is item 5's CMap data |
+| `unsupported: composite (Type0) fonts without a /ToUnicode map` | 1 | `arial_unicode_en_cidfont.pdf` — its embedded program carries neither a `cmap` nor a `post` table, so there is no mapping to find |
+| `malformed object number must be positive at offset 0` | 1 | `encrypted-attachment.pdf` — a `startxref` that misses its table, then `/Identity` crypt filters (item 3) |
+
+**History, so the movement is auditable**: the first run stopped all 23 files at
+the header (`only PDF 2.x is supported`); opening the header gate gave 21 parsed
+/ 14 fully readable with seven composite-font refusals; the xref generation edge
+(item 6) gave 22 / 15; composite extraction (item 2) gave **22 / 20**. The three
+classes above are what is left, and each is owned by a scheduled item.
 
 Read that table as the first honest measurement of the library on real files: the
 renderer is much further along than the extractor, and the three failure classes
@@ -125,3 +131,17 @@ because extraction now orders lines geometrically (descending `y`, then `x`)
 rather than by the order the content stream draws them. The decision and its
 limits (columns, intra-line order, ligatures) are
 [`docs/adr/0002-text-extraction-shape.md`](adr/0002-text-extraction-shape.md).
+
+### Composite extraction, measured file by file
+
+The five files that moved from reported to readable when `/ToUnicode` extraction
+landed, and what they now return — the check is that the text is the file's, not
+that a call returns:
+
+| File | Text the map produces | Note |
+| --- | --- | --- |
+| `Embedded_font.pdf` | `除` | one code, `A911 → U+9664`, from a `bfchar` over an embedded subset |
+| `cid_cff.pdf` | ` processor reference chart ` | a CFF CID font; the padding spaces are in the file |
+| `cidfont_cmap_overflow.pdf` | `㐂㐄㐆㐈㐊…` (100 ideographs) | a `bfchar` table of 100 codes → `U+3402`, `U+3404`, … — the file that tests a destination overflow, which the parser's carry handles |
+| `ArabicCIDTrueType.pdf` | `ﺔﻴﺑﺮﻌﻟا طﻮﻄﳋا عاﻮﻧا`, four times | one line per embedded font, in the presentation forms the file maps to. Order is the file's glyph order: reordering right-to-left is a layout job, not extraction's |
+| `arial_unicode_ab_cidfont.pdf` | `￿￿￿￿` | **not a bug**: the file's own `/ToUnicode` maps four codes to `<ffff>` deliberately. Faithful extraction of a placeholder is `U+FFFF`, and silencing it would be a lie about the file |
