@@ -33,10 +33,10 @@ it yourself, for example from a bundler asset or a `Uint8Array`.
 | `init(options?)` | instantiate the module; call once before using anything else |
 | `open(bytes, password?)` | parse a document; throws on a malformed file or a wrong password |
 | `doc.version()` | header version, e.g. `"2.0"` |
-| `doc.isEncrypted()` | whether the file was encrypted (AES-256 R6 is supported) |
+| `doc.isEncrypted()` | whether the file was encrypted (revisions 2–6 are read: RC4, AES-128 and AES-256) |
 | `doc.pageCount()` | number of pages |
 | `doc.pageSize(index)` | `[width, height]` in points, after `/Rotate` |
-| `doc.text(index)` | text on a page; throws `unsupported: composite (Type0) fonts` for fonts this version cannot decode |
+| `doc.text(index)` | text on a page, in reading order; composite fonts decode through `/ToUnicode` or the predefined CMap the crate ships, and a font with no mapping throws an error naming what is missing |
 | `doc.metadata()` | the XMP packet as text, when the document has one |
 | `doc.renderPage(index, scale)` | RGBA8 `Uint8ClampedArray`; `scale` is device pixels per point |
 | `doc.renderPageToCanvas(index, scale, canvas)` | the same, drawn straight onto a canvas |
@@ -74,3 +74,17 @@ and `LICENSE-MIT`.
 [`pdf2`]: https://crates.io/crates/pdf2
 [crate]: https://crates.io/crates/pdf2-wasm
 [rendering]: https://github.com/pdf2-rs/pdf2/blob/main/docs/RENDERING.md
+
+## The demo
+
+<https://pdf2-rs.github.io/pdf2/> is this package driving a page: it opens bundled
+samples, pages, zooms, extracts text and reports what a page could not draw.
+
+The samples are outputs of `cargo xtask wasm-package`, not committed files, and
+they follow the library's own fixtures so the demo cannot show a stale build.
+Since 1.2 they include a CID-keyed **CFF** program drawn from its charstrings, a
+revision-4 **AES-128** file opened with the password field, a page whose visible
+box is its **`/CropBox`** at its **`/UserUnit`** scale, and a **Shift-JIS** page
+whose text exists only through the predefined CMap — the four things that release
+added. `cff.pdf` and `cjk.pdf` come from the pdf.js corpus (Apache-2.0); the
+attribution travels with them in `demo/samples/NOTICE.md`.

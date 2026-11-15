@@ -310,9 +310,36 @@ fn wasm_package() -> Result<(), String> {
             "tests/fixtures/encrypted-r6.pdf",
             "crates/pdf2-wasm/demo/samples/encrypted.pdf",
         ),
+        // The 1.2 samples: what the release added, visible rather than claimed.
+        (
+            "tests/fixtures/encrypted-r4-aes.pdf",
+            "crates/pdf2-wasm/demo/samples/encrypted-legacy.pdf",
+        ),
+        (
+            "tests/fixtures/cropbox.pdf",
+            "crates/pdf2-wasm/demo/samples/cropbox.pdf",
+        ),
+        (
+            "corpus/tier-a/cid_cff.pdf",
+            "crates/pdf2-wasm/demo/samples/cff.pdf",
+        ),
+        (
+            "corpus/tier-a/90ms_rksj_h_sample.pdf",
+            "crates/pdf2-wasm/demo/samples/cjk.pdf",
+        ),
     ] {
         copy(from, to)?;
     }
+    // Two samples come from pdf.js's corpus (Apache-2.0), so the page ships the
+    // attribution beside them rather than only in the repository.
+    std::fs::write(
+        "crates/pdf2-wasm/demo/samples/NOTICE.md",
+        "`cff.pdf` and `cjk.pdf` are from the pdf.js test corpus,\n\
+         commit d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a, used under the\n\
+         Apache License 2.0 (`corpus/LICENSES/Apache-2.0.txt`).\n\
+         They are copied by `cargo xtask wasm-package`, not edited.\n",
+    )
+    .map_err(|error| format!("writing samples/NOTICE.md: {error}"))?;
     run("node", &["--no-warnings", "crates/pdf2-wasm/check.mjs"])
 }
 

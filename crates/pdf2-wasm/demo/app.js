@@ -20,6 +20,13 @@ const SAMPLES = [
   // Deliberately no password: the point of this sample is the password field.
   { file: 'samples/book.pdf', title: 'A page of a book, in an embedded serif' },
   { file: 'samples/encrypted.pdf', title: 'AES-256 encrypted (password: user)' },
+  // 1.2's own samples, in the order a reader would try them: a modern font
+  // program, an older encryption generation, a page whose visible box is not its
+  // media box, and a page whose text only exists through a CMap.
+  { file: 'samples/cff.pdf', title: 'CFF outlines, CID-keyed (no TrueType)' },
+  { file: 'samples/encrypted-legacy.pdf', title: 'AES-128 encrypted, revision 4 (password: user)' },
+  { file: 'samples/cropbox.pdf', title: '/CropBox and /UserUnit page' },
+  { file: 'samples/cjk.pdf', title: 'CJK text from Shift-JIS (text panel)' },
 ];
 
 // Each entry names a sample (index into SAMPLES) and the page it starts on, so a
@@ -43,6 +50,11 @@ const FEATURES = [
   { label: 'AES-256 encrypted file (password: user)', sample: 5, page: 0 },
   { label: 'Base-14 fallback glyphs and accents', sample: 0, page: 0 },
   { label: 'Text extraction for the page', sample: 2, page: 0 },
+  // 1.2
+  { label: 'CFF outlines: a CID-keyed font program', sample: 6, page: 0 },
+  { label: 'Encrypted file, revision 4 (password: user)', sample: 7, page: 0 },
+  { label: '/CropBox and /UserUnit decide the page', sample: 8, page: 0 },
+  { label: 'CJK text through a predefined CMap', sample: 9, page: 0 },
 ];
 
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
