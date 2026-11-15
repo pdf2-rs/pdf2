@@ -49,6 +49,12 @@ oracles under the claims, and make the proof gate run on every release.
 *drawn*, and item 1 has to exist before that can be judged); editing (a theme of
 its own, per the ADR); annotations and validation (not scheduled at all).
 
+**Item 1 is shipped** (2026-11-15): `crates/pdf2-oracle` compares this renderer
+with poppler, mupdf and Ghostscript on PPM output at 4×4 blocks, the `oracle` job
+in `ci.yml` gates every push at the inter-oracle spread plus the 1% floor, and
+the measured spread is committed in `corpus/tolerances.tsv` (widest: 8.0% on the
+CMYK colour page, where the engines themselves disagree).
+
 ## Checkable outcomes for `1.2`
 
 - `cargo xtask corpus` prints **21 of 23 fully readable** (from 14) and **23 of
