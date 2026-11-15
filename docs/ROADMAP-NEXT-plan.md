@@ -53,10 +53,10 @@ any new dependency without a `no_std` and wasm-size verdict; and rewriting
 - [x] Q3 -- [Q1, do now] Item 2b: write the API decision down before item 2's code — text only, or spans with boxes — and prove reading order with correct spaces on one corpus page (finding 2).
   - [x] the API decision and its consequence for `extract_text`'s `Result<String>`, recorded before Q4/Q5 touch extraction. Done: `docs/adr/0002-text-extraction-shape.md` — text only in 1.2, boxes refused with reasons (permanent type under the 1.0 freeze, no consumer, CTM not tracked so a box would lie, and the claim is provable without them), `/ToUnicode` stays a mapping and the wiring feeds the same line accumulation.
   - [x] one corpus page extracts in reading order with correct spaces (M9) — `ShowText-ShadingPattern.pdf` is painted 2, 1, 4, 3 and now extracts 1, 2, 3, 4; this needed real code (the interpreter collected lines in paint order), so `src/content.rs` now sorts them, with `reading-order.pdf` as the fixture. Recorded in `docs/CORPUS.md`.
-- [ ] Q4 -- [Q2, split] Item 2, chunk 1: the `/ToUnicode` CMap parser, standing alone (finding 3).
-  - [ ] a byte-level CMap lexer (hex strings with and without separators, names, comments) with the two hard bounds
-  - [ ] bfchar, bfrange, array destinations and codespace-driven code width; malformed input is an `Err`
-  - [ ] unit tests plus the generated fixture page (M3) — no wiring into `text()` yet
+- [x] Q4 -- [Q2, split] Item 2, chunk 1: the `/ToUnicode` CMap parser, standing alone (finding 3).
+  - [x] a byte-level CMap lexer (hex strings with and without separators, names, comments) with the two hard bounds — `src/cmap.rs`, with `MAX_MAPPINGS` (1 Mi) and `MAX_CODESPACE_RANGES` (64 Ki) checked *before* a range is expanded, and PostScript dictionaries, braces and comments skipped rather than tokenised.
+  - [x] bfchar, bfrange, array destinations and codespace-driven code width; malformed input is an `Err` — mappings are keyed by width, `code_lengths()` and `max_code_length()` give the code space, the increment carries past a byte (the standard leaves it undefined; writers mean a carry), and 14 malformed inputs are asserted to be errors.
+  - [x] unit tests plus the generated fixture page (M3) — no wiring into `text()` yet. 8 tests: the mapping semantics, the adjacency trap `<0001><0070>`, comments and `<<` dictionaries, the carry, four-byte codes, the bounds at exactly 65 536 and over, malformed cases, and `tests/fixtures/tounicode.pdf` parsed through the document (`ToUnicode` → `stream_data`). M3's last clause — that page extracting through `text()` — belongs to Q5.
 - [ ] Q5 -- [Q2, split] Item 2, chunk 2: wire it in and move the number (findings 1–2).
   - [ ] two-byte code splitting for Identity-H, `/DescendantFonts`, CID widths
   - [ ] the M3 fixture extracts its known text through `text()`

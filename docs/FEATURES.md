@@ -111,7 +111,7 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–1
 | Simple fonts: Type 1, TrueType with `/FontFile2`, encodings and `/Differences` | shipped | `crates/pdf2-render/src/font.rs`, page 9 of `calibration.pdf` |
 | Base-14 without a program: built-in 5×7 fallback with composed Latin-1 accents | shipped | `crates/pdf2-render/src/font.rs` |
 | Composite fonts (Type 0/CID) **rendering** with Identity-H and `/CIDToGIDMap` | shipped | pages 10–11, `cid_cff.pdf` renders |
-| Composite fonts **extraction** (`/ToUnicode`, two-byte codes) | scheduled 2 | `src/content.rs:253`; 7 of 23 corpus files |
+| Composite fonts **extraction** (`/ToUnicode`, two-byte codes) | scheduled 2 | 7 of the 23 corpus files; the `/ToUnicode` CMap parser has landed (`src/cmap.rs`: byte-level lexer, `bfchar`/`bfrange`/array destinations, codespace widths, 1 Mi mapping and 64 Ki range bounds, 8 tests, `tests/fixtures/tounicode.pdf`) but is **not wired into `text()` yet** — `src/content.rs:253` still refuses Type0. Owner: item 2 (chunk 1 of 2, 2026-11-15) |
 | Predefined CMaps (CJK) | scheduled 5 | Needs ~250 KB of data. The licence question is answered in §Outside facts: Adobe's CMaps are **BSD-3-Clause**, `deny.toml` does not allow it, so the allow-list entry (and the notice) or a home outside the crate is a prerequisite, not an afterthought |
 | CFF and Type 1 program parsing | scheduled 4 | `font:FontFile3`/`font:FontFile` reported today |
 | Text render modes (`Tr`) other than fill | scheduled 10 | Folded into item 10 (painting completeness) when the ledger's first pass found it unowned. Owner: item 10 |

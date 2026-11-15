@@ -956,6 +956,70 @@ def make_reading_order():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("reading-order.pdf", bytes(writer.out))
 
+
+
+TOUNICODE_CMAP = b"""/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+2 beginbfchar
+<0003> <0041>
+<0004> <0044>
+endbfchar
+1 beginbfrange
+<0010> <0012> [<0061> <0062> <0063>]
+endbfrange
+1 beginbfrange
+<0020> <0022> <0078>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+"""
+
+
+def make_tounicode():
+    """A Type0 page whose text comes only from its `/ToUnicode` CMap.
+
+    The codes are deliberately meaningless (0x0003 has no relation to "A") so
+    that text can only come out right through the mapping: two `bfchar` entries,
+    a `bfrange` with an array destination and one with a single destination that
+    increments. The content stream also carries a code the CMap does not map, so
+    a mapping failure cannot hide as a dropped glyph.
+    """
+    content = (
+        b"BT /F1 12 Tf 50 700 Td "
+        b"<00030004001000110012002000210022> Tj ET"
+    )
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", content)
+    writer.obj(
+        5,
+        b"<< /Type /Font /Subtype /Type0 /BaseFont /Helvetica /Encoding /Identity-H "
+        b"/DescendantFonts [7 0 R] /ToUnicode 6 0 R >>",
+    )
+    writer.stream(6, b"", TOUNICODE_CMAP)
+    writer.obj(
+        7,
+        b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Helvetica "
+        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+        b"/DW 1000 >>",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("tounicode.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1170,3 +1234,4 @@ if __name__ == "__main__":
     make_cropbox()
     make_generation_edge()
     make_reading_order()
+    make_tounicode()
