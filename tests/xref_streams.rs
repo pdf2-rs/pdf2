@@ -188,3 +188,17 @@ fn damaged_cross_reference_streams_are_errors() {
     broken[at..at + 7].copy_from_slice(b"/Indey ");
     assert!(Document::open(&broken[..]).is_err());
 }
+
+#[test]
+fn a_free_entry_generation_above_the_u16_range_is_clamped() {
+    // Some writers put 65536 in the free head's generation field; it is never
+    // used for a lookup, so it is clamped rather than refused — the pattern the
+    // corpus file `ContentStreamCycleType3insideType3.pdf` carries.
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/xref-generation.pdf"
+    ))
+    .expect("read xref-generation.pdf");
+    let document = pdf2::Document::open(bytes).expect("open");
+    assert_eq!(document.pages().expect("pages").len(), 1);
+}

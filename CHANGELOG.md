@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **A free entry's generation above 16 bits is clamped** (`7.5.8`): the brain of
+  the xref table's free-list head is never used for a lookup, and some writers
+  say 65536 where the standard says 65535; the file now reads instead of failing
+  with `malformed cross-reference generation`. The corpus's
+  `ContentStreamCycleType3insideType3.pdf` and the new fixture
+  `xref-generation.pdf` carry the pattern.
 - **`/UserUnit` is honoured** (`7.7.3.4`): `Document::page_user_unit` reads the
   inheritable attribute (defaulting to 1) and the renderer multiplies its scale
   by it, so a page that declares a unit scale rasters at the size the file
@@ -54,6 +60,12 @@ RC4/AES-128 revisions are not implemented).
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
   a viewer shows. The golden fixture `cropbox.pdf` pins it.
+- **A free entry's generation above 16 bits is clamped** (`7.5.8`): the brain of
+  the xref table's free-list head is never used for a lookup, and some writers
+  say 65536 where the standard says 65535; the file now reads instead of failing
+  with `malformed cross-reference generation`. The corpus's
+  `ContentStreamCycleType3insideType3.pdf` and the new fixture
+  `xref-generation.pdf` carry the pattern.
 - **`/UserUnit` is honoured** (`7.7.3.4`): `Document::page_user_unit` reads the
   inheritable attribute (defaulting to 1) and the renderer multiplies its scale
   by it, so a page that declares a unit scale rasters at the size the file
