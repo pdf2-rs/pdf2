@@ -169,6 +169,10 @@ jobs:
   wasm-package:
     name: wasm package
     runs-on: ubuntu-latest
+    # The demo test drives a real browser; when that hangs it must fail the job,
+    # not hold the required check for hours (seen as a 10-minute hang that a
+    # cancel-and-rerun cleared in 33 s).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -210,6 +214,7 @@ jobs:
   oracle:
     name: Oracle comparison
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
