@@ -10,6 +10,7 @@
 
 extern crate alloc;
 
+mod cmap;
 pub mod content;
 pub mod crypto;
 pub mod document;
