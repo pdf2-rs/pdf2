@@ -9,6 +9,10 @@ has exactly one status:
 - **refused** — a non-goal in `docs/adr/0001-differentiators.md` (line given);
 - **unplanned** — nothing owns it yet, with the reason and what would change that.
 
+Clause numbers are ISO 32000-2:2020; module paths live in
+[`docs/SPEC-MAP.md`](SPEC-MAP.md), which already keys clauses to files — this
+ledger names the clause and the evidence, it does not repeat the map.
+
 Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 `crates/pdf2-render/src/` (rendering), `crates/pdf2-cli/src/` (tooling),
 `crates/pdf2-wasm/src/` (browser API), `docs/CORPUS.md` (measured behaviour).
@@ -44,7 +48,7 @@ Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 | --- | --- | --- |
 | DeviceGray, DeviceRGB, DeviceCMYK (naive), `/ICCBased` by component count | shipped | `src/content.rs`, `crates/pdf2-render/src/image.rs` |
 | ICC colour management (profiles actually applied) | unplanned | The oracle gate measures an **8% spread** on the CMYK page; the oracles disagree because they manage colour. This is a fidelity decision the next version must take, not a bug. |
-| `/Separation`, `/DeviceN`, spot colours | unplanned | No corpus sample yet; would ride with ICC management |
+| `8.6.6.4` `/Separation`, `/DeviceN`, spot colours — and `10.8` rendering for separations | unplanned | No corpus sample yet; would ride with ICC management. Separations need both the colour space and the rendering rule: a separation tint is a function, and `10.8` says how it becomes device colour when no separation device exists. |
 
 ## Fonts and text
 
@@ -71,8 +75,10 @@ Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 | `/CropBox` as the visible box | unplanned | Parsed and exposed (`src/page.rs:97`), ignored by the renderer; cheap, no evidence either way |
 | `/UserUnit` | unplanned | Not parsed at all; affects page size and content scale |
 | Shadings and patterns | scheduled 10 | `ShowText-ShadingPattern.pdf`, `axial_shading_many_inputs.pdf` render with skips |
-| Transparency groups, soft masks, blend modes | scheduled 10 | `alphatrans.pdf`, `blendmode.pdf` |
-| Anti-aliasing, glyph cache, render speed budget | unplanned | No performance item exists. ADR non-goal 1 refuses *competing* on speed, which is not the same as having no target; a budget in the oracle job would make this measurable |
+| Transparency groups, soft masks, blend modes (`11`) | scheduled 10 | `alphatrans.pdf`, `blendmode.pdf` |
+| `8.10` **Form XObjects** (`/Subtype /Form`) | unplanned | **Not drawn at all**: `Do` calls `draw_image`, which reports `Do` and returns for any subtype that is not `/Image` — `crates/pdf2-render/src/walk.rs:534` (the `Do` dispatch) and `:701` (inside `draw_image`, the `/Subtype /Image` test that bails out) — so a page whose vector content lives in a Form XObject draws nothing. No roadmap item owns it. |
+| `8.11` **Optional content** (layers, `/OCProperties`) | unplanned | No `OCProperties` or `OCG` handling exists anywhere in `src/` or `crates/`; layer visibility is not modelled, so a page with layers draws every layer or none. No roadmap item owns it. |
+| `10.7` **Scan conversion** — anti-aliasing, glyph cache, render speed budget | unplanned | Coverage is decided at pixel centres, with no anti-aliasing (`crates/pdf2-render/src/raster.rs:108`, `docs/RENDERING.md`), which is why the oracle gate compares at 4×4 blocks. The speed half has no item either: ADR non-goal 1 refuses *competing* on speed, which is not the same as having no target; a budget in the oracle job would make it measurable. |
 
 ## Documents, forms, signing
 
@@ -131,3 +137,9 @@ Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
    filling → say so in both places (filling is planned, authoring is not).
 7. **`/CropBox` and `/UserUnit`** are cheap and unowned → one small item in
    `1.2` with a corpus check.
+8. **Form XObjects (`8.10`)** are not drawn, and nothing owns them. That is a
+   bigger practical hole than shadings: vector content, nested pages and some
+   text live in Form XObjects in almost every real document. It needs a roadmap
+   decision before the next release, not a quiet row: either an item in `1.3`
+   beside painting completeness, or an explicit refusal with the consequence
+   written down.
