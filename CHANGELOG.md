@@ -4,7 +4,15 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] — in progress
+## [1.2.0] — 2026-11-15
+
+**Text and rendering agree.** Nine roadmap items land together, and the proof is
+one number: the committed corpus of 23 real files goes from **21 parsed and 14
+fully readable** to **23 parsed and 22 fully readable**. Composite fonts extract
+their text, CFF fonts draw, encrypted files from the last twenty years open, CJK
+pages read, and the mistakes that made those fail were as often ours as the
+files' — a `startxref` counting the wrong byte, a `bfrange` increment, a charset
+used as a glyph id.
 
 - **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
   crop box rather than the media box, so a page with a crop box draws the region
@@ -69,6 +77,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inheritable attribute (defaulting to 1) and the renderer multiplies its scale
   by it, so a page that declares a unit scale rasters at the size the file
   intends.
+- **Extraction, rendering and the corpus are checked by jobs that can fail**:
+  the oracle job now also times each case against `corpus/render-budget.tsv`
+  (`docs/PERFORMANCE.md` §Render time), and a weekly Tier B job publishes a
+  failure histogram over pdf.js's and veraPDF's trees — 92.0% readable on a
+  200-file sample (`docs/CORPUS.md` §Tier B).
+
+Released together, each requiring `pdf2` 1.2.0 or newer: **`pdf2-render` 1.2.0**,
+**`pdf2-cli` 1.2.0**, **`pdf2-wasm` 1.1.0** and npm `pdf2-wasm` 1.1.0. `pdf2` is
+the only crate whose public API changed shape is the renderer's behaviour; the
+library's own API grew two methods (`Document::page_user_unit`,
+`Encryption::new_with_id`) and changed none.
 
 ## [1.1.1] — 2026-11-14
 
@@ -91,94 +110,7 @@ gaps, now measurable — composite (Type 0) extraction on 7 files, one
 cross-reference generation edge case, and one encrypted file (the 1.x-era
 RC4/AES-128 revisions are not implemented).
 
-## [1.0.4] — 2026-11-14
-
-- `renderPageToCanvas` returns the renderer's report as JSON (`{"reason": count}`,
-  empty when everything was drawn), so a page that is blank because its font is
-  unsupported can say so instead of looking broken.
-- The npm package keeps the name `pdf2-wasm`: npm refuses `pdf2` with
-  `403 Package name too similar to existing packages pbkdf2,pbf,pm2,pify`, and
-  only a scoped name could change that. `publishConfig.provenance` also goes,
-  because it only resolves under CI's OIDC and fails a local publish with
-  `provider: null`; the tag path still publishes with provenance.
-- The demo imports the wasm module with a build stamp from `build.json`:
-  GitHub Pages serves fixed filenames with a cache lifetime, and a cached wasm
-  from an older build drew blank pages where the current one draws text.
-
-## [1.2.0] — in progress
-
-- **`/CropBox` is the visible page box** (`14.11.2`): the renderer rasterises the
-  crop box rather than the media box, so a page with a crop box draws the region
-  a viewer shows. The golden fixture `cropbox.pdf` pins it.
-- **CJK text extracts through a predefined CMap** (item 5): the Adobe-Japan1
-  `90ms-RKSJ-H` code → text table ships as generated data (`cargo xtask cmaps`,
-  7 876 mappings, 19 967 B), so a page that encodes Shift-JIS without a
-  `/ToUnicode` map extracts its text — `90ms_rksj_h_sample.pdf` now reads
-  `日本語テスト`, moving the corpus to **22 of 23 fully readable**. Adobe's CMap
-  resources are BSD-3-Clause: the notice travels in `THIRD-PARTY-NOTICES.md`,
-  `deny.toml` allows the licence, and the wasm budget moved 150 → 160 KiB with
-  the +13.5 KB gzip measured and explained in `docs/PERFORMANCE.md`. Other CMaps
-  are refused by name until their data is added.
-- **CFF fonts draw their outlines** (`9.6.5`, item 4): a `/CIDFontType0C`
-  program — bare CFF with no OpenType container — is wrapped in the smallest
-  sfnt `ttf-parser` will read, and its charset is inverted so a CID finds its
-  glyph instead of being used as a glyph id. The two corpus pages that reported
-  `font:CIDFontType0` (`cid_cff.pdf`, `Embedded_font.pdf`) now render. **No new
-  dependency**: `skrifa` needs the same container and was measured to reject a
-  bare CFF (`Invalid sfnt version 0x01000404`) — see
-  `docs/adr/0003-cff-without-a-dependency.md`.
-- **`Tr` (text rendering mode) is honoured** (`9.3`): modes 1, 2, 5 and 6 stroke
-  the glyphs, 3 and 7 draw nothing, and the mode is saved with the graphics
-  state. Invisible text layers no longer leak into renders, and `Tr 0` is no
-  longer reported as an unsupported operator.
-- **Encrypted files from revisions 2–4 are read** (`7.6.2`–`7.6.4`): `/V 1`,
-  `/V 2` and `/V 4` — RC4 with 40- to 128-bit keys, and AES-128-CBC — with the
-  file key MD5 derives from the padded password, `/O`, `/P` and the trailer's
-  `/ID`, the per-object key each string and stream needs, and the owner-password
-  path of Algorithm 7. `/R 5` stays refused. Two generated revision-4 fixtures
-  (RC4 and AES-128) decrypt to the same object graph as their plaintext twin.
-- **A `startxref` that points inside the table is repaired** (`7.5.5`): the
-  nearest `xref` keyword before the hint is tried before the file is refused, so
-  a writer that counted the wrong offset no longer costs the whole document.
-  `tests/fixtures/startxref-hint.pdf` pins the pattern, and the corpus's last
-  unparseable file now reads: **23 of 23 parse, 21 of 23 fully readable**.
-- **`/StmF` and `/StrF` `/Identity` mean no ciphertext** (`7.6.5`): a file that
-  declares both is legal, holds nothing encrypted, and no longer has to be
-  refused for failing a password check it does not have.
-- **Composite (Type0) fonts extract text** (`9.7`, `9.10.3`): a font with an
-  Identity encoding and a `/ToUnicode` map now decodes — codes split by the
-  CMap's code space, text from `bfchar`/`bfrange`, and CID advances from `/W` and
-  `/DW` so a gap between runs becomes a space. Five corpus files that reported
-  `unsupported: composite (Type0) fonts` now extract their text, moving the
-  corpus from 15 to 20 fully readable of 23. CMap-encoded CJK fonts
-  (`/90ms-RKSJ-H`) and composite fonts without a `/ToUnicode` map are still
-  reported, by name.
-- **Extracted text is in reading order** (`9.4`): the interpreter accumulates
-  positioned lines and sorts them (descending `y`, then `x`) before joining, so a
-  page painted out of order reads top to bottom. The corpus page
-  `ShowText-ShadingPattern.pdf`, painted 2, 1, 4, 3, now extracts 1, 2, 3, 4. The
-  public API is unchanged — text only, no spans — and
-  `docs/adr/0002-text-extraction-shape.md` records that decision, its limits and
-  what would revisit it.
-- **A free entry's generation above 16 bits is clamped** (`7.5.8`): the brain of
-  the xref table's free-list head is never used for a lookup, and some writers
-  say 65536 where the standard says 65535; the file now reads instead of failing
-  with `malformed cross-reference generation`. The corpus's
-  `ContentStreamCycleType3insideType3.pdf` and the new fixture
-  `xref-generation.pdf` carry the pattern.
-- **`/UserUnit` is honoured** (`7.7.3.4`): `Document::page_user_unit` reads the
-  inheritable attribute (defaulting to 1) and the renderer multiplies its scale
-  by it, so a page that declares a unit scale rasters at the size the file
-  intends.
-
-## [1.1.1] — 2026-11-14
-
-Tool releases that pick up the PDF 1.x reader: `pdf2-render` 1.1.1,
-`pdf2-cli` 1.1.0, `pdf2-wasm` 1.0.5 and npm `pdf2-wasm` 1.0.8 all require
-`pdf2` 1.1.0 or newer, so a fresh resolve gets a renderer, a CLI and a wasm
-build that open PDF 1.x files instead of refusing them at the header.
-
-## [1.1.0] — 2026-11-14
+### `pdf2-render` 1.1.0
 
 Composite (Type 0) fonts render: two-byte codes from an Identity CMap, CIDs
 mapped to glyph ids through `/CIDToGIDMap` (identity or a stream), advances from
@@ -201,6 +133,20 @@ Still unsupported, and now reported by reason: `/CIDFontType0` (CFF programs),
 CMap streams other than Identity, and composite fonts with no embedded program.
 Text *extraction* from composite fonts needs `ToUnicode` CMaps and is the next
 step.
+
+## [1.0.4] — 2026-11-14
+
+- `renderPageToCanvas` returns the renderer's report as JSON (`{"reason": count}`,
+  empty when everything was drawn), so a page that is blank because its font is
+  unsupported can say so instead of looking broken.
+- The npm package keeps the name `pdf2-wasm`: npm refuses `pdf2` with
+  `403 Package name too similar to existing packages pbkdf2,pbf,pm2,pify`, and
+  only a scoped name could change that. `publishConfig.provenance` also goes,
+  because it only resolves under CI's OIDC and fails a local publish with
+  `provider: null`; the tag path still publishes with provenance.
+- The demo imports the wasm module with a build stamp from `build.json`:
+  GitHub Pages serves fixed filenames with a cache lifetime, and a cached wasm
+  from an older build drew blank pages where the current one draws text.
 
 ## [1.0.2] — 2026-11-14
 

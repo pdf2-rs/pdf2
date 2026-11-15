@@ -1,6 +1,6 @@
 [package]
 name = "pdf2"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Alexander Korolev <alexander.korolev.germany@gmail.com>"]
 edition = "2021"
 categories = ["parser-implementations", "text-processing"]
@@ -12,7 +12,11 @@ rust-version = "1.87"
 license = "Unlicense OR MIT"
 readme = "README.md"
 # The corpus is evidence, not shipped code: it must never travel in the crate.
-exclude = ["corpus"]
+# The committed corpus and the vendored CMap sources are inputs to the build and
+# to the generated data, not part of what a reader of the crate needs: shipping
+# 174 kB of Adobe CMap sources beside the 20 kB table they generate would be
+# dead weight in every download.
+exclude = ["corpus", "vendor"]
 repository = "https://github.com/pdf2-rs/pdf2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
