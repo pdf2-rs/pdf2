@@ -23,6 +23,8 @@ Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 
 ## Clause coverage
 
+Checked 2026-11-15 against the standard's contents list (clauses 7–14, annexes D, E, F, I, K, L, O, Q); every clause resolves to a row below.
+
 Check against the standard's contents: every clause from 7 to 14 and every
 normative annex has rows answering for it. Clauses 1–6 (scope, references,
 terms, notation, version designations, conformance) describe the document, not
@@ -42,13 +44,15 @@ behaviour.
 
 ## File structure and objects
 
+Checked 2026-11-15 — `cargo test --workspace` (322 tests, including `tests/document.rs`, `tests/xref_streams.rs`, `tests/writer.rs`); `cargo run -p pdf2-cli -- info tests/fixtures/classic-xref.pdf` (incremental update) and `… info corpus/tier-a/bug_jpx.pdf` (the one committed file that declares `/Linearized`).
+
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | Classic xref tables, `/Prev` chains, incremental updates (read) | shipped | `src/document.rs`, `tests/document.rs` |
 | Cross-reference streams, `/ObjStm`, hybrid files | shipped | `src/document.rs`, `tests/xref_streams.rs` |
 | Object streams at scale (65k objects, budgeted time) | scheduled 8 | `docs/GAPS.md` robustness row |
 | Damaged files: repair/rebuild policy beyond error reporting | unplanned | We report and stop. Demand unmeasured; a `--repair` mode would need a corpus of damaged files first. |
-| Linearised files (read) | shipped by construction | Linearisation is an ordering; the parser does not care |
+| Linearised files (read) | shipped | `corpus/tier-a/bug_jpx.pdf` declares `/Linearized` and the CLI reads it (`pdf2 check`, 2026-11-15); linearisation is an ordering, so the parser reads it by construction |
 | Linearisation (write) | unplanned | No demand evidence; `qpdf` owns the use case |
 | Incremental update (write) | scheduled 11 | `src/writer.rs` builds new documents only |
 | `7.9` Common data structures — dates, names, strings, rectangles | shipped, partial | `Rect` and the name/string objects are modelled (`src/object.rs`); **dates are not**: no `Date` type exists, so `/CreationDate` and `/ModDate` are unread strings |
@@ -57,6 +61,8 @@ behaviour.
 | `7.12` Extensions dictionary | unplanned | No `Extensions` handling; extension levels are ignored rather than reported |
 
 ## Filters and images
+
+Checked 2026-11-15 — `cargo test -p pdf2 --test filters`; the four image filters are refused by `src/filter.rs` and the corpus rows show the result (`cmykjpeg.pdf`, `bug_jpx.pdf`, `ccitt_EndOfBlock_false.pdf` render blank).
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
@@ -71,6 +77,8 @@ behaviour.
 
 ## Colour
 
+Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration page 1 golden) and the oracle gate's calibrated comparison of that page (widest spread: 8.0%).
+
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | DeviceGray, DeviceRGB, DeviceCMYK (naive), `/ICCBased` by component count | shipped | `src/content.rs`, `crates/pdf2-render/src/image.rs` |
@@ -78,6 +86,8 @@ behaviour.
 | `8.6.6.4` `/Separation`, `/DeviceN`, spot colours — and `10.8` rendering for separations | unplanned | No corpus sample yet; would ride with ICC management. Separations need both the colour space and the rendering rule: a separation tint is a function, and `10.8` says how it becomes device colour when no separation device exists. |
 
 ## Fonts and text
+
+Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–11 goldens) and `cargo run -q -p xtask -- corpus` (21 of 23 render, 14 fully readable; the 7 composite-font files draw).
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
@@ -95,6 +105,8 @@ behaviour.
 
 ## Painting and page geometry
 
+Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration pages 1–5, `tests/calibration.rs`) and the oracle check in CI (9 cases within tolerance).
+
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | Paths, curves, fills (both rules), strokes with caps/joins/miter limit, dashes, clipping, transforms | shipped | pages 1–3, `docs/RENDERING.md` |
@@ -110,6 +122,8 @@ behaviour.
 
 ## Documents and metadata
 
+Checked 2026-11-15 — `cargo test -p pdf2 --test pages --test document`; `cargo run -p pdf2-cli -- info tests/fixtures/text.pdf` reports `metadata: no`, `page-tree.pdf` reports `yes`.
+
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | `7.7.3` Page tree with inherited attributes | shipped | `src/page.rs`, `tests/pages.rs` |
@@ -117,6 +131,8 @@ behaviour.
 | `14.3` `Info` dictionary (legacy) | refused | Deliberately out of scope in `README.md` (limits): it is not read and the writer emits none — XMP is the PDF 2.0 replacement. The earlier version of this row claimed it as *shipped*, which was false. |
 
 ## Interactive features (`12`)
+
+Checked 2026-11-15 — no shipped row in this table; the absences were re-confirmed with `grep -rn "ViewerPreferences\|Outlines\|OpenAction\|Dests\|StructTreeRoot" src crates` (empty).
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
@@ -133,6 +149,8 @@ behaviour.
 
 ## Multimedia (`13`)
 
+Checked 2026-11-15 — no shipped row; `grep -rn "Sound\|Movie\|RichMedia" src crates` is empty.
+
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | `13.2` Multimedia, `13.7` Rich media | unplanned | Not modelled; rendering rich media is a viewer's job |
@@ -142,6 +160,8 @@ behaviour.
 | `13.6` 3D artwork | refused | ADR non-goal 3 |
 
 ## Document interchange (`14`)
+
+Checked 2026-11-15 — no shipped row in this table (metadata is verified in §Documents and metadata); `grep -rn "OutputIntents\|EmbeddedFiles\|StructTreeRoot\|b\"BMC\"\|b\"BDC\"" src crates` is empty.
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
@@ -157,6 +177,8 @@ behaviour.
 
 ## Normative annexes
 
+Checked 2026-11-15 — `cargo test --workspace` (`src/encoding.rs` unit tests, `tests/document.rs` for the version gate) and `pdf2 check corpus/tier-a/bug_jpx.pdf` for annex F.
+
 | Annex | Status | Evidence / owner |
 | --- | --- | --- |
 | `D` Character sets and encodings | shipped, partial | `src/encoding.rs`: `StandardEncoding`, `WinAnsiEncoding`, `/Differences`; the upper half of `MacRoman` and glyph names outside the built-in table are skipped (README limits) |
@@ -170,6 +192,8 @@ behaviour.
 
 ## Encryption
 
+Checked 2026-11-15 — `cargo test -p pdf2 --test encryption`; the corpus's `encrypted-attachment.pdf` fails on the RC4/AES-128 revisions the row above schedules.
+
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | AES-256, revision 6, read side, user and owner passwords, `/Perms` check | shipped | `src/crypto.rs`, `tests/encryption.rs` |
@@ -178,6 +202,8 @@ behaviour.
 | `/Crypt` filters and per-stream encryption | unplanned | Rides with revisions 2–4 |
 
 ## API, tooling, proof
+
+Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|pages|text|check`; `cargo run -q -p xtask -- wasm-package` (API smoke test and size budget: 206 823 B gzip of 266 240); `cargo run -q -p xtask -- corpus`; five fuzz targets, last nightly run green 2026-11-15; the oracle gate's last run green 2026-11-15.
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
@@ -188,9 +214,9 @@ behaviour.
 | wasm: open, page count/size, text, metadata, render to pixels/canvas, render report | shipped | `crates/pdf2-wasm` |
 | wasm/npm API growth (spans, page boxes, structured errors) | unplanned | Follows the extraction-quality decision above |
 | Fixtures with arithmetic (calibration, book) | shipped | `tests/fixtures`, `docs/RENDERING.md` |
-| Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/`, `crates/pdf2-oracle`, `ci.yml` |
+| Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/` (23 files, hashed), `corpus/tolerances.tsv`, `crates/pdf2-oracle`, the `oracle` job; last run green 2026-11-15 |
 | Tier B corpus in CI (pdf.js full, veraPDF) | scheduled 7 | |
-| Fuzzing (five targets, nightly), deny, semver, bench gates | shipped | `.github/workflows` |
+| Fuzzing (five targets, nightly), deny, semver, bench gates | shipped | `fuzz/fuzz_targets` (5), `.github/workflows/{fuzz,ci}.yml`; last nightly fuzz run green 2026-11-15 |
 | Validation (PDF/A, PDF 2.0 conformance) | unplanned | Different buyer; `veraPDF` is the reference (roadmap item 13 keeps it unscheduled) |
 
 ## Decisions this ledger forces
