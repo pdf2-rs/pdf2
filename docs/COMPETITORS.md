@@ -36,7 +36,7 @@ Legend: ✓ supported · ~ partial, experimental or with a caveat · ✗ absent 
 
 | Capability | hayro | pdf-rs `pdf` | lopdf | printpdf | pdfium-render | mupdf | pdf-extract | pdf.js | pdfium | pdf2 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Read / parse (xref streams, object streams) | ✓ [h1] | ✓ [p1] | ✓ [l1] | ~ [pr1] | ✓ [fr1] | ✓ [mu1] | ✓ [pe1] | ✓ [js1] | ✓ [fr1] | ✓ [repo] |
+| Read / parse (xref streams, object streams) | ✓ [h1] | ✓ [p1] | ✓ [l1] | ~ [pr1] | ✓ [fr1] | ✓ [mu1] | ✓ [pe1] | ✓ [js1] | ✓ [fr1] | ~ 2.x only [c2] |
 | Edit an opened document | ✗ [h1] | ~ [p1] | ✓ [l1] | ~ [pr1] | ✓ [fr1] | ✓ [mu1] | ✗ [pe1] | ✗ [js1] | ✓ [fr1] | ✗ [w1] |
 | Write / create from scratch | ✗ [h1] | ~ [p1] | ✓ [l1] | ✓ [pr1] | ✓ [fr1] | ✓ [mu1] | ✗ [pe1] | ✗ [js1] | ✓ [fr1] | ✓ [w1] |
 | Text extraction | ✗ [h1] | ✗ [p1] | ✗ [l1] | ✗ [pr1] | ✓ [fr1] | ✓ [mu1] | ✓ [pe1] | ✓ [js1] | ✓ [fr1] | ~ [c1] |
@@ -147,5 +147,7 @@ Sources referenced in the tables:
 - [r2] `docs/RENDERING.md` font matrix — `/Type0` + `/Identity-H` +
   `CIDFontType2` with `/FontFile2`; CMap streams other than Identity and
   `CIDFontType0` are reported, not drawn.
+- [c2] `docs/CORPUS.md` — 23 of 23 real files rejected at the header; only
+  `%PDF-2.x` is accepted (`src/document.rs:486`, `:967`).
 - [f1] `src/filter.rs:41` — `/DCTDecode`, `/JPXDecode`, `/CCITTFaxDecode`,
   `/JBIG2Decode` return "image filters are out of scope".

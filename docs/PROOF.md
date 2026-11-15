@@ -118,6 +118,13 @@ added there rather than documented here as if it existed.
 
 - Committed: this strategy, the three tiers, the licences, the oracle set, the
   metric definitions and the calibration rule.
-- Pending (Q4): the Tier A files with their manifest, the `exclude` in
-  `Cargo.toml`, the diff script, and the first calibration numbers.
-- Pending (Q5): the spike that uses this procedure to price the top gap.
+- Committed (Q4): Tier A — 23 files, 827 249 bytes, hashed in
+  `corpus/manifest.json`, with the Apache-2.0 text in `corpus/LICENSES/`, and
+  `corpus/` excluded from the crate.
+- **First run, and it stopped at the door**: all 23 files were rejected at the
+  header (`malformed only PDF 2.x is supported`), so no construct and no pixel
+  was measured. The taxonomy is in [`docs/CORPUS.md`](CORPUS.md).
+  Oracle calibration is meaningless until one corpus file reaches a rasteriser;
+  Tier B fetching is deferred for the same reason.
+- Pending (Q5): the spike that opens the header gate far enough to price the top
+  gap and re-rank gaps 1–8 against files that actually parse.

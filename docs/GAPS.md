@@ -25,6 +25,7 @@ is an estimate from code inspection and crate availability, not from a spike
 
 | Rank | Gap | Demand | Cost (rounds) | Score | Demand evidence | Cost evidence |
 | --- | --- | --- | --- | --- | --- | --- |
+| **0** | **Reads PDF 1.x at all** (the header gate) | 5 | ? (spike first) | **n/a** | The corpus run (`docs/CORPUS.md`, 2026-11-14) rejected **23 of 23** real files at the header: `malformed only PDF 2.x is supported at offset 0`. Every competitor in `docs/COMPETITORS.md` reads 1.x; the real world is PDF 1.4–1.7. | `src/document.rs:486` requires the header version to start with `2.`, and `src/document.rs:967` asserts `%PDF-1.7` is an error — the gate is one condition, but what breaks behind it (RC4/AES-128 encryption, image filters, composite extraction) is unknown until measured. |
 | 1= | **Composite-font text extraction** (Type 0/CID, `/ToUnicode`, predefined CMaps) | 5 | 2.5 | **2.0** | `pdf-extract` 8 236 722 downloads; 42 of its issues mention "font", 15 Type 0/CID/CMap, 13 `/ToUnicode`; 19 `hayro` issues ask for text extraction [i1] [i2] | `src/content.rs` has only `Font { encoding }` and rejects Type 0 at `src/content.rs:253`; the renderer already parses `/CIDToGIDMap` and `/W` (`crates/pdf2-render/src/walk.rs:132,799,854`) to reuse; CMap parsing is `bfchar`/`bfrange` with no new crate. Predefined CMaps need shipped data (~250 KB, hayro's own figure) and are deferred out of the first slice. |
 | 1= | **CFF / Type 1 embedded programs** | 4 | 2 | **2.0** | Renderer reports `font:FontFile`/`font:FontFile3` instead of drawing (`docs/RENDERING.md`); the pure-Rust font stack is heavily used: `skrifa` 50 016 463 downloads, `read-fonts` 52 860 543 [cr] | `crates/pdf2-render/src/font.rs` needs a variant and a smoke test; `skrifa`/`read-fonts` (MIT OR Apache-2.0) already parse CFF and Type 1, with `std` optional and `libm` for `no_std` [k1] |
 | 3 | **Image codecs** (DCT, JPX, CCITT, JBIG2) | 5 | 3 | **1.67** | Scanned PDFs cannot be drawn at all (`src/filter.rs:41`); every reference engine has them; the decoders are already written and widely used: `hayro-jpeg2000` 6 679 726, `hayro-jbig2` 6 484 186, `hayro-ccitt` 7 349 884, `zune-jpeg` 163 700 801 [cr] | Four permissive crates, each with `std` as an opt-out feature (checked in their `Cargo.toml`); the work is dependency wiring behind features, a decoder→`Image` path in `crates/pdf2-render/src/image.rs`, fixtures and goldens. Risk: four dependencies widen the licence and wasm-size surface. |
@@ -41,9 +42,18 @@ none for adding a font crate); **image codecs beat both on a different axis** �
 they are the only item that unlocks a file class we cannot open at all, which the
 ADR must weigh explicitly rather than let the tie-break rule decide.
 
+Rank 0 is not a ninth gap in the same sense as the others: it is a
+**precondition**. Until it is opened, no corpus file reaches the code paths gaps
+1–8 live in, and no cost estimate for them can be tested — which is why its cost
+is left unestimated and the M7 spike is retargeted at it.
+
 ## What this implies, without deciding
 
-- **Gap 1 first** is the cheapest defensible move: no dependency, reuses code we
+- **Rank 0 first, as a measurement**: relaxing the header gate answers, with
+  numbers, how much of the gap list is actually reachable and what breaks next.
+  Carrying the 2.0-only policy into the next version is a decision that has to be
+  argued against the corpus, not assumed.
+- **Gap 1 next** is the cheapest defensible move: no dependency, reuses code we
   wrote for the renderer, and turns "the demo says text extraction unavailable"
   into a capability on the exact files the renderer already draws.
 - **Gap 2 is the biggest visible hole** and the least code: four crates do the
