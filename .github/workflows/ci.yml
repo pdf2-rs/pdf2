@@ -54,6 +54,12 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo +stable doc --workspace --no-deps --lib
 
+      # The ledger's contract with the plan: every roadmap item has a row that
+      # names it, every item number a row names exists, and every shipped row
+      # carries evidence (docs/FEATURES.md).
+      - name: Ledger
+        run: cargo +stable run -q -p xtask -- ledger
+
   test:
     name: Test (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
