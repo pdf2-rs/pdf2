@@ -50,7 +50,7 @@ Working today:
 
 - PDF 1.x as well as 2.0: the header gate accepts both (`%PDF-1.4`–`%PDF-2.x`),
   and a committed corpus of 23 real files measures what that means:
-  **21 parse and render, 14 are fully readable** (`cargo xtask corpus`,
+  **22 parse and render, 15 are fully readable** (`cargo xtask corpus`,
   [`docs/CORPUS.md`](docs/CORPUS.md)).
 
 ## Compared with

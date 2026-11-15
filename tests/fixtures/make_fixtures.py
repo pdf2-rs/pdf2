@@ -927,6 +927,35 @@ def make_generation_edge():
     writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
     write("xref-generation.pdf", bytes(writer.out))
 
+
+
+def make_reading_order():
+    """Three lines painted bottom, top, middle — reading order is by position.
+
+    A writer may paint a page in any order; the extracted text must follow the
+    page, not the paint order. The middle line gets its space from a `TJ`
+    adjustment rather than a space glyph, so both sources are covered.
+    """
+    content = (
+        b"BT /F1 12 Tf\n"
+        b"1 0 0 1 50 300 Tm (third line) Tj\n"
+        b"1 0 0 1 50 400 Tm [(first) -400 (line)] TJ\n"
+        b"1 0 0 1 50 350 Tm (second line) Tj\n"
+        b"ET"
+    )
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", content)
+    writer.obj(5, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("reading-order.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1140,3 +1169,4 @@ if __name__ == "__main__":
     make_book()
     make_cropbox()
     make_generation_edge()
+    make_reading_order()

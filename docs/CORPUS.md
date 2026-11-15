@@ -115,3 +115,13 @@ done
 The run is reproducible from the manifest alone; the oracle calibration promised
 in `docs/PROOF.md` is not attempted here because the files never reach a
 rasteriser.
+
+### Reading order, measured on one page
+
+`ShowText-ShadingPattern.pdf` paints its four lines **2, 1, 4, 3** — the second
+line is reached with a positive `Td` from the first, so paint order is not
+reading order. `pdf2 text` returns **1, 2, 3, 4** with the words' spaces intact,
+because extraction now orders lines geometrically (descending `y`, then `x`)
+rather than by the order the content stream draws them. The decision and its
+limits (columns, intra-line order, ligatures) are
+[`docs/adr/0002-text-extraction-shape.md`](adr/0002-text-extraction-shape.md).

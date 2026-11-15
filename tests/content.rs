@@ -267,3 +267,21 @@ fn incomplete_text_runs_do_not_produce_garbage() {
     assert!(document.extract_text_from(b"BT 12 Tf ET", None).is_err());
     assert!(document.get_object(pdf2::ObjectId::new(1, 0)).is_ok());
 }
+
+#[test]
+fn lines_come_out_in_reading_order_not_paint_order() {
+    // The fixture paints third, first, second; the page reads first, second,
+    // third, and the middle line's space is a `TJ` adjustment rather than a
+    // space glyph.
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/reading-order.pdf"
+    ))
+    .expect("read reading-order.pdf");
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(
+        document.extract_text(&page).expect("text"),
+        "first line\nsecond line\nthird line"
+    );
+}
