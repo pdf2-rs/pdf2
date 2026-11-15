@@ -67,15 +67,16 @@ What must become true: every dependency added for D1 or for coverage keeps
 
 ## Non-goals
 
-1. **Not a faster `hayro`.** We do not chase raster fidelity with glyph caching
-   and a 1 600-file suite; exotic painting (shadings, patterns, transparency,
-   `Tr` modes, Type 3) stays *deferred and reported* in `docs/RENDERING.md`,
-   not silently improved.
+1. **Not a faster `hayro`.** We do not race a 1 600-file visual suite or glyph
+   caching for its own sake; exotic painting is scheduled on its own item
+   (roadmap 10), not slipped in. That is a refusal to *compete*, not a refusal to
+   have a number: the oracle job carries a render-time budget (roadmap 10c).
 2. **Not a wrapper.** No `pdfium`, no `mupdf`, no vendored C or C++ — that
    would make D2 false and someone else's correctness ours to debug.
-3. **Not an Acrobat replacement.** Forms authoring, digital signatures, 3D,
-   knockout groups are out of scope; annotations and form *rendering* are
-   deferred (gap 7).
+3. **Not an Acrobat replacement.** *Authoring* forms, digital signatures, 3D and
+   knockout groups are out of scope. Annotations and forms are **read, rendered
+   and filled** (roadmap item 12) — reading and filling is not authoring, and the
+   earlier wording conflated them.
 4. **Not a validator.** PDF/A and PDF 2.0 conformance checking is a different
    buyer with different evidence (gap 8, `veraPDF` owns it).
 5. **Not a layout engine.** We extract text and place it; we do not reflow,
@@ -83,6 +84,10 @@ What must become true: every dependency added for D1 or for coverage keeps
 6. **Not upstream.** Contributions stay in this workspace; pdf-rs's policy
    ("code submitted needs to be written by a human", README) closes that path
    anyway.
+7. **Not a tagged-PDF or accessibility product.** Structure trees,
+   `/StructTreeRoot` and PDF/UA conformance are a different model with a
+   different buyer; refused explicitly here so their absence from the roadmap is
+   a decision, not an omission (see `docs/FEATURES.md`).
 
 ## Consequences
 
