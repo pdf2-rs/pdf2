@@ -285,3 +285,55 @@ fn lines_come_out_in_reading_order_not_paint_order() {
         "first line\nsecond line\nthird line"
     );
 }
+
+#[test]
+fn a_composite_font_reads_through_its_to_unicode_map() {
+    // The fixture's codes bear no relation to their text, and its second run is
+    // placed 120 units right of where the first stopped: the text can only be
+    // right through `/ToUnicode` and the font's `/W` and `/DW` widths.
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/tounicode.pdf"
+    ))
+    .expect("read tounicode.pdf");
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "ADabcxyz A");
+}
+
+#[test]
+fn composite_fonts_we_cannot_read_are_refused_by_name() {
+    for (font, expected) in [
+        (
+            "<< /Type /Font /Subtype /Type0 /BaseFont /Mincho /Encoding /Identity-H              /DescendantFonts [5 0 R] >>",
+            "without a /ToUnicode map",
+        ),
+        (
+            "<< /Type /Font /Subtype /Type0 /BaseFont /Mincho /Encoding /Identity-V              /ToUnicode 5 0 R /DescendantFonts [5 0 R] >>",
+            "vertical composite",
+        ),
+        (
+            "<< /Type /Font /Subtype /Type0 /BaseFont /Mincho /Encoding /90ms-RKSJ-H              /ToUnicode 5 0 R /DescendantFonts [5 0 R] >>",
+            "CMap-encoded composite",
+        ),
+    ] {
+        let all: &[&str] = &[
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /MediaBox [0 0 612 792]              /Resources << /Font << /F1 4 0 R >> >> >>",
+            font,
+            "null",
+        ];
+        let objects: Vec<(u32, &str)> = all
+            .iter()
+            .enumerate()
+            .map(|(index, body)| (u32::try_from(index + 1).expect("index"), *body))
+            .collect();
+        let document = doc(&objects);
+        let resources = document.page(0).expect("page").resources.expect("res");
+        let error = document
+            .extract_text_from(b"BT /F1 12 Tf 10 700 Td (x) Tj ET", Some(&resources))
+            .expect_err(expected);
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}

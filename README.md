@@ -50,7 +50,7 @@ Working today:
 
 - PDF 1.x as well as 2.0: the header gate accepts both (`%PDF-1.4`–`%PDF-2.x`),
   and a committed corpus of 23 real files measures what that means:
-  **22 parse and render, 15 are fully readable** (`cargo xtask corpus`,
+  **22 parse and render, 20 are fully readable** (`cargo xtask corpus`,
   [`docs/CORPUS.md`](docs/CORPUS.md)).
 
 ## Compared with
@@ -65,7 +65,7 @@ unplanned, feature by feature: [`docs/FEATURES.md`](docs/FEATURES.md).
 | --- | --- | --- | --- | --- |
 | Shape | one crate and one model: read, extract, render in the sibling crate, write new | read + render, read-only by design | C library wrapped in Rust: read, edit, render, extract | edit and rewrite; no rendering or extraction |
 | PDF 1.x and 2.0 | 1.x and 2.x | 1.x–2.0 in practice | 1.x–2.0 | 1.x–2.0 |
-| Text extraction | simple fonts today; composite fonts are the next release's theme | not offered | yes, through pdfium | not offered |
+| Text extraction | simple and `/ToUnicode` composite fonts, reading order | not offered | yes, through pdfium | not offered |
 | Rendering | paths, curves, fills, strokes, clips, transforms, text, images; **no image codecs, shadings, transparency** | the strongest pure-Rust renderer: image codecs, shadings, transparency, 1 600+ visual tests | the strongest overall, being Chromium's engine | none |
 | Editing an opened file | no: `save()` builds new documents only | no, by design | yes | yes |
 | No C, no `unsafe`, `no_std`, wasm | yes, with size budgets in CI | no | no | no |
@@ -89,7 +89,10 @@ often that happens on real files.
 
 Known limits inside the supported surface:
 
-- Text extraction: composite (Type0) fonts and `/ToUnicode` CMaps are reported
+- Text extraction: composite (Type0) fonts with a `/ToUnicode` map and an
+  Identity encoding are read (codes split by the CMap's code space, CID widths
+  from `/W` and `/DW`); CMap-encoded (CJK) fonts need the CMap resources item 5
+  adds and are reported
   as unsupported (the renderer draws them; closing that split is the next
   release's theme, see [`docs/ROADMAP-NEXT.md`](docs/ROADMAP-NEXT.md)); the upper half of `MacRomanEncoding` is not decoded; glyph
   names outside the built-in table are skipped rather than guessed. Spaces are

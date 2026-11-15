@@ -7,11 +7,13 @@
 //! `Tj`, `TJ`, `'` and `"` — while everything else is consumed and ignored, so
 //! graphics-heavy pages do not disturb the text run.
 //!
-//! Limits, on purpose and documented in the README: simple fonts only (Type1,
-//! TrueType, Type3 with a single-byte encoding); composite (Type0) fonts,
-//! `/ToUnicode` CMaps and `/Widths`-based gap detection are not implemented, so
-//! line breaks come from text-positioning operators and spaces from the text
-//! itself or from large `TJ` adjustments.
+//! Limits, on purpose and documented in the README: simple fonts (Type1,
+//! TrueType, Type3 with a single-byte encoding) and composite (Type0) fonts that
+//! carry a `/ToUnicode` CMap over an Identity encoding. Codes for composite fonts
+//! are split by the CMap's code space, and their `/W`/`/DW` widths advance the
+//! pen so a gap between runs becomes a space; gaps are not guessed for simple
+//! fonts, where line breaks still come from text-positioning operators and spaces
+//! from the text itself or from wide `TJ` adjustments.
 //!
 //! Lines are ordered geometrically — descending `y`, then ascending `x` — rather
 //! than by the order the content stream paints them, because a writer is free to
@@ -48,17 +50,129 @@ struct Line {
     text: String,
 }
 
-/// A simple font: one byte per code, resolved to characters.
+/// A CID's advance width, from `/W` with `/DW` as the default (9.7.4.3).
+#[derive(Debug, Clone, Default)]
+struct Widths {
+    /// `/DW`, in thousandths of an em.
+    default: f64,
+    /// `/W` entries: first CID, last CID, widths in order.
+    runs: Vec<(u32, u32, Vec<f64>)>,
+}
+
+impl Widths {
+    /// The advance for `cid`, in thousandths of an em.
+    fn width(&self, cid: u32) -> f64 {
+        for (first, last, widths) in &self.runs {
+            if cid >= *first && cid <= *last {
+                let index = usize::try_from(cid - first).unwrap_or(usize::MAX);
+                if let Some(width) = widths.get(index) {
+                    return *width;
+                }
+            }
+        }
+        self.default
+    }
+}
+
+/// A font, and the way its codes turn into text.
 #[derive(Debug, Clone)]
-struct Font {
-    /// Code → character table.
-    encoding: Encoding,
+enum Font {
+    /// One byte per code, resolved through an encoding table.
+    Simple {
+        /// Code → character table.
+        encoding: Encoding,
+    },
+    /// A composite font: codes split by the CMap's code space, text from
+    /// `/ToUnicode`, advances from `/W` and `/DW`.
+    Composite {
+        /// The page's `/ToUnicode` mapping.
+        to_unicode: crate::cmap::ToUnicode,
+        /// CID advances.
+        widths: Widths,
+    },
 }
 
 impl Font {
-    fn character(&self, code: u8) -> Option<char> {
-        self.encoding.character(code)
+    /// The text `bytes` stand for, and the advance in thousandths of an em.
+    ///
+    /// Simple fonts report no advance: their `/Widths` are not read, so pen
+    /// tracking would be a guess, and a guess becomes a wrong space.
+    fn decode(&self, bytes: &[u8]) -> (String, f64) {
+        let Self::Composite { to_unicode, widths } = self else {
+            let Self::Simple { encoding } = self else {
+                return (String::new(), 0.0);
+            };
+            return (
+                bytes
+                    .iter()
+                    .filter_map(|code| encoding.character(*code))
+                    .collect(),
+                0.0,
+            );
+        };
+        let mut text = String::new();
+        let mut advance = 0.0;
+        let lengths = to_unicode.code_lengths();
+        let narrowest = lengths.first().map_or(1, |length| usize::from(*length));
+        let widest = usize::from(to_unicode.max_code_length());
+        let mut position = 0;
+        while position < bytes.len() {
+            // A code space with one width is the common case and splits exactly;
+            // a variable one is tried widest first, because a variable code space
+            // means "the longest code that matches wins".
+            let mut consumed = 0;
+            let mut width = if lengths.len() == 1 {
+                narrowest
+            } else {
+                widest
+            };
+            while width >= narrowest {
+                if position + width <= bytes.len() {
+                    let code = pack(&bytes[position..position + width]);
+                    let matched = lengths.len() == 1
+                        || to_unicode
+                            .text(code, u8::try_from(width).unwrap_or(2))
+                            .is_some();
+                    if matched {
+                        consumed = width;
+                        break;
+                    }
+                }
+                if width == narrowest {
+                    break;
+                }
+                width -= 1;
+            }
+            if consumed == 0 {
+                // Nothing maps this position: step over the narrowest code so an
+                // unmapped byte cannot stall the loop.
+                if position + narrowest > bytes.len() {
+                    break;
+                }
+                position += narrowest;
+                continue;
+            }
+            let code = pack(&bytes[position..position + consumed]);
+            if let Some(mapped) = to_unicode.text(code, u8::try_from(consumed).unwrap_or(2)) {
+                text.push_str(mapped);
+            }
+            advance += widths.width(code);
+            position += consumed;
+        }
+        (text, advance / 1000.0)
     }
+
+    /// Whether `decode` reports advances, so the pen can be tracked.
+    fn tracks_advances(&self) -> bool {
+        matches!(self, Self::Composite { .. })
+    }
+}
+
+/// A character code packed big-endian into a `u32`.
+fn pack(bytes: &[u8]) -> u32 {
+    bytes
+        .iter()
+        .fold(0_u32, |value, &byte| (value << 8) | u32::from(byte))
 }
 
 /// The text state and the glyph mapping needed to read a page.
@@ -68,9 +182,15 @@ struct TextInterpreter<'a> {
     fonts: BTreeMap<Vec<u8>, Font>,
     font: Option<Font>,
     leading: f64,
+    /// Font size from `Tf`, needed to turn a pen position into an em.
+    size: f64,
     /// Current text line origin, in text space.
     line_x: f64,
     line_y: f64,
+    /// Where the pen is after the text shown since the line was placed.
+    pen_x: f64,
+    /// Whether `pen_x` is meaningful for the current font.
+    pen_tracked: bool,
     /// Lines in the order they were painted; sorted for the result.
     lines: Vec<Line>,
 }
@@ -83,8 +203,11 @@ impl<'a> TextInterpreter<'a> {
             fonts: BTreeMap::new(),
             font: None,
             leading: 0.0,
+            size: 0.0,
             line_x: 0.0,
             line_y: 0.0,
+            pen_x: 0.0,
+            pen_tracked: false,
             lines: Vec::new(),
         }
     }
@@ -176,29 +299,42 @@ impl<'a> TextInterpreter<'a> {
                     Some(Object::Name(name)) => name.clone(),
                     _ => return Err(Error::malformed("/Tf needs a font name")),
                 };
-                // The size is not needed: line breaks come from positioning
-                // operators, not from advance widths.
+                self.size = number(operands.get(1));
                 self.font = Some(self.load_font(&name)?);
+                self.pen_tracked = self.font.as_ref().is_some_and(Font::tracks_advances);
+                self.pen_x = self.line_x;
             }
             b"Td" | b"TD" => {
                 let tx = number(operands.first());
                 let ty = number(operands.get(1));
+                let previous_y = self.line_y;
                 self.line_x += tx;
                 self.line_y += ty;
+                // A move along the line leaves the pen where the text stopped,
+                // which is what lets a gap become a space; a move down starts a
+                // new line, so the pen starts there.
+                if difference(previous_y, self.line_y) > LINE_TOLERANCE {
+                    self.pen_x = self.line_x;
+                }
                 if operator == b"TD" {
                     self.leading = -ty;
                 }
             }
             b"T*" => {
                 self.line_y -= self.leading;
+                self.pen_x = self.line_x;
             }
             b"TL" => {
                 self.leading = number(operands.first());
             }
             b"Tm" => {
                 // Only the translation part matters for text extraction.
+                let previous_y = self.line_y;
                 self.line_x = number(operands.get(4));
                 self.line_y = number(operands.get(5));
+                if difference(previous_y, self.line_y) > LINE_TOLERANCE {
+                    self.pen_x = self.line_x;
+                }
             }
             // Character spacing, word spacing, horizontal scaling and rise
             // do not change which characters a text run produces.
@@ -210,6 +346,7 @@ impl<'a> TextInterpreter<'a> {
             }
             b"'" => {
                 self.line_y -= self.leading;
+                self.pen_x = self.line_x;
                 if let Some(Object::String(string)) = operands.first() {
                     self.show(string.as_bytes());
                 }
@@ -217,6 +354,7 @@ impl<'a> TextInterpreter<'a> {
             b"\"" => {
                 // Set word and character spacing, then show on the next line.
                 self.line_y -= self.leading;
+                self.pen_x = self.line_x;
                 if let Some(Object::String(string)) = operands.get(2) {
                     self.show(string.as_bytes());
                 }
@@ -253,6 +391,10 @@ impl<'a> TextInterpreter<'a> {
         if !line.text.is_empty() && !line.text.ends_with(' ') {
             line.text.push(' ');
         }
+        if self.pen_tracked {
+            // A positive adjustment moves the pen left, so the sign is inverted.
+            self.pen_x -= adjustment / 1000.0 * self.size;
+        }
     }
 
     fn show(&mut self, bytes: &[u8]) {
@@ -260,14 +402,20 @@ impl<'a> TextInterpreter<'a> {
         let Some(font) = &self.font else {
             return;
         };
-        let mut run = String::with_capacity(bytes.len());
-        for &code in bytes {
-            if let Some(character) = font.character(code) {
-                run.push(character);
-            }
-        }
+        let (run, advance) = font.decode(bytes);
+        // A new run placed well to the right of where the pen stopped is a gap a
+        // reader sees as a space; only fonts whose widths are known are trusted
+        // with it, and a quarter of an em is the threshold a word space clears.
+        let gap =
+            self.pen_tracked && self.size > 0.0 && self.line_x > self.pen_x + 0.25 * self.size;
         let line = self.line();
+        if gap && !line.text.is_empty() && !line.text.ends_with(' ') {
+            line.text.push(' ');
+        }
         line.text.push_str(&run);
+        if self.pen_tracked {
+            self.pen_x = self.line_x + advance * self.size;
+        }
     }
 
     fn load_font(&mut self, name: &[u8]) -> Result<Font> {
@@ -309,14 +457,143 @@ impl<'a> TextInterpreter<'a> {
         };
         if let Some(Object::Name(subtype)) = dict.get(b"Subtype") {
             if subtype == b"Type0" {
-                return Err(Error::Unsupported {
-                    what: "composite (Type0) fonts",
-                });
+                return self.composite_font(&dict);
             }
         }
-        Ok(Font {
+        Ok(Font::Simple {
             encoding: self.encoding_of(&dict)?,
         })
+    }
+
+    /// A Type0 font: an Identity encoding, a `/ToUnicode` map, and its widths.
+    ///
+    /// Only Identity encodings are read. Any other `/Encoding` names a CMap
+    /// resource — `/90ms-RKSJ-H` and friends — whose bytes this crate does not
+    /// ship yet, and an embedded CMap stream is the same problem from the inside;
+    /// guessing a code space would produce confidently wrong text, so those are
+    /// refused by name instead.
+    fn composite_font(&self, dict: &Dictionary) -> Result<Font> {
+        match dict.get(b"Encoding") {
+            Some(Object::Name(name)) if name == b"Identity-H" => {}
+            Some(Object::Name(name)) if name == b"Identity-V" => {
+                return Err(Error::Unsupported {
+                    what: "vertical composite (Type0) fonts",
+                })
+            }
+            Some(Object::Name(_)) => {
+                return Err(Error::Unsupported {
+                    what: "CMap-encoded composite (Type0) fonts",
+                })
+            }
+            Some(Object::Reference(_)) | Some(Object::Stream(_)) => {
+                return Err(Error::Unsupported {
+                    what: "embedded CMap-encoded composite (Type0) fonts",
+                })
+            }
+            _ => {
+                return Err(Error::Unsupported {
+                    what: "composite (Type0) fonts without an /Encoding",
+                })
+            }
+        }
+        let Some(to_unicode) = dict.get(b"ToUnicode") else {
+            return Err(Error::Unsupported {
+                what: "composite (Type0) fonts without a /ToUnicode map",
+            });
+        };
+        let Object::Reference(id) = to_unicode else {
+            return Err(Error::Unsupported {
+                what: "a direct /ToUnicode stream",
+            });
+        };
+        let map = crate::cmap::ToUnicode::parse(&self.document.stream_data(*id)?)?;
+        Ok(Font::Composite {
+            to_unicode: map,
+            widths: self.widths_of(dict)?,
+        })
+    }
+
+    /// `/W` and `/DW` from the first `/DescendantFonts` entry (9.7.4.3).
+    fn widths_of(&self, dict: &Dictionary) -> Result<Widths> {
+        let mut widths = Widths {
+            default: 1000.0,
+            runs: Vec::new(),
+        };
+        let Some(descendants) = dict.get(b"DescendantFonts") else {
+            return Ok(widths);
+        };
+        let descendants = self
+            .document
+            .resolve(Some(descendants))?
+            .unwrap_or(Object::Null);
+        let Object::Array(descendants) = descendants else {
+            return Err(Error::Malformed {
+                what: "/DescendantFonts must be an array",
+                offset: None,
+            });
+        };
+        let Some(first) = descendants.first() else {
+            return Ok(widths);
+        };
+        let first = self.document.resolve(Some(first))?.unwrap_or(Object::Null);
+        let Object::Dictionary(descendant) = first else {
+            return Ok(widths);
+        };
+        if let Some(default) = descendant.get(b"DW") {
+            widths.default = number(Some(default));
+        }
+        let Some(w_array) = descendant.get(b"W") else {
+            return Ok(widths);
+        };
+        let w_array = self
+            .document
+            .resolve(Some(w_array))?
+            .unwrap_or(Object::Null);
+        let Object::Array(items) = w_array else {
+            return Err(Error::Malformed {
+                what: "/W must be an array",
+                offset: None,
+            });
+        };
+        let mut index = 0;
+        while index < items.len() {
+            let Some(Object::Integer(first)) = items.get(index) else {
+                return Err(Error::Malformed {
+                    what: "/W entries start with a CID",
+                    offset: None,
+                });
+            };
+            let first = u32::try_from(*first).map_err(|_| Error::Malformed {
+                what: "/W CIDs must not be negative",
+                offset: None,
+            })?;
+            match items.get(index + 1) {
+                Some(Object::Array(list)) => {
+                    let run: Vec<f64> = list.iter().map(|item| number(Some(item))).collect();
+                    let last = first.saturating_add(
+                        u32::try_from(run.len().saturating_sub(1)).unwrap_or(u32::MAX),
+                    );
+                    widths.runs.push((first, last, run));
+                    index += 2;
+                }
+                Some(Object::Integer(last)) => {
+                    let width = number(items.get(index + 2));
+                    let last = u32::try_from(*last).map_err(|_| Error::Malformed {
+                        what: "/W CIDs must not be negative",
+                        offset: None,
+                    })?;
+                    widths.runs.push((first, last, alloc::vec![width]));
+                    index += 3;
+                }
+                _ => {
+                    return Err(Error::Malformed {
+                        what: "/W entry is neither an array nor a range",
+                        offset: None,
+                    })
+                }
+            }
+        }
+        Ok(widths)
     }
 
     fn encoding_of(&self, dict: &Dictionary) -> Result<Encoding> {
