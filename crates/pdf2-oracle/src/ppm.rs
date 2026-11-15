@@ -128,9 +128,11 @@ pub fn distance(left: &Ppm, right: &Ppm) -> Result<Distance, String> {
     for (a, b) in left.pixels.iter().zip(&right.pixels) {
         total += u64::from(a.abs_diff(*b));
     }
-    let (left_pixels, _) = left.pixels.as_chunks::<3>();
-    let (right_pixels, _) = right.pixels.as_chunks::<3>();
-    for (pa, pb) in left_pixels.iter().zip(right_pixels) {
+    for (pa, pb) in left
+        .pixels
+        .chunks_exact(3)
+        .zip(right.pixels.chunks_exact(3))
+    {
         if pa.iter().zip(pb).any(|(a, b)| a.abs_diff(*b) > 32) {
             over += 1;
         }
