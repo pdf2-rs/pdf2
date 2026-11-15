@@ -13,9 +13,9 @@ paths and 1.0's layout depend on them.
 | Crate | Version line | Published to |
 | --- | --- | --- |
 | `pdf2` (root) | library semver, currently 1.x | crates.io |
-| `crates/pdf2-render` | independent, currently 1.0.x | crates.io |
-| `crates/pdf2-cli` | independent, currently 1.0.x | crates.io |
-| `crates/pdf2-wasm` | independent, currently 1.0.x | crates.io (crate `pdf2-wasm`) **and** npm (package `pdf2-wasm`, versioned separately) |
+| `crates/pdf2-render` | independent, currently 1.2.x | crates.io |
+| `crates/pdf2-cli` | independent, currently 1.2.x | crates.io |
+| `crates/pdf2-wasm` | independent, currently 1.1.x | crates.io (crate `pdf2-wasm`) **and** npm (package `pdf2-wasm`, versioned separately) |
 | `crates/pdf2-bench` | `publish = false` | nothing |
 | `crates/pdf2-wasm-smoke` | `publish = false` | nothing |
 | `crates/xtask` | `publish = false` | nothing |
