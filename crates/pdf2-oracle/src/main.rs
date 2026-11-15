@@ -89,8 +89,20 @@ fn run() -> Result<(), String> {
             .map_err(|error| format!("{}: {error}", case.name))?;
         let mut oracle_images = Vec::new();
         for oracle in &oracles.list {
-            let image = oracle.render(&case.path, case.page, options.dpi)?;
-            oracle_images.push((oracle.name, image));
+            match oracle.render(&case.path, case.page, options.dpi) {
+                Ok(image) => oracle_images.push((oracle.name, image)),
+                // An engine that cannot open the file is not a comparison.
+                Err(error) => eprintln!(
+                    "warning: {} skipped for {}: {error}",
+                    oracle.name, case.name
+                ),
+            }
+        }
+        if oracle_images.len() < 2 {
+            return Err(format!(
+                "{}: fewer than two oracles rendered this case",
+                case.name
+            ));
         }
         let ours_small = downsample(&ours, options.blocks);
         let oracle_small: Vec<(&str, Ppm)> = oracle_images
@@ -431,9 +443,8 @@ impl Oracle {
                     &format!("-r{dpi}"),
                     &format!("-dFirstPage={page}"),
                     &format!("-dLastPage={page}"),
-                    "-sOutputFile",
+                    &format!("-sOutputFile={}", out.display()),
                 ])
-                .arg(&out)
                 .arg(pdf)
                 .status(),
         }
