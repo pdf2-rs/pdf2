@@ -10,6 +10,11 @@
 //!     --write-tolerances corpus/tolerances.tsv
 //! ```
 //!
+//! Each case is also timed — this renderer's own wall clock for that page — and
+//! compared with the committed budget in `corpus/render-budget.tsv` (item 10c).
+//! A regression in time is a failure like any other: the budget is a committed
+//! number with the machine it was measured on written beside it, not a report.
+//!
 //! The oracles are poppler (`pdftoppm`), mupdf (`mutool draw`) and Ghostscript
 //! (`gs`); each is used if present, and at least two are required to measure a
 //! spread at all. Everything is compared at a downsampled scale (`--blocks`,
@@ -36,6 +41,7 @@ struct Case {
 struct Options {
     cases: PathBuf,
     tolerances: PathBuf,
+    budget: Option<PathBuf>,
     dpi: f64,
     blocks: u32,
     calibrate: bool,
@@ -70,14 +76,26 @@ fn run() -> Result<(), String> {
         ));
     }
     let known = read_tolerances(&options.tolerances).unwrap_or_default();
+    // A missing budget is a warning, not a failure: the first run of a new
+    // machine has nothing to compare with yet, and refusing to measure would be
+    // refusing to produce the number the budget is set from.
+    let budget = match &options.budget {
+        Some(path) if path.exists() => read_budget(path)?,
+        Some(path) => {
+            eprintln!("warning: {} not found; timing is measured but not gated", path.display());
+            std::collections::BTreeMap::new()
+        }
+        None => std::collections::BTreeMap::new(),
+    };
     let scale = options.dpi / 72.0;
 
     println!(
-        "{:28} {:>8} {:>8} {:>8} {:>8} {:>8} verdict",
-        "case", "ours/1", "ours/2", "spread", "allowed", "blocks"
+        "{:28} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9} verdict",
+        "case", "ours/1", "ours/2", "spread", "allowed", "blocks", "ms"
     );
     let mut failures = 0;
     let mut calibrated = Vec::new();
+    let mut timings: Vec<(String, f64)> = Vec::new();
     for case in &cases {
         let bytes = std::fs::read(&case.path)
             .map_err(|error| format!("{}: {error}", case.path.display()))?;
@@ -85,8 +103,13 @@ fn run() -> Result<(), String> {
             .map_err(|error| format!("{}: {error}", case.path.display()))?;
         // The case list is 1-based, like a reader's page number; the renderer
         // takes an index.
+        // The timed region is the render alone: parsing is measured by the
+        // benchmark suite, and mixing the two would make a fast render look slow
+        // because a document happened to be large.
+        let started = std::time::Instant::now();
         let ours = render_ours(&document, case.page.saturating_sub(1), scale)
             .map_err(|error| format!("{}: {error}", case.name))?;
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         let mut oracle_images = Vec::new();
         for oracle in &oracles.list {
             match oracle.render(&case.path, case.page, options.dpi) {
@@ -131,27 +154,42 @@ fn run() -> Result<(), String> {
             mean: (spread.mean * 1.1).max(FLOOR_MEAN),
             over: (spread.over * 1.1).max(FLOOR_OVER),
         };
-        let verdict =
-            if options.calibrate || median.over <= allowed.over && median.mean <= allowed.mean {
-                if options.calibrate {
-                    "calibrated"
-                } else {
-                    "ok"
-                }
-            } else {
-                failures += 1;
-                "OVER"
-            };
+        let over_time = match budget.get(&case.name) {
+            Some(limit) if elapsed_ms > *limit && !options.calibrate => true,
+            _ => false,
+        };
+        let within = median.over <= allowed.over && median.mean <= allowed.mean;
+        let verdict = if options.calibrate {
+            "calibrated"
+        } else if !within {
+            failures += 1;
+            "OVER"
+        } else if over_time {
+            failures += 1;
+            "SLOW"
+        } else {
+            "ok"
+        };
         println!(
-            "{:28} {:>8.4} {:>8.4} {:>8.4} {:>8.4} {:>8} {}",
+            "{:28} {:>8.4} {:>8.4} {:>8.4} {:>8.4} {:>8} {:>9.1} {}",
             case.name,
             ours_distances.first().map_or(0.0, |d| d.over),
             ours_distances.get(1).map_or(0.0, |d| d.over),
             spread.over,
             allowed.over,
             options.blocks,
+            elapsed_ms,
             verdict
         );
+        if over_time {
+            println!(
+                "  render took {:.1} ms against a {:.0} ms budget; raise it in \
+                 corpus/render-budget.tsv deliberately, with a reason",
+                elapsed_ms,
+                budget.get(&case.name).copied().unwrap_or(0.0)
+            );
+        }
+        timings.push((case.name.clone(), elapsed_ms));
         if options.calibrate {
             calibrated.push((case.name.clone(), spread));
         } else if verdict == "OVER" {
@@ -179,9 +217,16 @@ fn run() -> Result<(), String> {
         println!("wrote {} case(s) to {}", calibrated.len(), path.display());
     }
     if let Some(path) = &options.summary {
-        let mut text = String::from("case,spread_over,spread_mean\n");
+        let mut text = String::from("case,spread_over,spread_mean,render_ms\n");
         for (name, spread) in &calibrated {
-            text.push_str(&format!("{name},{:.6},{:.6}\n", spread.over, spread.mean));
+            let ms = timings
+                .iter()
+                .find(|(case, _)| case == name)
+                .map_or(0.0, |(_, ms)| *ms);
+            text.push_str(&format!(
+                "{name},{:.6},{:.6},{ms:.1}\n",
+                spread.over, spread.mean
+            ));
         }
         std::fs::write(path, text).map_err(|error| format!("{}: {error}", path.display()))?;
     }
@@ -198,6 +243,7 @@ fn run() -> Result<(), String> {
 fn parse_args(args: Vec<String>) -> Result<Options, String> {
     let mut options = Options {
         cases: PathBuf::from("corpus/oracle-cases.txt"),
+        budget: Some(PathBuf::from("corpus/render-budget.tsv")),
         tolerances: PathBuf::from("corpus/tolerances.tsv"),
         dpi: 144.0,
         blocks: 4,
@@ -238,8 +284,8 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
                 options.write_tolerances = Some(PathBuf::from(value(index)?));
                 index += 2;
             }
-            "--summary" => {
-                options.summary = Some(PathBuf::from(value(index)?));
+            "--budget" => {
+                options.budget = Some(PathBuf::from(value(index)?));
                 index += 2;
             }
             "--help" | "-h" => {
@@ -265,8 +311,30 @@ Options:
   --blocks <n>              downsample blocks before comparing (default 4)
   --calibrate               measure the inter-oracle spread instead of gating
   --write-tolerances <path> write the measured spread to this file
-  --summary <path>          write the measured spread as CSV
+  --budget <path>           per-page render budget (default corpus/render-budget.tsv)
+  --summary <path>          write the measured spread and timing as CSV
   --help, -h                this help";
+
+/// The committed per-page render budgets: `case<TAB>milliseconds`.
+fn read_budget(path: &Path) -> Result<std::collections::BTreeMap<String, f64>, String> {
+    let text = std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut budget = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('\t') else {
+            return Err(format!("{}: `{line}` is not `case<TAB>ms`", path.display()));
+        };
+        let value: f64 = value
+            .trim()
+            .parse()
+            .map_err(|_| format!("{}: `{value}` is not a number", path.display()))?;
+        budget.insert(name.trim().to_owned(), value);
+    }
+    Ok(budget)
+}
 
 fn read_cases(path: &Path) -> Result<Vec<Case>, String> {
     let text =
