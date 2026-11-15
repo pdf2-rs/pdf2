@@ -132,8 +132,8 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration pages 1–5, `te
 | `/UserUnit` | scheduled 6b | Not parsed at all; affects page size and content scale. Owner: item 6b |
 | Shadings and patterns | scheduled 10 | `ShowText-ShadingPattern.pdf`, `axial_shading_many_inputs.pdf` render with skips |
 | Transparency groups, soft masks, blend modes (`11`) | scheduled 10 | `alphatrans.pdf`, `blendmode.pdf` |
-| `8.10` **Form XObjects** (`/Subtype /Form`) | unplanned | **Not drawn at all**: `Do` calls `draw_image`, which reports `Do` and returns for any subtype that is not `/Image` — `crates/pdf2-render/src/walk.rs:534` (the `Do` dispatch) and `:701` (inside `draw_image`, the `/Subtype /Image` test that bails out) — so a page whose vector content lives in a Form XObject draws nothing. Owner: none — the ledger's decision 8 asks the roadmap to assign it. |
-| `8.11` **Optional content** (layers, `/OCProperties`) | unplanned | No `OCProperties` or `OCG` handling exists anywhere in `src/` or `crates/`; layer visibility is not modelled, so a page with layers draws every layer or none. Owner: none — the ledger's decision 8 asks the roadmap to assign it. |
+| `8.10` **Form XObjects** (`/Subtype /Form`) | scheduled 10d | **Not drawn at all**: `Do` calls `draw_image`, which reports `Do` and returns for any subtype that is not `/Image` — `crates/pdf2-render/src/walk.rs:534` (the `Do` dispatch) and `:701` (inside `draw_image`, the `/Subtype /Image` test that bails out) — so a page whose vector content lives in a Form XObject draws nothing. Owner: item 10d — the roadmap's revision assigned it after the ledger's decision 8 named it unowned. |
+| `8.11` **Optional content** (layers, `/OCProperties`) | unplanned | No `OCProperties` or `OCG` handling exists anywhere in `src/` or `crates/`; layer visibility is not modelled, so a page with layers draws every layer or none. Owner: item 10d — the roadmap's revision assigned it after the ledger's decision 8 named it unowned. |
 | `10.5` **Transfer functions** and `10.6` **Halftones** | unplanned | Neither exists: `TransferFunction` and `Halftone` appear nowhere in `src/` or `crates/`. For screen output both are largely moot; for print fidelity they are not, and `10.8` separations need `10.5`. Owner: none (print-only, no demand evidence) |
 | `10.7` **Scan conversion** — anti-aliasing, glyph cache | unplanned | Coverage is decided at pixel centres, with no anti-aliasing (`crates/pdf2-render/src/raster.rs:108`, `docs/RENDERING.md`), which is why the oracle gate compares at 4×4 blocks. The speed half has no item either: ADR non-goal 1 refuses *competing* on speed, which is not the same as having no target; Owner: none for anti-aliasing; the *speed* half is item 10c below. |
 | Render-time budget (no AA, no glyph cache, no time gate) | scheduled 10c | The oracle job can record render time per page; the roadmap's item 10c owns the budget. Owner: item 10c |
@@ -258,9 +258,7 @@ Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|
    filling → say so in both places (filling is planned, authoring is not).
 7. **`/CropBox` and `/UserUnit`** are cheap and unowned → one small item in
    `1.2` with a corpus check.
-8. **Form XObjects (`8.10`)** are not drawn, and nothing owns them. That is a
-   bigger practical hole than shadings: vector content, nested pages and some
-   text live in Form XObjects in almost every real document. It needs a roadmap
-   decision before the next release, not a quiet row: either an item in `1.3`
-   beside painting completeness, or an explicit refusal with the consequence
-   written down.
+8. **Form XObjects (`8.10`)** are not drawn, and they used to have no owner —
+   a bigger practical hole than shadings, since vector content, nested pages and
+   some text live in Form XObjects in almost every real document. **Resolved in
+   the roadmap's revision: item `10d`, in `1.3` beside painting completeness.**
