@@ -129,6 +129,33 @@ added there rather than documented here as if it existed.
   into three classes — composite (Type 0) extraction on 7 files, one xref edge
   case, one 1.x-era encryption case. The measurement is reproducible with
   `cargo xtask corpus`.
-- Oracle calibration is still pending: the files reach a rasteriser now, but the
-  oracle spread has not been measured yet (no poppler/mupdf on this machine;
-  the CI job that runs them is part of the roadmap).
+- **Calibrated 2026-11-15**, in CI (poppler, mupdf, Ghostscript at 144 DPI,
+  compared at 4×4 blocks): the inter-oracle spread and our distance on nine
+  cases are recorded in `corpus/tolerances.tsv` and `corpus/oracle-summary.csv`;
+  the gate is the `oracle` job in `ci.yml`, and `.github/workflows/oracle.yml`
+  re-calibrates on demand or weekly.
+
+```
+case                           ours/1   ours/2   spread  allowed   blocks verdict
+book#1                         0.0081   0.0041   0.0135   0.0148        4 calibrated
+calibration#1                  0.0800   0.0000   0.0800   0.0880        4 calibrated
+calibration#2                  0.0000   0.0000   0.0156   0.0172        4 calibrated
+calibration#3                  0.0115   0.0000   0.0115   0.0127        4 calibrated
+calibration#4                  0.0000   0.0000   0.0000   0.0100        4 calibrated
+calibration#5                  0.0000   0.0000   0.0000   0.0100        4 calibrated
+calibration#9                  0.0000   0.0000   0.0000   0.0100        4 calibrated
+calibration#10                 0.0000   0.0000   0.0000   0.0100        4 calibrated
+calibration#11                 0.0000   0.0000   0.0000   0.0100        4 calibrated
+wrote 9 case(s) to corpus/tolerances.tsv
+```
+
+Two numbers worth reading: `calibration#1` (the colour cells) shows the widest
+spread, 8.0% of downsampled pixels — poppler, mupdf and Ghostscript disagree on
+CMYK conversion, and our naive `k` conversion sits at the same distance from the
+median as they sit from each other. `book#1` is 1.3% apart across engines, with
+our distance inside it; pages 4, 5 and 9–11 are geometry or embedded fonts and
+the oracles agree exactly, so the 1% floor applies.
+
+An oracle that cannot open a file is skipped with a warning rather than failing
+the case: Ghostscript on a runner without ICC support prints one, and an engine
+that cannot read the page is not a comparison.

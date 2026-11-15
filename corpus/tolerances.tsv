@@ -1,0 +1,11 @@
+# Inter-oracle spread measured by `pdf2-oracle --calibrate`.
+# case spread_over_pixels spread_mean_channel
+book#1 0.013452 2.131522
+calibration#1 0.080000 3.333333
+calibration#2 0.015600 0.965452
+calibration#3 0.011500 0.502578
+calibration#4 0.000000 0.000000
+calibration#5 0.000000 0.000000
+calibration#9 0.000000 0.000000
+calibration#10 0.000000 0.000000
+calibration#11 0.000000 0.000000
