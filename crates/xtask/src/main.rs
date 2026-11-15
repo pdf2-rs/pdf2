@@ -32,6 +32,7 @@ fn main() -> ExitCode {
         "wasm" => wasm(),
         "wasm-package" => wasm_package(),
         "demo" => demo(),
+        "corpus" => corpus(),
         "bench" => bench(),
         "fixtures" => fixtures(),
         "bless" => bless(),
@@ -65,6 +66,7 @@ Usage:
   cargo xtask wasm-package
                         build the npm package into crates/pdf2-wasm/pkg
   cargo xtask demo      build the demo and drive it in a real browser
+  cargo xtask corpus    run the Tier A corpus through the CLI and the renderer
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
   cargo xtask bless     re-render the committed golden PNGs
@@ -286,6 +288,116 @@ fn wasm_package() -> Result<(), String> {
         copy(from, to)?;
     }
     run("node", &["--no-warnings", "crates/pdf2-wasm/check.mjs"])
+}
+
+/// Measure what the library does with the committed corpus: one line per file,
+/// the classes of failure, and a reminder that this is evidence, not a gate.
+fn corpus() -> Result<(), String> {
+    let directory = std::path::Path::new("corpus/tier-a");
+    if !directory.is_dir() {
+        return Err("corpus/tier-a is missing; see docs/PROOF.md".to_owned());
+    }
+    let mut files: Vec<_> = std::fs::read_dir(directory)
+        .map_err(|error| format!("{}: {error}", directory.display()))?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().is_some_and(|extension| extension == "pdf"))
+        .collect();
+    files.sort();
+
+    run(
+        "cargo",
+        &["build", "-q", "-p", "pdf2-cli", "-p", "pdf2-render"],
+    )?;
+    let mut readable = 0;
+    let mut rendered = 0;
+    let mut classes: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for path in &files {
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let check = std::process::Command::new("target/debug/pdf2")
+            .args(["check"])
+            .arg(path)
+            .output()
+            .map_err(|error| format!("pdf2 check: {error}"))?;
+        let text = std::process::Command::new("target/debug/pdf2")
+            .args(["text"])
+            .arg(path)
+            .output()
+            .map_err(|error| format!("pdf2 text: {error}"))?;
+        let render = std::process::Command::new("target/debug/pdf2-render-golden")
+            .args(["--fixture"])
+            .arg(path)
+            .args([
+                "--page",
+                "1",
+                "--scale",
+                "1",
+                "--bless",
+                "--out",
+                "/tmp/pdf2-corpus.png",
+            ])
+            .output()
+            .map_err(|error| format!("pdf2-render-golden: {error}"))?;
+
+        let mut reasons = Vec::new();
+        if !text.status.success() {
+            let message = format!(
+                "{}{}",
+                String::from_utf8_lossy(&text.stderr),
+                String::from_utf8_lossy(&text.stdout)
+            );
+            let reason = message
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .map(|line| {
+                    // `error: <path>: <reason>` -> `<reason>`
+                    line.rsplit(": ").next().unwrap_or(line).trim().to_owned()
+                })
+                .unwrap_or_else(|| "text extraction failed".to_owned());
+            if !reasons.contains(&reason) {
+                *classes.entry(reason.clone()).or_insert(0) += 1;
+            }
+            reasons.push(reason);
+        }
+        if !check.status.success() && text.status.success() {
+            *classes.entry("check failed".to_owned()).or_insert(0) += 1;
+            reasons.push("check failed".to_owned());
+        }
+        if render.status.success() {
+            rendered += 1;
+        } else {
+            let message = String::from_utf8_lossy(&render.stderr);
+            let reason = message
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .map(|line| line.rsplit(": ").next().unwrap_or(line).trim().to_owned())
+                .unwrap_or_else(|| "render failed".to_owned());
+            if !reasons.contains(&reason) {
+                *classes.entry(reason.clone()).or_insert(0) += 1;
+            }
+            reasons.push(reason);
+        }
+        if check.status.success() && text.status.success() {
+            readable += 1;
+        }
+        println!(
+            "{name:44} readable={:<5} rendered={:<5} {}",
+            check.status.success(),
+            render.status.success(),
+            reasons.join("; ")
+        );
+    }
+    println!(
+        "\n{} files: {readable} fully readable, {rendered} rendered",
+        files.len()
+    );
+    for (reason, count) in &classes {
+        println!("  {count:>2} x {reason}");
+    }
+    Ok(())
 }
 
 /// The demo is a page, so it is tested the way a person uses it: in a browser.

@@ -119,6 +119,20 @@ What must become true: every dependency added for D1 or for coverage keeps
 - **"A conformance validator."** Rejected: different buyer, different evidence,
   no rendering synergy — and `veraPDF` is the reference.
 
+## Decision log
+
+- **2026-11-14 — the PDF 1.x header gate: GO, shipped.** The corpus run
+  (`docs/CORPUS.md`) rejected 23 of 23 real files at the header because
+  `src/document.rs:486` accepted only `2.`. The spike relaxed that one condition
+  (accept `1.x` and `2.x`, refuse the rest) and measured the effect: 21 of 23
+  files parse and render, 14 are fully readable, and the nine failures are
+  pre-existing gaps (7 composite extraction, 1 xref edge, 1 RC4/AES-128). Cost:
+  half a round — one condition, its unit test, the integration test that
+  encoded the old policy, and the `cargo xtask corpus` chore. Risk: none
+  observed; nothing else in the tree branches on the header version. Shipped as
+  `pdf2` 1.1.0 because leaving a measurable library locked out of the world's
+  files would have made D1 untestable.
+
 ## Revisit when
 
 - `hayro` ships document manipulation or writing, closing the gap D1 relies on;

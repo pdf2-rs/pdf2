@@ -217,9 +217,17 @@ fn structurally_broken_files_are_errors() {
     no_startxref[at..at + 9].copy_from_slice(b"startxrxf");
     assert!(Document::open(no_startxref).is_err());
 
+    // PDF 1.x is the format of almost every real file: it must open.
+    let mut one_x = FIXTURE.to_vec();
+    one_x[..8].copy_from_slice(b"%PDF-1.7");
+    assert!(Document::open(one_x).is_ok(), "1.x must open");
+
     let mut wrong_version = FIXTURE.to_vec();
-    wrong_version[..8].copy_from_slice(b"%PDF-1.7");
-    assert!(Document::open(wrong_version).is_err());
+    wrong_version[..8].copy_from_slice(b"%PDF-3.0");
+    assert!(
+        Document::open(wrong_version).is_err(),
+        "3.x is not understood"
+    );
 }
 
 #[test]

@@ -70,7 +70,8 @@ pub struct Document {
 impl Document {
     /// Open a PDF from its bytes.
     ///
-    /// Accepts `%PDF-2.x` files whose cross-reference is a classic table, an
+    /// Accepts `%PDF-1.x` and `%PDF-2.x` files whose cross-reference is a classic
+    /// table, an
     /// xref stream, or a hybrid of both, with any number of `/Prev` sections.
     ///
     /// An encrypted file is opened with the empty password, which covers the
@@ -481,9 +482,15 @@ fn header_version(data: &[u8]) -> Result<String> {
         offset: Some(start),
     })?;
     let version = version.trim();
-    if !version.starts_with("2.") {
+    // Both major versions this reader understands. 1.x is the format of almost
+    // every file in the world; refusing it at the header made the library
+    // unmeasurable on real documents (docs/CORPUS.md).
+    let valid = version.split_once('.').is_some_and(|(major, minor)| {
+        matches!(major, "1" | "2") && !minor.is_empty() && minor.bytes().all(|b| b.is_ascii_digit())
+    });
+    if !valid {
         return Err(Error::Malformed {
-            what: "only PDF 2.x is supported",
+            what: "header version is not 1.x or 2.x",
             offset: Some(start),
         });
     }
@@ -964,7 +971,15 @@ mod tests {
             "2.0",
             "the header may sit within the first 1024 bytes"
         );
-        assert!(header_version(b"%PDF-1.7\n").is_err());
+        assert_eq!(
+            header_version(b"%PDF-1.7\n").expect("1.x header"),
+            "1.7",
+            "PDF 1.x is the format of almost every real file"
+        );
+        assert_eq!(header_version(b"%PDF-1.4\r\n").expect("1.x header"), "1.4");
+        assert!(header_version(b"%PDF-3.0\n").is_err());
+        assert!(header_version(b"%PDF-2.\n").is_err());
+        assert!(header_version(b"%PDF-x.0\n").is_err());
         assert!(header_version(b"no header at all").is_err());
         assert!(header_version(b"").is_err());
     }

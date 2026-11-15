@@ -4,9 +4,8 @@
 [![crates.io](https://img.shields.io/crates/v/pdf2.svg)](https://crates.io/crates/pdf2)
 [![docs.rs](https://docs.rs/pdf2/badge.svg)](https://docs.rs/pdf2)
 
-A reader and writer for PDF 2.0 — the file format defined by ISO 32000-2. No
-`unsafe`, no C dependencies, and the format is implemented in this crate rather
-than wrapped: the four dependencies (`miniz_oxide`, `aes`, `cbc`, `sha2`) only
+A reader and writer for PDF 1.x and PDF 2.0 (ISO 32000-2). No `unsafe`, no C
+dependencies, and the format is implemented in this crate rather than wrapped: the four dependencies (`miniz_oxide`, `aes`, `cbc`, `sha2`) only
 supply DEFLATE and AES/SHA primitives, and everything else is `core` + `alloc`,
 so the library also builds without a standard library.
 
