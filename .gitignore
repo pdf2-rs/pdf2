@@ -17,3 +17,7 @@ crates/pdf2-wasm/pkg-node/
 crates/pdf2-wasm/demo/pkg/
 crates/pdf2-wasm/demo/samples/
 crates/pdf2-wasm/demo/build.json
+
+# Tier B corpus reports are generated per run.
+tier-b-report.md
+tier-b.txt

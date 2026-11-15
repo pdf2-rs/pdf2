@@ -181,3 +181,39 @@ The ranking in that generator is worth stating: `UniJIS-UCS2-H` maps both U+65E5
 the first match in file order read the radical. Ordinary code points now rank
 above compatibility and radical blocks, which is how the page reads
 `日本語テスト` rather than `⽇本語テスト`.
+
+## Tier B: other projects' corpora, counted by class
+
+Tier A is 23 committed files with known answers. Tier B is the survey: whole
+trees from other projects, measured the same way, with the failures grouped into
+classes instead of listed per file. It runs weekly
+(`.github/workflows/tier-b.yml`) and can be dispatched with a file cap.
+
+| Tree | Licence | Where |
+| --- | --- | --- |
+| pdf.js `test/pdfs` (1 096 files) | Apache-2.0 | pinned to `d60bc7426aa0`, the commit Tier A's manifest names |
+| veraPDF corpus | CC BY 4.0 | `veraPDF/veraPDF-corpus@staging`, attribution kept in the job |
+
+`cargo run -q -p xtask -- tier-b <dir>... [--limit N]` writes
+`tier-b-report.md`: files, readable share, and a table of failure classes with an
+example file each. Classes are normalised — offsets and paths removed — so one
+cause is one bar.
+
+The first measured sample, 200 files of the pdf.js tree on 2026-11-15:
+
+```text
+200 files, 184 readable (92.0%), 16 failing
+  6  unsupported: composite (Type0) fonts without a /ToUnicode map
+  2  malformed missing startxref
+  1  invalid number "000000n"
+  1  malformed cross-reference subsection start
+  1  malformed page tree contains a cycle
+  1  malformed unknown /Filter name
+  ... one file each for the rest
+```
+
+Read it as the honest shape of the gap: the classes are the ones
+[`docs/GAPS.md`](GAPS.md) ranked, and the outlier files are fuzzed or
+deliberately broken rather than ordinary documents. The job publishes this
+distribution; it does not gate a merge, because a tree of other people's broken
+files is not a test suite.

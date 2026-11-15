@@ -43,7 +43,7 @@ any new dependency without a `no_std` and wasm-size verdict; and rewriting
 - [x] M7: `/CropBox` and `/UserUnit` are honoured — a fixture with both rasters as poppler does (800×800 at 144 dpi), with the arithmetic and a golden pinning the pixels; mupdf is excluded because it ignores both attributes, recorded in `docs/PROOF.md`.
 - [x] M8: the 1.x cross-reference generation edge parses, and a fixture with the same generation pattern keeps it parsed — `xref-generation.pdf` plus `tests/xref_streams.rs`; the corpus file reads and the total moves to 15 readable / 22 rendered.
 - [x] M9: extraction quality has a written API decision (text only, or spans with boxes) and one corpus page extracts in reading order with correct spaces — `docs/adr/0002-text-extraction-shape.md`; `ShowText-ShadingPattern.pdf` paints 2, 1, 4, 3 and extracts 1, 2, 3, 4, pinned by `tests/fixtures/reading-order.pdf`.
-- [ ] M10: a scheduled Tier B corpus job publishes a failure histogram, and the oracle job records per-page render time against a committed budget.
+- [ ] M10: a scheduled Tier B corpus job publishes a failure histogram — **half reached** (`.github/workflows/tier-b.yml`, 92.0% readable on a 200-file pdf.js sample) — and the oracle job records per-page render time against a committed budget, which Q10 owns.
 
 ## Round plan
 
@@ -73,7 +73,7 @@ any new dependency without a `no_std` and wasm-size verdict; and rewriting
 - [x] Q8 -- [Q2, split] Item 5: the allow-list and notice first, then the CMap data and CJK extraction (finding 6).
   - [x] `deny.toml` allows BSD-3-Clause with Adobe's notice recorded, and `cargo gate` is green before any data arrives — the licence entry and `THIRD-PARTY-NOTICES.md` (with the licence text and what the generated table derives from) landed first, and the gate was green on that commit before `vendor/adobe-cmaps/` was added.
   - [x] the CMap data ships with its wasm-budget size recorded, and `90ms_rksj_h_sample.pdf` extracts its text through the Q4/Q5 extraction path (M6) — `cargo xtask cmaps` composes `90ms-RKSJ-H` with `UniJIS-UCS2-H` into `src/data/japan1_90ms_rksj.bin` (7 876 mappings, 19 967 B, varint deltas — fixed pairs cost 31 KB gzip and this costs 13.5 KB), `src/cmap.rs` reads it without allocating, and `src/content.rs` accepts the encoding by name. Corpus: **22 of 23 fully readable**.
-- [ ] Q9 -- [Q3, batch] Item 7: the scheduled Tier B corpus job and its histogram (finding 11).
+- [x] Q9 -- [Q3, batch] Item 7: the scheduled Tier B corpus job and its histogram (finding 11). Done: `.github/workflows/tier-b.yml` (weekly + dispatch with a `limit`) fetches pdf.js `test/pdfs` at the pinned `d60bc7426aa0` and the veraPDF corpus, and `cargo run -q -p xtask -- tier-b <dir>…` writes `tier-b-report.md` — 200-file sample measured here at **92.0% readable**, the classes normalised so one cause is one bar, published to the job summary and as an artefact. It is deliberately *not* a gate, and `docs/CORPUS.md` §Tier B says why.
 - [ ] Q10 -- [Q3, batch] Item 10c: render time in the oracle job, plus the committed budget (finding 10).
   - [ ] the oracle job records per-page render time, so a budget has a number to be set from
   - [ ] the budget is committed and the job fails above it
