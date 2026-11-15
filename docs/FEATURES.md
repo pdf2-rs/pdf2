@@ -21,6 +21,22 @@ Sources: `README.md` (status, limits), `src/` (model, filters, crypto, writer),
 `crates/pdf2-render/src/` (rendering), `crates/pdf2-cli/src/` (tooling),
 `crates/pdf2-wasm/src/` (browser API), `docs/CORPUS.md` (measured behaviour).
 
+## Outside facts
+
+Every fact a *scheduled* or *unplanned* row leans on, with the command or URL
+that produced it. Recorded 2026-11-15; a fact whose date is older than the row it
+supports is the row's problem, not the fact's.
+
+| Fact | Value | Source | Leaned on by |
+| --- | --- | --- | --- |
+| Oracle engines on the CI runner | poppler-utils **26.01.0**, mupdf-tools **1.27.0**, ghostscript **10.06.0** | `gh run view 43707082330 --log`, the `Setting up …` and `pdftoppm version` lines | the oracle-gate row; `corpus/tolerances.tsv` is only comparable on these versions |
+| Decoder crates behind item 9 | `hayro-jpeg2000` **0.5.0**, `hayro-jbig2` **0.4.0**, `hayro-ccitt` **0.5.0** (published 2026-11-02, `Apache-2.0 OR MIT`, **`rust-version = "1.92"`**); `zune-jpeg` **0.5.15** stable (2026-03-26, `MIT OR Apache-2.0 OR Zlib`, `rust-version = "1.75"`) | crates.io API, `…/crates/{name}` and `…/crates/{name}/{version}` | *scheduled 9*: only `zune-jpeg` clears our MSRV; the three hayro crates need 1.92, so they cannot land until the MSRV moves (or stay behind a feature built on a newer toolchain) |
+| Our MSRV | **1.87** | `Cargo.toml` `rust-version`, `rust-toolchain.toml`, the `Test (1.87)` CI job | the same row, and every dependency decision |
+| Adobe CMap licence | **BSD-3-Clause**, copyright 1990–2023 | `https://raw.githubusercontent.com/adobe-type-tools/cmap-resources/master/LICENSE.md`, `gh api repos/adobe-type-tools/cmap-resources` (301★, last push 2023-11-15) | *scheduled 5*: the licence is answerable, see the next row |
+| `deny.toml` allow-list | MIT, Unlicense, Apache-2.0, Zlib, 0BSD — **no BSD-3-Clause** | `deny.toml:13-19` | *scheduled 5*: shipping CMaps needs that entry plus the notice, or the data lives outside the crate; recorded as a fact, not fixed here |
+| Tier A corpus | pdf.js `test/pdfs` at commit `d60bc7426aa0`, **Apache-2.0**, 23 files with SHA-256s | `corpus/manifest.json`, `corpus/README.md`, `corpus/LICENSES/Apache-2.0.txt` | the corpus row |
+| Tier B corpora planned | veraPDF corpus **CC BY 4.0** (attribution required); pdf.js full tree **Apache-2.0** | `https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/master/README.md`; `gh api repos/mozilla/pdf.js` | roadmap item 7 |
+
 ## Clause coverage
 
 Checked 2026-11-15 against the standard's contents list (clauses 7–14, annexes D, E, F, I, K, L, O, Q); every clause resolves to a row below.
@@ -67,7 +83,7 @@ Checked 2026-11-15 — `cargo test -p pdf2 --test filters`; the four image filte
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | FlateDecode (+ PNG/TIFF predictors), LZW, ASCIIHex, ASCII85, RunLength | shipped | `src/filter.rs`, `tests/filters.rs` |
-| `/DCTDecode` (JPEG) | scheduled 9 | Refused today with "image filters are out of scope" (`src/filter.rs:41`); `cmykjpeg.pdf` renders blank |
+| `/DCTDecode` (JPEG) | scheduled 9 | Refused today with "image filters are out of scope" (`src/filter.rs:41`); `cmykjpeg.pdf` renders blank. The decoder crates and their `rust-version` requirement are in §Outside facts |
 | `/JPXDecode` (JPEG 2000) | scheduled 9 | `bug_jpx.pdf` in the corpus |
 | `/CCITTFaxDecode` | scheduled 9 | `ccitt_EndOfBlock_false.pdf` |
 | `/JBIG2Decode` | scheduled 9 | No committed sample; `jbig2-bench` shows decoder divergence |
@@ -95,7 +111,7 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–1
 | Base-14 without a program: built-in 5×7 fallback with composed Latin-1 accents | shipped | `crates/pdf2-render/src/font.rs` |
 | Composite fonts (Type 0/CID) **rendering** with Identity-H and `/CIDToGIDMap` | shipped | pages 10–11, `cid_cff.pdf` renders |
 | Composite fonts **extraction** (`/ToUnicode`, two-byte codes) | scheduled 2 | `src/content.rs:253`; 7 of 23 corpus files |
-| Predefined CMaps (CJK) | scheduled 5 | Needs ~250 KB of data **and a licence check on the Adobe CMap files before shipping** |
+| Predefined CMaps (CJK) | scheduled 5 | Needs ~250 KB of data. The licence question is answered in §Outside facts: Adobe's CMaps are **BSD-3-Clause**, `deny.toml` does not allow it, so the allow-list entry (and the notice) or a home outside the crate is a prerequisite, not an afterthought |
 | CFF and Type 1 program parsing | scheduled 4 | `font:FontFile3`/`font:FontFile` reported today |
 | Text render modes (`Tr`) other than fill | unplanned | In `docs/RENDERING.md`'s unproven list with **no roadmap item** — should be folded into item 10 |
 | Type 3 fonts | unplanned | Same: measured in the corpus (`Type3WordSpacing.pdf` renders with skips), no owner |
@@ -214,7 +230,7 @@ Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|
 | wasm: open, page count/size, text, metadata, render to pixels/canvas, render report | shipped | `crates/pdf2-wasm` |
 | wasm/npm API growth (spans, page boxes, structured errors) | unplanned | Follows the extraction-quality decision above |
 | Fixtures with arithmetic (calibration, book) | shipped | `tests/fixtures`, `docs/RENDERING.md` |
-| Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/` (23 files, hashed), `corpus/tolerances.tsv`, `crates/pdf2-oracle`, the `oracle` job; last run green 2026-11-15 |
+| Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/` (23 files, hashed), `corpus/tolerances.tsv`, `crates/pdf2-oracle`, the `oracle` job; last run green 2026-11-15. The tolerances are only comparable on the engines recorded in §Outside facts (poppler 26.01.0, mupdf 1.27.0, ghostscript 10.06.0) |
 | Tier B corpus in CI (pdf.js full, veraPDF) | scheduled 7 | |
 | Fuzzing (five targets, nightly), deny, semver, bench gates | shipped | `fuzz/fuzz_targets` (5), `.github/workflows/{fuzz,ci}.yml`; last nightly fuzz run green 2026-11-15 |
 | Validation (PDF/A, PDF 2.0 conformance) | unplanned | Different buyer; `veraPDF` is the reference (roadmap item 13 keeps it unscheduled) |
