@@ -14,7 +14,7 @@
 
 use std::process::{Command, ExitCode};
 
-const GATE_STEPS: &[&str] = &["format", "clippy", "test", "features", "docs"];
+const GATE_STEPS: &[&str] = &["format", "clippy", "test", "features", "docs", "ledger"];
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1).collect::<Vec<_>>();
@@ -28,6 +28,7 @@ fn main() -> ExitCode {
         "clippy" => step("clippy"),
         "test" => step("test"),
         "docs" => step("docs"),
+        "ledger" => ledger(),
         "no-std" => no_std(),
         "wasm" => wasm(),
         "wasm-package" => wasm_package(),
@@ -67,6 +68,7 @@ Usage:
                         build the npm package into crates/pdf2-wasm/pkg
   cargo xtask demo      build the demo and drive it in a real browser
   cargo xtask corpus    run the Tier A corpus through the CLI and the renderer
+  cargo xtask ledger    check that docs/FEATURES.md and the roadmap agree
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
   cargo xtask bless     re-render the committed golden PNGs
@@ -113,6 +115,7 @@ fn step(name: &str) -> Result<(), String> {
             &["doc", "--workspace", "--no-deps", "--lib"],
             &[("RUSTDOCFLAGS", "-D warnings")],
         ),
+        "ledger" => ledger(),
         other => Err(format!("unknown gate step `{other}`")),
     }
 }
@@ -288,6 +291,238 @@ fn wasm_package() -> Result<(), String> {
         copy(from, to)?;
     }
     run("node", &["--no-warnings", "crates/pdf2-wasm/check.mjs"])
+}
+
+/// The ledger's contract with the plan: every roadmap item has a row that names
+/// it, every item number a row names exists, and every *shipped* row carries
+/// evidence. See `docs/FEATURES.md`.
+fn ledger() -> Result<(), String> {
+    let ledger = std::fs::read_to_string("docs/FEATURES.md")
+        .map_err(|error| format!("docs/FEATURES.md: {error}"))?;
+    let roadmap = std::fs::read_to_string("docs/ROADMAP-NEXT.md")
+        .map_err(|error| format!("docs/ROADMAP-NEXT.md: {error}"))?;
+    let items = ledger::roadmap_items(&roadmap);
+    let rows = ledger::rows(&ledger);
+    let problems = ledger::problems(&rows, &items);
+    if problems.is_empty() {
+        println!(
+            "ledger: {} rows, {} roadmap items, every item owned and every shipped row evidenced",
+            rows.len(),
+            items.len()
+        );
+        return Ok(());
+    }
+    for problem in &problems {
+        eprintln!("ledger: {problem}");
+    }
+    Err(format!("{} ledger problem(s)", problems.len()))
+}
+
+/// Parsing and checks for the feature ledger, kept apart so they can be tested.
+mod ledger {
+    /// One table row: its first cell, its status, and the rest of the row.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Row {
+        pub name: String,
+        pub status: String,
+        pub evidence: String,
+        pub line: usize,
+    }
+
+    /// The roadmap's ranks, in the order the table lists them.
+    pub fn roadmap_items(roadmap: &str) -> Vec<String> {
+        roadmap
+            .lines()
+            .filter_map(|line| {
+                let rest = line.strip_prefix("| ")?;
+                let rank = rest.split(' ').next()?;
+                let numeric = rank.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+                if !numeric.is_empty() && numeric.bytes().all(|b| b.is_ascii_digit()) {
+                    Some(rank.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Data rows of every table, with the header and separator rows dropped.
+    pub fn rows(ledger: &str) -> Vec<Row> {
+        let mut rows = Vec::new();
+        for (index, line) in ledger.lines().enumerate() {
+            let Some(rest) = line.strip_prefix("| ") else {
+                continue;
+            };
+            if rest.starts_with("---") {
+                continue;
+            }
+            let cells: Vec<&str> = rest.split('|').map(str::trim).collect();
+            if cells.len() < 2 {
+                continue;
+            }
+            // Header rows are the ones whose first cell is a word like "Feature",
+            // "Clause" or "Fact"; they never carry a status.
+            let name = cells[0].to_owned();
+            let status = cells[1].to_owned();
+            if !is_status(&status) {
+                continue;
+            }
+            let evidence = cells
+                .get(..cells.len().saturating_sub(1))
+                .map(|cells| cells[2..].join(" | "))
+                .unwrap_or_default();
+            rows.push(Row {
+                name,
+                status,
+                evidence,
+                line: index + 1,
+            });
+        }
+        rows
+    }
+
+    fn is_status(cell: &str) -> bool {
+        cell.starts_with("shipped")
+            || cell.starts_with("scheduled")
+            || cell.starts_with("unplanned")
+            || cell.starts_with("refused")
+            || cell.starts_with("not applicable")
+    }
+
+    /// The item numbers a row names, from `scheduled N` or `Owner: item N`.
+    fn named_items(row: &Row) -> Vec<String> {
+        let mut items = Vec::new();
+        if let Some(rest) = row.status.strip_prefix("scheduled ") {
+            items.push(rest.split_whitespace().next().unwrap_or("").to_owned());
+        }
+        let mut rest = row.evidence.as_str();
+        while let Some(at) = rest.find("item ") {
+            let after = &rest[at + 5..];
+            let token = after.split_whitespace().next().unwrap_or("");
+            let numeric =
+                token.trim_end_matches(|c: char| !c.is_ascii_digit() && !c.is_ascii_alphabetic());
+            if !numeric.is_empty()
+                && numeric.bytes().next().is_some_and(|b| b.is_ascii_digit())
+                && numeric.len() <= 3
+            {
+                items.push(numeric.to_owned());
+            }
+            rest = &rest[at + 5..];
+            if rest.len() < 2 {
+                break;
+            }
+        }
+        items.retain(|item| !item.is_empty());
+        items
+    }
+
+    /// Everything wrong with the ledger against the plan.
+    pub fn problems(rows: &[Row], items: &[String]) -> Vec<String> {
+        let mut problems = Vec::new();
+        for row in rows {
+            if row.status.starts_with("shipped") && row.evidence.trim().is_empty() {
+                problems.push(format!(
+                    "line {}: `{}` is shipped but has no evidence cell",
+                    row.line, row.name
+                ));
+            }
+            for item in named_items(row) {
+                if !items.contains(&item) {
+                    problems.push(format!(
+                        "line {}: `{}` names roadmap item {item}, which does not exist",
+                        row.line, row.name
+                    ));
+                }
+            }
+        }
+        for item in items {
+            let owned = rows
+                .iter()
+                .any(|row| named_items(row).iter().any(|named| named == item));
+            if !owned {
+                problems.push(format!("roadmap item {item} has no row in the ledger"));
+            }
+        }
+        problems
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{problems, roadmap_items, rows};
+
+        const ROADMAP: &str = "\
+| Rank | Item |
+| --- | --- |
+| 1 | oracle |
+| 2b | quality |
+";
+
+        const GOOD: &str = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `src/content.rs` |
+";
+
+        #[test]
+        fn the_roadmap_ranks_are_read_in_order() {
+            assert_eq!(roadmap_items(ROADMAP), vec!["1", "2b"]);
+        }
+
+        #[test]
+        fn a_consistent_ledger_has_no_problems() {
+            let rows = rows(GOOD);
+            assert_eq!(rows.len(), 2, "{rows:?}");
+            assert!(problems(&rows, &roadmap_items(ROADMAP)).is_empty());
+        }
+
+        #[test]
+        fn a_dangling_item_number_is_reported() {
+            let drifted = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `src/content.rs` |
+| Ghost | scheduled 99 | nothing |
+";
+            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP));
+            assert!(
+                problems.iter().any(|problem| problem.contains("item 99")),
+                "{problems:?}"
+            );
+        }
+
+        #[test]
+        fn an_unowned_roadmap_item_is_reported() {
+            let missing = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+";
+            let problems = problems(&rows(missing), &roadmap_items(ROADMAP));
+            assert!(
+                problems.iter().any(|problem| problem.contains("item 2b")),
+                "{problems:?}"
+            );
+        }
+
+        #[test]
+        fn a_shipped_row_without_evidence_is_reported() {
+            let bare = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped |  |
+| Quality | scheduled 2b | `src/content.rs` |
+";
+            let problems = problems(&rows(bare), &roadmap_items(ROADMAP));
+            assert!(
+                problems
+                    .iter()
+                    .any(|problem| problem.contains("no evidence")),
+                "{problems:?}"
+            );
+        }
+    }
 }
 
 /// Measure what the library does with the committed corpus: one line per file,
