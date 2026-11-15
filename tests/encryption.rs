@@ -1,16 +1,22 @@
-//! The AES-256 (revision 6) read path (Q9, M9).
+//! The encrypted read paths, revisions 2–6.
 //!
-//! Two committed fixtures share one object graph:
+//! Four committed fixtures share one object graph:
 //!
 //! - `tests/fixtures/plain-twin.pdf` — the document in the clear.
 //! - `tests/fixtures/encrypted-r6.pdf` — `/V 5 /R 6`, AES-256, user password
 //!   `user`, owner password `owner`; the catalog's `/Lang` string, the content
 //!   stream and the XMP metadata stream are encrypted.
+//! - `tests/fixtures/encrypted-r4-rc4.pdf` — `/V 4 /R 4` with `/CFM /V2`, RC4,
+//!   the same passwords and the same object graph.
+//! - `tests/fixtures/encrypted-r4-aes.pdf` — `/V 4 /R 4` with `/CFM /AESV2`,
+//!   AES-128-CBC with PKCS#7 padding.
 //!
-//! Both were produced by `examples/make_encrypted_fixture.rs` (no `qpdf`,
-//! `mutool` or `gs` exists here), so the proof is: the reader validates `/U`
-//! and `/Perms`, derives the key, decrypts, and extracts exactly the text the
-//! plain twin yields.
+//! All were produced by `examples/make_encrypted_fixture.rs` (no `qpdf`,
+//! `mutool` or `gs` exists here), so the proof is: the reader derives the key
+//! the file declares — per-object for revisions 2–4, file-wide for revision 6 —
+//! validates `/U`, decrypts, and extracts exactly the text the plain twin
+//! yields. The legacy fixtures are read with the same assertions, which is what
+//! makes "revisions 2–4 work" a measurement rather than a claim.
 
 use pdf2::{Document, Error, Object, ObjectId};
 
@@ -196,4 +202,68 @@ fn a_corrupt_perms_value_is_rejected() {
     let error =
         Document::open_with_password(&bytes[..], USER_PASSWORD).expect_err("tampered /Perms");
     assert!(error.to_string().contains("/Perms"), "{error}");
+}
+
+const LEGACY: [(&[u8], &str); 2] = [
+    (include_bytes!("fixtures/encrypted-r4-rc4.pdf"), "RC4"),
+    (include_bytes!("fixtures/encrypted-r4-aes.pdf"), "AES-128"),
+];
+
+#[test]
+fn revision_4_fixtures_decrypt_to_their_plaintext_twin() {
+    let plain = Document::open(PLAIN).expect("plain twin opens");
+    let plain_page = plain.page(0).expect("page");
+    let expected = plain.extract_text(&plain_page).expect("plain text");
+    for (bytes, cipher) in LEGACY {
+        let encrypted = Document::open_with_password(bytes, USER_PASSWORD)
+            .unwrap_or_else(|error| panic!("{cipher} document opens: {error}"));
+        assert!(encrypted.is_encrypted());
+        assert_eq!(encrypted.version(), "1.7");
+        let page = encrypted.page(0).expect("page");
+        assert_eq!(
+            encrypted.extract_text(&page).expect("text"),
+            expected,
+            "{cipher}: the content stream decrypted to the twin's text"
+        );
+        assert_eq!(
+            encrypted.page_content(&page).expect("content"),
+            plain.page_content(&plain_page).expect("content"),
+            "{cipher}: the stream payload decrypts to the same bytes"
+        );
+        // The per-object key is what revisions 2–4 add: a string in object 1 is
+        // decrypted with a different key than the stream in object 4.
+        assert_eq!(
+            encrypted
+                .catalog()
+                .expect("catalog")
+                .as_dict()
+                .and_then(|dict| dict.get(b"Lang")),
+            Some(&Object::string("en-US")),
+            "{cipher}: the /Lang string decrypted"
+        );
+    }
+}
+
+#[test]
+fn the_owner_password_opens_revision_4_documents_too() {
+    for (bytes, cipher) in LEGACY {
+        let document = Document::open_with_password(bytes, OWNER_PASSWORD)
+            .unwrap_or_else(|error| panic!("{cipher} owner password: {error}"));
+        let page = document.page(0).expect("page");
+        assert_eq!(
+            document.extract_text(&page).expect("text"),
+            "Encrypted hello",
+            "{cipher}: Algorithm 7 recovered the user password from /O"
+        );
+    }
+}
+
+#[test]
+fn a_wrong_password_is_rejected_by_revision_4_handlers() {
+    for (bytes, cipher) in LEGACY {
+        let error = Document::open_with_password(bytes, b"nope")
+            .err()
+            .unwrap_or_else(|| panic!("{cipher}: a wrong password must fail"));
+        assert!(error.to_string().contains("password"), "{cipher}: {error}");
+    }
 }

@@ -210,14 +210,14 @@ Checked 2026-11-15 — `cargo test --workspace` (`src/encoding.rs` unit tests, `
 
 ## Encryption
 
-Checked 2026-11-15 — `cargo test -p pdf2 --test encryption`; the corpus's `encrypted-attachment.pdf` fails on the RC4/AES-128 revisions the row above schedules.
+Checked 2026-11-15 — `cargo test -p pdf2 --test encryption`; the corpus's `encrypted-attachment.pdf` now reads (its `startxref` is repaired and its `/Identity` filters mean nothing is encrypted) the row above schedules.
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | AES-256, revision 6, read side, user and owner passwords, `/Perms` check | shipped | `src/crypto.rs`, `tests/encryption.rs` |
-| RC4 and AES-128, revisions 2–4 (read) | scheduled 3 | `encrypted-attachment.pdf` fails on this |
+| RC4 and AES-128, revisions 2–4 (read) | shipped | `src/crypto.rs`: `/V 1`, `/V 2`, `/V 4` with `/CFM /V2` and `/AESV2`, Algorithm 2 key derivation over `/O`, `/P` and `/ID`, the per-object key, and Algorithm 7 for the owner password; `tests/encryption.rs` round-trips two generated revision-4 fixtures (`encrypted-r4-rc4.pdf`, `encrypted-r4-aes.pdf`) against `plain-twin.pdf`. Owner: item 3 (shipped 2026-11-15) |
 | Encryption on write | unplanned | No demand evidence; the writer emits unencrypted files by design |
-| `/Crypt` filters and per-stream encryption | unplanned | Rides with revisions 2–4 |
+| `/Crypt` filters and per-stream encryption | partial | The `/CF` crypt filters of `/V 4` and `/V 5` are read for their method (`/V2`, `/AESV2`, `/AESV3`, `/None`), `/Identity` is honoured, and a file naming different filters for strings and streams is refused rather than guessed at; per-stream `/Crypt` filters remain unplanned |
 
 ## API, tooling, proof
 

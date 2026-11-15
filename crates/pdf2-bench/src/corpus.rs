@@ -150,7 +150,11 @@ mod tests {
         let files = fixture_files().expect("fixtures");
         assert!(files.len() >= 8, "the plain fixtures: {}", files.len());
         for file in &files {
-            assert!(file.starts_with(b"%PDF-2.0"), "a committed fixture");
+            // Every fixture is 2.0 except the revision-4 encryption ones, which
+            // say 1.7 because a 2.0 header with `/V 4 /R 4` is a contradiction.
+            let modern = file.starts_with(b"%PDF-2.0");
+            let legacy_r4 = file.starts_with(b"%PDF-1.7") && file.windows(4).any(|w| w == b"/R 4");
+            assert!(modern || legacy_r4, "a committed fixture");
         }
     }
 }

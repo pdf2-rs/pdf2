@@ -127,7 +127,19 @@ impl Document {
                     })
                 }
             };
-            document.encryption = Some(Encryption::new(&dictionary, password)?);
+            // Revisions 2–4 mix the first `/ID` element into the key, so the
+            // handler is built from the trailer rather than the dictionary alone.
+            let id = document
+                .trailer
+                .get(b"ID")
+                .and_then(|value| match value {
+                    Object::Array(items) => items.first(),
+                    _ => None,
+                })
+                .and_then(|value| value.as_string())
+                .map(|string| string.as_bytes().to_vec())
+                .unwrap_or_default();
+            document.encryption = Some(Encryption::new_with_id(&dictionary, password, &id)?);
             document.encrypt_number = number;
         }
         Ok(document)
@@ -210,7 +222,8 @@ impl Document {
         let object = match &self.encryption {
             // The `/Encrypt` dictionary holds `/U`, `/O` and `/Perms` verbatim.
             Some(encryption) if Some(id.number) != self.encrypt_number => {
-                encryption.decrypt_object(&object)?
+                // The object number is what revisions 2–4 derive their key from.
+                encryption.decrypt_object_at(&object, Some(id))?
             }
             _ => object,
         };
@@ -629,12 +642,35 @@ fn read_xref_chain(data: &[u8]) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)
 }
 
 /// One `xref` table and the trailer that follows it.
-/// Read the cross-reference section at `offset`.
+/// Read the cross-reference section at `offset`, repairing a bad hint.
 ///
-/// A section is either a classic `xref` table or a `/Type /XRef` stream; the
-/// first token decides which, because both are reached the same way from
-/// `startxref`, `/Prev` and `/XRefStm`.
+/// Writers get `startxref` wrong in ordinary ways — pointing inside the table
+/// instead of at its keyword, or a few bytes off — and every reader that refuses
+/// the file for it is wrong on a file that is otherwise fine: the corpus has one
+/// (`encrypted-attachment.pdf`, offset 2242 against `xref` at 2223). The repair
+/// is bounded and stated: if the offset does not lead to a section, the nearest
+/// `xref` keyword before it is tried, and only then is the original error
+/// reported.
 fn parse_xref_section(
+    data: &[u8],
+    offset: usize,
+) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)> {
+    if let Ok(section) = parse_xref_section_at(data, offset) {
+        return Ok(section);
+    }
+    let before = &data[..offset.min(data.len())];
+    if let Some(found) = find_last(before, b"\nxref") {
+        if let Ok(section) = parse_xref_section_at(data, found + 1) {
+            return Ok(section);
+        }
+    }
+    parse_xref_section_at(data, offset)
+}
+
+/// The section at exactly `offset`: a classic `xref` table or a `/Type /XRef`
+/// stream, decided by the first token, because both are reached the same way
+/// from `startxref`, `/Prev` and `/XRefStm`.
+fn parse_xref_section_at(
     data: &[u8],
     offset: usize,
 ) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)> {

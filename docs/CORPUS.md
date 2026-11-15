@@ -26,9 +26,9 @@ everything else; no other code is version-gated), measured with
 
 | Measure | Files | Note |
 | --- | --- | --- |
-| parse (`pdf2 info`) | 22 of 23 | one encrypted file still fails before the header is useful |
-| fully readable (`check` + `text`) | 20 of 23 | three remain: one encrypted, two composite fonts (below) |
-| page 1 rendered | 22 of 23 | the file that does not parse does not draw either |
+| parse (`pdf2 info`) | 23 of 23 | every file opens |
+| fully readable (`check` + `text`) | 21 of 23 | two remain, both composite fonts with no text to find (below) |
+| page 1 rendered | 23 of 23 | every file draws |
 
 Failure taxonomy, and every class maps to a gap already in the scorecard:
 
@@ -36,13 +36,16 @@ Failure taxonomy, and every class maps to a gap already in the scorecard:
 | --- | --- | --- |
 | `unsupported: CMap-encoded composite (Type0) fonts` | 1 | `90ms_rksj_h_sample.pdf` — needs the `/90ms-RKSJ-H` resource, which is item 5's CMap data |
 | `unsupported: composite (Type0) fonts without a /ToUnicode map` | 1 | `arial_unicode_en_cidfont.pdf` — its embedded program carries neither a `cmap` nor a `post` table, so there is no mapping to find |
-| `malformed object number must be positive at offset 0` | 1 | `encrypted-attachment.pdf` — a `startxref` that misses its table, then `/Identity` crypt filters (item 3) |
+
 
 **History, so the movement is auditable**: the first run stopped all 23 files at
 the header (`only PDF 2.x is supported`); opening the header gate gave 21 parsed
 / 14 fully readable with seven composite-font refusals; the xref generation edge
-(item 6) gave 22 / 15; composite extraction (item 2) gave **22 / 20**. The three
-classes above are what is left, and each is owned by a scheduled item.
+(item 6) gave 22 / 15; composite extraction (item 2) gave 22 / 20; the encryption
+work (item 3) gave **23 / 21** — its `startxref` repair and its acceptance of
+`/Identity` crypt filters were the last two blockers, and neither was the RC4 /
+AES-128 support the file looked like it needed. Two failures remain, both
+composite fonts with no mapping to extract.
 
 Read that table as the first honest measurement of the library on real files: the
 renderer is much further along than the extractor, and the three failure classes
@@ -145,3 +148,18 @@ that a call returns:
 | `cidfont_cmap_overflow.pdf` | `㐂㐄㐆㐈㐊…` (100 ideographs) | a `bfchar` table of 100 codes → `U+3402`, `U+3404`, … — the file that tests a destination overflow, which the parser's carry handles |
 | `ArabicCIDTrueType.pdf` | `ﺔﻴﺑﺮﻌﻟا طﻮﻄﳋا عاﻮﻧا`, four times | one line per embedded font, in the presentation forms the file maps to. Order is the file's glyph order: reordering right-to-left is a layout job, not extraction's |
 | `arial_unicode_ab_cidfont.pdf` | `￿￿￿￿` | **not a bug**: the file's own `/ToUnicode` maps four codes to `<ffff>` deliberately. Faithful extraction of a placeholder is `U+FFFF`, and silencing it would be a lie about the file |
+
+### `encrypted-attachment.pdf`, the last file that did not open
+
+It looked like an encryption gap and was not one. The file is `/V 5 /R 6` — the
+revision this library already read — with two ordinary defects and one legal
+oddity:
+
+- its `startxref` says **2242** where the `xref` keyword is at **2223**, so the
+  pointer lands inside the table (repaired by searching back for the keyword);
+- `/StmF` and `/StrF` are both **`/Identity`**, which is the standard way of
+  saying *nothing in this file is encrypted* — refusing it for failing a password
+  check is refusing a file that has no ciphertext.
+
+Both were real reader bugs on our side, and both are now pinned by fixtures
+(`startxref-hint.pdf`, and the `/Identity` case in `src/crypto.rs`'s tests).

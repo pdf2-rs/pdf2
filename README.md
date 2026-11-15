@@ -45,12 +45,14 @@ Working today:
 - AES-256 encryption, read side: `/V 5 /R 6` with the standard security
   handler. User and owner passwords are both accepted; strings, streams, object
   streams and XMP metadata are decrypted, `/EncryptMetadata` is honoured, and
-  the `/Perms` tamper check is verified. Deprecated revisions (RC4, AES-128,
-  `/R 5`) are refused with an error rather than half-implemented.
+  the `/Perms` tamper check is verified. The legacy revisions are read too:
+  `/V 1`, `/V 2` and `/V 4` (revisions 2–4, RC4 and AES-128-CBC), with the
+  per-object keys, the owner-password path and the `/ID` they derive from.
+  `/R 5` is refused: it is the deprecated draft of revision 6.
 
 - PDF 1.x as well as 2.0: the header gate accepts both (`%PDF-1.4`–`%PDF-2.x`),
   and a committed corpus of 23 real files measures what that means:
-  **22 parse and render, 20 are fully readable** (`cargo xtask corpus`,
+  **23 parse and render, 21 are fully readable** (`cargo xtask corpus`,
   [`docs/CORPUS.md`](docs/CORPUS.md)).
 
 ## Compared with
