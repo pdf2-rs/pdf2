@@ -41,15 +41,15 @@ any new dependency without a `no_std` and wasm-size verdict; and rewriting
 - [ ] M5: CFF and Type 1 programs render — both corpus CFF pages (`cid_cff.pdf`, `Embedded_font.pdf`) stop reporting `font:CIDFontType0` and draw their outlines; their oracle cases wait for operators items 10 and 10b own (`Tr` on `Embedded_font.pdf`; `cs`/`scn`/`gs`/`BDC` on `cid_cff.pdf`), out of scope here.
 - [ ] M6: CJK text extracts from `90ms_rksj_h_sample.pdf`; the CMap data is licensed (allow-list entry and notice) and its size is recorded against the wasm budget.
 - [x] M7: `/CropBox` and `/UserUnit` are honoured — a fixture with both rasters as poppler does (800×800 at 144 dpi), with the arithmetic and a golden pinning the pixels; mupdf is excluded because it ignores both attributes, recorded in `docs/PROOF.md`.
-- [ ] M8: the 1.x cross-reference generation edge parses, and a fixture with the same generation pattern keeps it parsed.
+- [x] M8: the 1.x cross-reference generation edge parses, and a fixture with the same generation pattern keeps it parsed — `xref-generation.pdf` plus `tests/xref_streams.rs`; the corpus file reads and the total moves to 15 readable / 22 rendered.
 - [ ] M9: extraction quality has a written API decision (text only, or spans with boxes) and one corpus page extracts in reading order with correct spaces.
 - [ ] M10: a scheduled Tier B corpus job publishes a failure histogram, and the oracle job records per-page render time against a committed budget.
 
 ## Round plan
 
 - [x] Q1 -- [Q1, do now] Item 6b: `/CropBox` and `/UserUnit` in the page model and the renderer, plus the fixture and its line in `corpus/oracle-cases.txt` (one round; `pdf2-oracle` derives the allowed spread from the oracles it finds on every run, so no tolerance row is written by hand — `brew install poppler mupdf ghostscript` confirms the case locally, the `oracle` job otherwise). Done: `Document::page_user_unit` (inheritable, default 1) and the renderer's `crop_box.or(media_box)`; `cropbox.pdf` rasters 400×400 at scale 1 with the crop origin and a clipped edge; a golden and a `tests/pages.rs` assertion; the ledger row is *shipped*. **The oracle case was withdrawn with a finding**: poppler agrees with us (800×800 at 144 dpi) but mupdf ignores crop box and user unit (600×400), so the engines disagree about the page size rather than its pixels — recorded in `docs/PROOF.md` and as a comment in `corpus/oracle-cases.txt`.
-- [ ] Q2 -- [Q1, do now] Item 6: the 1.x cross-reference generation edge, with the fixture that keeps it parsed (1 round).
-  - [ ] the `malformed cross-reference generation` edge (`ContentStreamCycleType3insideType3.pdf`), and a fixture with the same generation pattern
+- [x] Q2 -- [Q1, do now] Item 6: the 1.x cross-reference generation edge, with the fixture that keeps it parsed (1 round).
+  - [x] the `malformed cross-reference generation` edge (`ContentStreamCycleType3insideType3.pdf`), and a fixture with the same generation pattern. Done: a free entry's generation above 16 bits is clamped (the free-list head is never looked up; in-use entries stay strict), `xref-generation.pdf` reproduces the 65536 head, and the corpus now reports **15 fully readable, 22 rendered**.
 - [ ] Q3 -- [Q1, do now] Item 2b: write the API decision down before item 2's code — text only, or spans with boxes — and prove reading order with correct spaces on one corpus page (finding 2).
   - [ ] the API decision and its consequence for `extract_text`'s `Result<String>`, recorded before Q4/Q5 touch extraction
   - [ ] one corpus page extracts in reading order with correct spaces (M9) — a page that extracts today already, so nothing later is needed for it

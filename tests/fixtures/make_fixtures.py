@@ -902,6 +902,31 @@ def make_cropbox():
     writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
     write("cropbox.pdf", bytes(writer.out))
 
+
+
+def make_generation_edge():
+    """A classic table whose free-entry generation is 65536, not 65535.
+
+    Writers exist that put 65536 in the free head's generation field (the
+    standard says all-ones, 65535). The value is informational — a free entry is
+    never looked up — so a reader clamps it rather than refusing the file. The
+    fixture is the corpus edge, reduced to its pattern.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>")
+    writer.stream(4, b"", b"q 1 0 0 rg 10 10 20 20 re f Q")
+    offsets = writer.offsets
+    xref = len(writer.out)
+    writer.out += b"xref\n0 %d\n" % (max(offsets) + 1)
+    writer.out += b"0000000000 65536 f \n"
+    for number in range(1, max(offsets) + 1):
+        writer.out += b"%010d 00000 n \n" % offsets[number]
+    writer.out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (max(offsets) + 1)
+    writer.out += b"startxref\n%d\n%%%%EOF\n" % xref
+    write("xref-generation.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1114,3 +1139,4 @@ if __name__ == "__main__":
     make_calibration()
     make_book()
     make_cropbox()
+    make_generation_edge()

@@ -695,10 +695,18 @@ fn parse_xref_table(
                             })
                         }
                     };
-                    let generation = u16::try_from(generation).map_err(|_| Error::Malformed {
-                        what: "cross-reference generation",
-                        offset: Some(offset),
-                    })?;
+                    if generation < 0 {
+                        return Err(Error::Malformed {
+                            what: "cross-reference generation",
+                            offset: Some(offset),
+                        });
+                    }
+                    // A free entry's generation is the next one to hand out and
+                    // is never used for a lookup, so a writer that says 65536
+                    // for the free head (the standard says 65535) is clamped
+                    // rather than refused; an in-use entry stays strict.
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let generation = u16::try_from(generation).unwrap_or(u16::MAX);
                     let index = u32::try_from(index).map_err(|_| Error::Malformed {
                         what: "cross-reference subsection count",
                         offset: Some(offset),

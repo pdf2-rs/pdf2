@@ -75,7 +75,7 @@ Checked 2026-11-15 — `cargo test --workspace` (322 tests, including `tests/doc
 | `7.10` Functions (type 0–4, used by shadings and separations) | scheduled 10 | Nothing evaluates PDF functions; shadings cannot be drawn without them, so the row rides with item 10. Owner: item 10 |
 | `7.11` Embedded files and file specifications (`/EmbeddedFiles`, `/Filespec`) | unplanned | No `EmbeddedFiles` or `/Filespec` handling anywhere; attachments are invisible. Owner: none |
 | `7.12` Extensions dictionary | unplanned | No `Extensions` handling; extension levels are ignored rather than reported. Owner: none |
-| `7.5.8` Cross-reference generation numbers (the 1.x generation edge) | scheduled 6 | `corpus/tier-a/ContentStreamCycleType3insideType3.pdf` fails with `malformed cross-reference generation at offset 2111`; the roadmap's item 6 owns the fix. Owner: item 6 |
+| `7.5.8` Cross-reference generation numbers (the 1.x generation edge) | shipped | A free entry's generation above 16 bits is clamped (the free-list head is never used for a lookup): `corpus/tier-a/ContentStreamCycleType3insideType3.pdf` and `tests/fixtures/xref-generation.pdf` both read, the latter pinned by `tests/xref_streams.rs`. Owner: item 6 (shipped 2026-11-15) |
 
 ## Filters and images
 
@@ -104,7 +104,7 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (calibration page 1 golden) a
 
 ## Fonts and text
 
-Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–11 goldens) and `cargo run -q -p xtask -- corpus` (21 of 23 render, 14 fully readable; the 7 composite-font files draw).
+Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–11 goldens) and `cargo run -q -p xtask -- corpus` (22 of 23 render, 15 fully readable; the 7 composite-font files draw).
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
