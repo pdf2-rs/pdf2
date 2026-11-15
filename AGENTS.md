@@ -200,6 +200,9 @@ Two traps this design has already met:
 - A version already on the registry is skipped, so re-running a tag is safe.
 - Never move a tag whose version is published. Never re-publish a version with
   different content.
+- Push **one tag per `git push`**: a multi-tag push can create the tags on GitHub
+  without starting any workflow (observed with four tags at once in the 1.1.0
+  release); re-pushing each tag individually started them.
 - Packaging metadata matters: published crates need `readme`, `license`,
   `repository`, and path dependencies need an explicit `version` next to
   `path`, or `cargo publish` fails only at the last step.
