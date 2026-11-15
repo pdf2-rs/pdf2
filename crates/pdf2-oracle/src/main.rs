@@ -116,12 +116,17 @@ fn run() -> Result<(), String> {
             mean: (spread.mean * 1.1).max(FLOOR_MEAN),
             over: (spread.over * 1.1).max(FLOOR_OVER),
         };
-        let verdict = if options.calibrate || median.over <= allowed.over && median.mean <= allowed.mean {
-            if options.calibrate { "calibrated" } else { "ok" }
-        } else {
-            failures += 1;
-            "OVER"
-        };
+        let verdict =
+            if options.calibrate || median.over <= allowed.over && median.mean <= allowed.mean {
+                if options.calibrate {
+                    "calibrated"
+                } else {
+                    "ok"
+                }
+            } else {
+                failures += 1;
+                "OVER"
+            };
         println!(
             "{:28} {:>8.4} {:>8.4} {:>8.4} {:>8.4} {:>8} {}",
             case.name,
@@ -146,7 +151,10 @@ fn run() -> Result<(), String> {
                 oracles.names()
             );
             if let Some(known) = known.get(&case.name) {
-                println!("  committed tolerance: {:.4} pixels, {:.3} mean", known.over, known.mean);
+                println!(
+                    "  committed tolerance: {:.4} pixels, {:.3} mean",
+                    known.over, known.mean
+                );
             }
         }
     }
@@ -185,7 +193,8 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
     let mut index = 0;
     while index < args.len() {
         let value = |index: usize| -> Result<&String, String> {
-            args.get(index + 1).ok_or_else(|| format!("{} needs a value", args[index]))
+            args.get(index + 1)
+                .ok_or_else(|| format!("{} needs a value", args[index]))
         };
         match args[index].as_str() {
             "--cases" => {
@@ -201,7 +210,9 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
                 index += 2;
             }
             "--blocks" => {
-                options.blocks = value(index)?.parse().map_err(|_| "bad --blocks".to_owned())?;
+                options.blocks = value(index)?
+                    .parse()
+                    .map_err(|_| "bad --blocks".to_owned())?;
                 index += 2;
             }
             "--calibrate" => {
@@ -243,7 +254,8 @@ Options:
   --help, -h                this help";
 
 fn read_cases(path: &Path) -> Result<Vec<Case>, String> {
-    let text = std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let mut cases = Vec::new();
     for line in text.lines() {
         let line = line.split('#').next().unwrap_or("").trim();
@@ -252,9 +264,10 @@ fn read_cases(path: &Path) -> Result<Vec<Case>, String> {
         }
         let mut parts = line.split_whitespace();
         let file = parts.next().expect("non-empty");
-        let page: usize = parts.next().map_or(Ok(1), |page| page.parse()).map_err(|_| {
-            format!("{file}: page number is not a number")
-        })?;
+        let page: usize = parts
+            .next()
+            .map_or(Ok(1), |page| page.parse())
+            .map_err(|_| format!("{file}: page number is not a number"))?;
         let path = PathBuf::from(file);
         let name = format!(
             "{}#{}",
@@ -269,7 +282,8 @@ fn read_cases(path: &Path) -> Result<Vec<Case>, String> {
 }
 
 fn read_tolerances(path: &Path) -> Result<std::collections::BTreeMap<String, Distance>, String> {
-    let text = std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let mut tolerances = std::collections::BTreeMap::new();
     for line in text.lines() {
         let line = line.split('#').next().unwrap_or("").trim();
@@ -277,7 +291,8 @@ fn read_tolerances(path: &Path) -> Result<std::collections::BTreeMap<String, Dis
             continue;
         }
         let mut parts = line.split_whitespace();
-        let (Some(name), Some(over), Some(mean)) = (parts.next(), parts.next(), parts.next()) else {
+        let (Some(name), Some(over), Some(mean)) = (parts.next(), parts.next(), parts.next())
+        else {
             return Err(format!("{}: malformed line `{line}`", path.display()));
         };
         let over = over.parse().map_err(|_| format!("{name}: bad over"))?;
@@ -354,11 +369,7 @@ struct Oracles {
 impl Oracles {
     fn detect() -> Self {
         let mut list = Vec::new();
-        for (name, program) in [
-            ("poppler", "pdftoppm"),
-            ("mupdf", "mutool"),
-            ("gs", "gs"),
-        ] {
+        for (name, program) in [("poppler", "pdftoppm"), ("mupdf", "mutool"), ("gs", "gs")] {
             if let Some(path) = which(program) {
                 list.push(Oracle {
                     name,
@@ -389,7 +400,15 @@ impl Oracle {
         let out = std::env::temp_dir().join(format!("{stem}.ppm"));
         let status = match self.name {
             "poppler" => Command::new(&self.program)
-                .args(["-r", &dpi.to_string(), "-f", &page.to_string(), "-l", &page.to_string(), "-singlefile"])
+                .args([
+                    "-r",
+                    &dpi.to_string(),
+                    "-f",
+                    &page.to_string(),
+                    "-l",
+                    &page.to_string(),
+                    "-singlefile",
+                ])
                 .arg(pdf)
                 .arg(out.with_extension(""))
                 .status(),

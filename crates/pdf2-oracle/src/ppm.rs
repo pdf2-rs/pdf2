@@ -97,7 +97,8 @@ pub fn downsample(image: &Ppm, blocks: u32) -> Ppm {
                     for bx in 0..blocks {
                         let px = (x * blocks + bx).min(image.width - 1);
                         let py = (y * blocks + by).min(image.height - 1);
-                        let at = ((py as usize) * (image.width as usize) + px as usize) * 3 + channel;
+                        let at =
+                            ((py as usize) * (image.width as usize) + px as usize) * 3 + channel;
                         sum += f64::from(image.pixels[at]);
                     }
                 }

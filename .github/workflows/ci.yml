@@ -207,6 +207,37 @@ jobs:
       - name: Build the package and drive the demo
         run: cargo +stable run -q -p xtask -- demo
 
+  oracle:
+    name: Oracle comparison
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Independent engines, as docs/PROOF.md specifies: they are the
+      # expectation, and their disagreement is the tolerance.
+      - name: Install the oracles
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils mupdf-tools ghostscript
+          pdftoppm -v 2>&1 | head -1
+          mutool -v 2>&1 | head -1
+          gs --version
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: oracle
+
+      - name: Compare every case with the oracles
+        run: |
+          cargo +stable build --release -p pdf2-oracle
+          ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt \
+            --tolerances corpus/tolerances.tsv
+
   deny:
     name: Licences and advisories
     runs-on: ubuntu-latest
