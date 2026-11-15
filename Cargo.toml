@@ -41,6 +41,7 @@ sha2 = { version = "0.10.9", default-features = false }
 [workspace]
 members = [
     "crates/xtask",
+    "crates/pdf2-oracle",
     "crates/pdf2-bench",
     "crates/pdf2-cli",
     "crates/pdf2-render",

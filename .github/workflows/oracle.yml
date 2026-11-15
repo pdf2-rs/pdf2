@@ -1,0 +1,78 @@
+name: Oracle
+
+# Compares this renderer with independent engines, as docs/PROOF.md describes.
+#
+#   calibrate: measure the inter-oracle spread per case and upload the file
+#   check:     gate against the committed corpus/tolerances.tsv
+#
+# The gate also runs in CI on every push; this workflow exists for calibration,
+# for a scheduled full run, and for a manual check.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "calibrate (measure the spread) or check (gate)"
+        type: choice
+        options: [calibrate, check]
+        default: calibrate
+  schedule:
+    - cron: "0 4 * * 1" # Mondays, after the nightly fuzz job
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  oracle:
+    name: Oracle comparison
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install the oracles
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils mupdf-tools ghostscript
+          pdftoppm -v 2>&1 | head -1
+          mutool -v 2>&1 | head -1
+          gs --version
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: oracle
+
+      - name: Build the comparison tool
+        run: cargo +stable build --release -p pdf2-oracle
+
+      - name: Calibrate
+        if: inputs.mode != 'check' && github.event_name == 'workflow_dispatch'
+        run: |
+          ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt --calibrate \
+            --write-tolerances corpus/tolerances.tsv \
+            --summary oracle-summary.csv | tee oracle-report.txt
+
+      - name: Upload the calibration
+        if: inputs.mode != 'check' && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-calibration
+          path: |
+            corpus/tolerances.tsv
+            oracle-summary.csv
+            oracle-report.txt
+          if-no-files-found: error
+
+      - name: Check
+        if: inputs.mode == 'check' || github.event_name == 'schedule'
+        run: |
+          ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt \
+            --tolerances corpus/tolerances.tsv | tee oracle-report.txt

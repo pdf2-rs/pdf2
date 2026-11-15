@@ -1,0 +1,16 @@
+# Cases the oracle gate compares against poppler, mupdf (and Ghostscript when
+# present). One `path [page]` per line; page defaults to 1.
+#
+# Only pages this renderer claims to draw *fully* belong here. Files whose pages
+# need image codecs, shadings, transparency or Type 3 fonts are omitted until the
+# roadmap lands them (docs/ROADMAP-NEXT.md): an oracle mismatch on a feature we
+# report as skipped would measure the gap we already know about, not a regression.
+tests/fixtures/book.pdf 1
+tests/fixtures/calibration.pdf 1
+tests/fixtures/calibration.pdf 2
+tests/fixtures/calibration.pdf 3
+tests/fixtures/calibration.pdf 4
+tests/fixtures/calibration.pdf 5
+tests/fixtures/calibration.pdf 9
+tests/fixtures/calibration.pdf 10
+tests/fixtures/calibration.pdf 11
