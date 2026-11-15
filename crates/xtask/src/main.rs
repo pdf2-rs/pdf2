@@ -44,6 +44,7 @@ fn main() -> ExitCode {
         "corpus" => corpus(),
         "bench" => bench(),
         "fixtures" => fixtures(),
+        "cmaps" => cmaps(),
         "bless" => bless(),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
@@ -79,6 +80,7 @@ Usage:
   cargo xtask ledger    check that docs/FEATURES.md and the roadmap agree
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
+  cargo xtask cmaps     rebuild src/data/japan1_90ms_rksj.bin from vendor/adobe-cmaps
   cargo xtask bless     re-render the committed golden PNGs
 
 Exit codes: 0 all good, 1 a step failed.";
@@ -678,6 +680,231 @@ fn bench() -> Result<(), String> {
 
 fn fixtures() -> Result<(), String> {
     run("python3", &["tests/fixtures/make_fixtures.py"])
+}
+
+/// Rebuild the generated CMap data the library ships.
+///
+/// The inputs are Adobe's CMap resources (BSD-3-Clause, notice in
+/// `vendor/adobe-cmaps/LICENSE.md`). Two files are enough for the one predefined
+/// CMap the corpus needs: `90ms-RKSJ-H` maps Shift-JIS bytes to Adobe-Japan1
+/// CIDs, and `UniJIS-UCS2-H` maps UTF-16BE code units to those same CIDs, so
+/// composing it backwards gives each code the text a reader would extract.
+fn cmaps() -> Result<(), String> {
+    let directory = std::path::Path::new("vendor/adobe-cmaps");
+    let encoding = std::fs::read(directory.join("90ms-RKSJ-H"))
+        .map_err(|error| format!("{}: {error}", directory.display()))?;
+    let unicode = std::fs::read(directory.join("UniJIS-UCS2-H"))
+        .map_err(|error| format!("{}: {error}", directory.display()))?;
+
+    let codes = parse_cid_cmap(&encoding);
+    let back = parse_cid_cmap(&unicode);
+    if codes.is_empty() || back.is_empty() {
+        return Err("a CMap parsed to no ranges".to_owned());
+    }
+    // Unicode (UTF-16BE code unit) for a CID. Several code units share a CID —
+    // `UniJIS-UCS2-H` maps both U+65E5 (日) and U+2F47 (the Kangxi radical that
+    // looks the same) to it — so a compatibility or radical code is ranked below
+    // the ordinary one, and the smallest code breaks a remaining tie. Taking the
+    // first match in file order picks the radical, which is how this table first
+    // read 日 as ⽇.
+    fn rank(code: u32) -> u8 {
+        match code {
+            0x2E80..=0x2FDF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F => 1,
+            _ => 0,
+        }
+    }
+    let mut cid_to_unicode: std::collections::BTreeMap<u32, u32> =
+        std::collections::BTreeMap::new();
+    for (code, cid) in &back {
+        match cid_to_unicode.get(cid) {
+            Some(existing) if rank(*existing) < rank(*code) => {}
+            Some(existing) if rank(*existing) == rank(*code) && *existing <= *code => {}
+            _ => {
+                cid_to_unicode.insert(*cid, *code);
+            }
+        }
+    }
+    let mut pairs: Vec<(u16, u16)> = Vec::new();
+    for (code, cid) in &codes {
+        if *code > u32::from(u16::MAX) {
+            continue;
+        }
+        let Some(unicode) = cid_to_unicode.get(cid) else {
+            continue;
+        };
+        let Ok(unicode) = u16::try_from(*unicode) else {
+            continue;
+        };
+        pairs.push((
+            u16::try_from(*code).map_err(|error| error.to_string())?,
+            unicode,
+        ));
+    }
+    // `90ms-RKSJ-H` maps 0x20–0x7D to Adobe-Japan1 CIDs 231–324, the
+    // proportional Latin set, which runs in ASCII order; `UniJIS-UCS2-H` never
+    // maps Unicode to those CIDs (it targets the Japanese ones), so the ASCII
+    // half composes to nothing. The encoding's own layout says what they are.
+    let mapped: std::collections::BTreeSet<u16> = pairs.iter().map(|pair| pair.0).collect();
+    for code in 0x20_u16..=0x7D {
+        if !mapped.contains(&code) {
+            pairs.push((code, code));
+        }
+    }
+    pairs.sort_unstable();
+    pairs.dedup_by_key(|pair| pair.0);
+
+    // Varint deltas rather than fixed pairs: the codes ascend in steps of one or
+    // two and the text ascends with them, so deltas are small and the table both
+    // shrinks and compresses. Pairs cost 31 KB and barely gzip; deltas cost about
+    // a third of that, which is what keeps the wasm budget.
+    let mut out = Vec::with_capacity(8 + pairs.len() * 2);
+    out.extend_from_slice(b"P2CV");
+    out.push(1); // one-byte codes
+    out.push(2); // two-byte codes
+    out.extend_from_slice(
+        &u16::try_from(pairs.len())
+            .map_err(|error| error.to_string())?
+            .to_be_bytes(),
+    );
+    let (mut previous_code, mut previous_unicode) = (0_u32, 0_u32);
+    for (code, unicode) in &pairs {
+        let code = u32::from(*code);
+        let unicode = u32::from(*unicode);
+        push_varint(&mut out, code - previous_code);
+        // Zig-zag: the text can step backwards by one or two.
+        let delta = i64::from(unicode) - i64::from(previous_unicode);
+        let zigzag = ((delta << 1) ^ (delta >> 63)) as u64;
+        push_varint(
+            &mut out,
+            u32::try_from(zigzag).map_err(|error| error.to_string())?,
+        );
+        previous_code = code;
+        previous_unicode = unicode;
+    }
+    let path = std::path::Path::new("src/data/japan1_90ms_rksj.bin");
+    std::fs::create_dir_all("src/data").map_err(|error| error.to_string())?;
+    std::fs::write(path, &out).map_err(|error| format!("{}: {error}", path.display()))?;
+    println!(
+        "{}: {} mappings, {} bytes",
+        path.display(),
+        pairs.len(),
+        out.len()
+    );
+    Ok(())
+}
+
+/// A little-endian base-128 varint.
+fn push_varint(out: &mut Vec<u8>, mut value: u32) {
+    loop {
+        let mut byte = (value & 0x7F) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
+}
+
+/// The `(code, cid)` pairs of a CID CMap: `begincidrange` and `begincidchar`.
+fn parse_cid_cmap(data: &[u8]) -> Vec<(u32, u32)> {
+    let mut pairs = Vec::new();
+    let mut tokens: Vec<Token> = Vec::new();
+    let mut index = 0;
+    while index < data.len() {
+        match data[index] {
+            b'%' => {
+                while index < data.len() && data[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'<' if data.get(index + 1) != Some(&b'<') => {
+                index += 1;
+                let mut value = 0_u32;
+                let mut digits = 0;
+                while index < data.len() && data[index] != b'>' {
+                    let byte = data[index];
+                    index += 1;
+                    let digit = match byte {
+                        b'0'..=b'9' => u32::from(byte - b'0'),
+                        b'a'..=b'f' => u32::from(byte - b'a') + 10,
+                        b'A'..=b'F' => u32::from(byte - b'A') + 10,
+                        _ => continue,
+                    };
+                    value = (value << 4) | digit;
+                    digits += 1;
+                }
+                index += 1;
+                if digits > 0 {
+                    tokens.push(Token::Hex(value));
+                }
+            }
+            b'0'..=b'9' => {
+                let start = index;
+                while index < data.len() && data[index].is_ascii_digit() {
+                    index += 1;
+                }
+                let text = std::str::from_utf8(&data[start..index]).unwrap_or("0");
+                tokens.push(Token::Number(text.parse().unwrap_or(0)));
+            }
+            byte if byte.is_ascii_alphabetic() || byte == b'-' => {
+                let start = index;
+                while index < data.len()
+                    && (data[index].is_ascii_alphanumeric() || data[index] == b'-')
+                {
+                    index += 1;
+                }
+                tokens.push(Token::Keyword(
+                    std::str::from_utf8(&data[start..index])
+                        .unwrap_or("")
+                        .to_owned(),
+                ));
+            }
+            _ => index += 1,
+        }
+    }
+
+    let mut position = 0;
+    while position < tokens.len() {
+        match &tokens[position] {
+            Token::Keyword(keyword) if keyword == "begincidrange" => {
+                position += 1;
+                while let (
+                    Some(Token::Hex(low)),
+                    Some(Token::Hex(high)),
+                    Some(Token::Number(cid)),
+                ) = (
+                    tokens.get(position),
+                    tokens.get(position + 1),
+                    tokens.get(position + 2),
+                ) {
+                    for code in *low..=*high {
+                        pairs.push((code, *cid + (code - *low)));
+                    }
+                    position += 3;
+                }
+            }
+            Token::Keyword(keyword) if keyword == "begincidchar" => {
+                position += 1;
+                while let (Some(Token::Hex(code)), Some(Token::Number(cid))) =
+                    (tokens.get(position), tokens.get(position + 1))
+                {
+                    pairs.push((*code, *cid));
+                    position += 2;
+                }
+            }
+            _ => position += 1,
+        }
+    }
+    pairs
+}
+
+enum Token {
+    Hex(u32),
+    Number(u32),
+    Keyword(String),
 }
 
 fn bless() -> Result<(), String> {

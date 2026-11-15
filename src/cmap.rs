@@ -12,9 +12,12 @@
 //! expanded, so a hostile `bfrange` cannot demand millions of entries. Anything
 //! it cannot read is an [`Error::Malformed`], never a panic and never a hang.
 //!
-//! Nothing in the library calls this yet — the wiring into `text()` follows as
-//! its own change — so the dead-code lint is silenced for the module alone.
-#![allow(dead_code)]
+//! Predefined CMaps — `/90ms-RKSJ-H` and friends — are data, not code: the one
+//! the corpus needs is generated into `src/data/japan1_90ms_rksj.bin` by
+//! `cargo xtask cmaps` from Adobe's CMap resources (BSD-3-Clause, notice in
+//! `vendor/adobe-cmaps/LICENSE.md`), and its size is recorded against the wasm
+//! budget in `docs/PERFORMANCE.md`. Adding another is a data and one-line change,
+//! which is the point of the generated table.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -38,6 +41,93 @@ pub(crate) struct ToUnicode {
     mappings: BTreeMap<(u8, u32), String>,
     /// Code widths the code space allows, ascending, without duplicates.
     code_lengths: Vec<u8>,
+}
+
+/// A predefined CMap's code → text table, generated at build time.
+///
+/// The file layout is `P2CV`, one byte per allowed code width, a big-endian `u16`
+/// count, then that many varint entries of `(code delta, zig-zag text delta)` —
+/// scanning stops when the sorted codes pass the one asked for, so a lookup
+/// allocates nothing and reads a few thousand bytes at worst.
+#[derive(Debug, Clone)]
+pub(crate) struct Predefined {
+    /// The generated table, as it ships.
+    data: &'static [u8],
+    /// Allowed code widths, ascending.
+    lengths: &'static [u8],
+}
+
+const JAPAN1_90MS_RKSJ: &[u8] = include_bytes!("data/japan1_90ms_rksj.bin");
+
+impl Predefined {
+    /// The predefined CMap an `/Encoding` name asks for, when it is shipped.
+    pub(crate) fn by_name(name: &[u8]) -> Option<Self> {
+        if name != b"90ms-RKSJ-H" {
+            return None;
+        }
+        let data = JAPAN1_90MS_RKSJ;
+        let lengths = &data[4..6];
+        Some(Self { data, lengths })
+    }
+
+    /// The text a code stands for.
+    pub(crate) fn text(&self, code: u32, length: u8) -> Option<char> {
+        if !self.lengths.contains(&length) {
+            return None;
+        }
+        let code = u16::try_from(code).ok()?;
+        // A one-byte code space holds codes below 0x100 and a two-byte one holds
+        // codes above it, so the width is part of the key.
+        if (length == 1) != (code < 0x100) {
+            return None;
+        }
+        let mut position = 8;
+        let mut current_code = 0_u32;
+        let mut current_text = 0_u32;
+        loop {
+            let (code_delta, after) = read_varint(self.data, position)?;
+            position = after;
+            let (zigzag, after) = read_varint(self.data, position)?;
+            position = after;
+            current_code = current_code.checked_add(code_delta)?;
+            if current_code > u32::from(code) {
+                return None;
+            }
+            let delta = i64::from(zigzag >> 1) ^ -i64::from(zigzag & 1);
+            current_text = u32::try_from(i64::from(current_text) + delta).ok()?;
+            if current_code == u32::from(code) {
+                return core::char::from_u32(current_text);
+            }
+        }
+    }
+
+    /// The code widths the CMap allows, ascending.
+    pub(crate) fn code_lengths(&self) -> &[u8] {
+        self.lengths
+    }
+
+    /// The widest code the CMap allows.
+    pub(crate) fn max_code_length(&self) -> u8 {
+        self.lengths.last().copied().unwrap_or(2)
+    }
+}
+
+/// Read one little-endian base-128 varint, with the position after it.
+fn read_varint(data: &[u8], mut position: usize) -> Option<(u32, usize)> {
+    let mut value = 0_u32;
+    let mut shift = 0;
+    loop {
+        let byte = *data.get(position)?;
+        position += 1;
+        value |= u32::from(byte & 0x7F).checked_shl(shift)?;
+        if byte & 0x80 == 0 {
+            return Some((value, position));
+        }
+        shift += 7;
+        if shift >= 32 {
+            return None;
+        }
+    }
 }
 
 impl ToUnicode {
@@ -544,6 +634,22 @@ endcmap
             ToUnicode::parse(text.as_bytes()).is_err(),
             "more than {MAX_CODESPACE_RANGES} code space ranges is refused"
         );
+    }
+
+    #[test]
+    fn the_predefined_cmap_reads_shift_jis() {
+        let map = super::Predefined::by_name(b"90ms-RKSJ-H").expect("shipped");
+        assert_eq!(map.code_lengths(), &[1, 2]);
+        assert_eq!(map.max_code_length(), 2);
+        // `Hello` in single-byte codes, then the fixture's own text.
+        assert_eq!(map.text(0x48, 1), Some('H'));
+        assert_eq!(map.text(0x93FA, 2), Some('\u{65E5}'), "日, not the radical");
+        assert_eq!(map.text(0x967B, 2), Some('\u{672C}'));
+        assert_eq!(map.text(0x8CEA, 2), Some('\u{8A9E}'));
+        assert_eq!(map.text(0x8365, 2), Some('\u{30C6}'));
+        assert_eq!(map.text(0xFFFF, 2), None, "unmapped code");
+        assert_eq!(map.text(0x93FA, 1), None, "the width is part of the key");
+        assert!(super::Predefined::by_name(b"90pv-RKSJ-H").is_none());
     }
 
     #[test]

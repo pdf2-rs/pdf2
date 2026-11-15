@@ -93,10 +93,11 @@ Known limits inside the supported surface:
 
 - Text extraction: composite (Type0) fonts with a `/ToUnicode` map and an
   Identity encoding are read (codes split by the CMap's code space, CID widths
-  from `/W` and `/DW`); CMap-encoded (CJK) fonts need the CMap resources item 5
-  adds and are reported
-  as unsupported (the renderer draws them; closing that split is the next
-  release's theme, see [`docs/ROADMAP-NEXT.md`](docs/ROADMAP-NEXT.md)); the upper half of `MacRomanEncoding` is not decoded; glyph
+  from `/W` and `/DW`); one predefined CJK CMap ships as data (Adobe-Japan1
+  `90ms-RKSJ-H`), so those pages extract their text, while any other
+  CMap-encoded font is reported by the CMap name it needs — the data is
+  generated (`cargo xtask cmaps`) and its size is recorded against the wasm
+  budget; the upper half of `MacRomanEncoding` is not decoded; glyph
   names outside the built-in table are skipped rather than guessed. Spaces are
   recognised from the text itself and from wide `TJ` adjustments, not from glyph
   advance widths.

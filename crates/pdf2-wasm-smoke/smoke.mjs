@@ -21,7 +21,7 @@ const FILES = {
   wasi: 'target/wasm32-wasip1/release/pdf2-wasi-smoke.wasm',
 };
 const BUDGET_GZIP = {
-  browser: 150 * 1024,
+  browser: 160 * 1024,
   wasi: 175 * 1024,
 };
 

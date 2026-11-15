@@ -50,6 +50,42 @@ struct Line {
     text: String,
 }
 
+/// How a composite font's codes become text.
+#[derive(Debug, Clone)]
+pub(crate) enum CodeMap {
+    /// The page's `/ToUnicode` CMap.
+    ToUnicode(crate::cmap::ToUnicode),
+    /// A predefined CMap shipped as data (`/90ms-RKSJ-H` and friends).
+    Predefined(crate::cmap::Predefined),
+}
+
+impl CodeMap {
+    fn text(&self, code: u32, length: u8) -> Option<alloc::string::String> {
+        match self {
+            Self::ToUnicode(map) => map.text(code, length).map(alloc::borrow::ToOwned::to_owned),
+            Self::Predefined(map) => map.text(code, length).map(|text| {
+                let mut buffer = alloc::string::String::new();
+                buffer.push(text);
+                buffer
+            }),
+        }
+    }
+
+    fn code_lengths(&self) -> &[u8] {
+        match self {
+            Self::ToUnicode(map) => map.code_lengths(),
+            Self::Predefined(map) => map.code_lengths(),
+        }
+    }
+
+    fn max_code_length(&self) -> u8 {
+        match self {
+            Self::ToUnicode(map) => map.max_code_length(),
+            Self::Predefined(map) => map.max_code_length(),
+        }
+    }
+}
+
 /// A CID's advance width, from `/W` with `/DW` as the default (9.7.4.3).
 #[derive(Debug, Clone, Default)]
 struct Widths {
@@ -83,10 +119,11 @@ enum Font {
         encoding: Encoding,
     },
     /// A composite font: codes split by the CMap's code space, text from
-    /// `/ToUnicode`, advances from `/W` and `/DW`.
+    /// `/ToUnicode` or a predefined CMap, advances from `/W` and `/DW`.
     Composite {
-        /// The page's `/ToUnicode` mapping.
-        to_unicode: crate::cmap::ToUnicode,
+        /// Code → text, from `/ToUnicode` when present, otherwise from the
+        /// predefined CMap the `/Encoding` names.
+        map: CodeMap,
         /// CID advances.
         widths: Widths,
     },
@@ -98,7 +135,7 @@ impl Font {
     /// Simple fonts report no advance: their `/Widths` are not read, so pen
     /// tracking would be a guess, and a guess becomes a wrong space.
     fn decode(&self, bytes: &[u8]) -> (String, f64) {
-        let Self::Composite { to_unicode, widths } = self else {
+        let Self::Composite { map, widths } = self else {
             let Self::Simple { encoding } = self else {
                 return (String::new(), 0.0);
             };
@@ -112,9 +149,9 @@ impl Font {
         };
         let mut text = String::new();
         let mut advance = 0.0;
-        let lengths = to_unicode.code_lengths();
+        let lengths = map.code_lengths();
         let narrowest = lengths.first().map_or(1, |length| usize::from(*length));
-        let widest = usize::from(to_unicode.max_code_length());
+        let widest = usize::from(map.max_code_length());
         let mut position = 0;
         while position < bytes.len() {
             // A code space with one width is the common case and splits exactly;
@@ -130,9 +167,7 @@ impl Font {
                 if position + width <= bytes.len() {
                     let code = pack(&bytes[position..position + width]);
                     let matched = lengths.len() == 1
-                        || to_unicode
-                            .text(code, u8::try_from(width).unwrap_or(2))
-                            .is_some();
+                        || map.text(code, u8::try_from(width).unwrap_or(2)).is_some();
                     if matched {
                         consumed = width;
                         break;
@@ -153,8 +188,8 @@ impl Font {
                 continue;
             }
             let code = pack(&bytes[position..position + consumed]);
-            if let Some(mapped) = to_unicode.text(code, u8::try_from(consumed).unwrap_or(2)) {
-                text.push_str(mapped);
+            if let Some(mapped) = map.text(code, u8::try_from(consumed).unwrap_or(2)) {
+                text.push_str(&mapped);
             }
             advance += widths.width(code);
             position += consumed;
@@ -480,10 +515,18 @@ impl<'a> TextInterpreter<'a> {
                     what: "vertical composite (Type0) fonts",
                 })
             }
-            Some(Object::Name(_)) => {
+            Some(Object::Name(name)) => {
+                // A predefined CMap is data: when we ship it, the encoding is
+                // readable; when we do not, the name says which one is missing.
+                if let Some(predefined) = crate::cmap::Predefined::by_name(name) {
+                    return Ok(Font::Composite {
+                        map: CodeMap::Predefined(predefined),
+                        widths: self.widths_of(dict)?,
+                    });
+                }
                 return Err(Error::Unsupported {
                     what: "CMap-encoded composite (Type0) fonts",
-                })
+                });
             }
             Some(Object::Reference(_)) | Some(Object::Stream(_)) => {
                 return Err(Error::Unsupported {
@@ -508,7 +551,7 @@ impl<'a> TextInterpreter<'a> {
         };
         let map = crate::cmap::ToUnicode::parse(&self.document.stream_data(*id)?)?;
         Ok(Font::Composite {
-            to_unicode: map,
+            map: CodeMap::ToUnicode(map),
             widths: self.widths_of(dict)?,
         })
     }
