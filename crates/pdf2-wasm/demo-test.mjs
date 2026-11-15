@@ -603,6 +603,81 @@ async function main() {
     );
     check(true, 'the password opens the encrypted sample');
 
+
+    // --- 1.2's samples -------------------------------------------------
+    //
+    // Each one exists to make a claim of the release visible in a browser:
+    // CFF outlines, an older encryption generation, the visible page box, and
+    // text that only exists through a predefined CMap.
+
+    const pick = async (pattern) => {
+      await evaluate(`
+        const select = document.querySelector('#sample');
+        select.value = [...select.options].find((option) => ${pattern}.test(option.textContent)).value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      `);
+    };
+    const ink = async () =>
+      evaluate(`
+        const canvas = document.querySelector('#canvas');
+        const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) count += 1;
+        }
+        return count;
+      `);
+
+    // CFF: a CID-keyed program with no TrueType table, drawn from its charstrings.
+    await pick('/CFF outlines/');
+    await waitFor(`document.querySelector('#factName').textContent === 'cff.pdf'`, 'the CFF sample');
+    await new Promise((done) => setTimeout(done, 500));
+    check((await ink()) > 500, 'the CFF sample draws its outlines');
+    check(
+      !(await evaluate(`return document.querySelector('#status').textContent;`)).includes('font:'),
+      'the CFF sample reports no missing font',
+    );
+
+    // Revision 4 encryption: the same password field, an older handler.
+    await pick('/revision 4/');
+    await waitFor(
+      `document.querySelector('#passwordRow').classList.contains('visible')`,
+      'the password field for the revision-4 sample',
+    );
+    await evaluate(`
+      const input = document.querySelector('#password');
+      input.value = 'user';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    `);
+    await waitFor(
+      `document.querySelector('#factEncrypted').textContent === 'yes' &&
+       document.querySelector('#text').textContent.includes('Encrypted hello')`,
+      'the revision-4 sample to open with its password',
+    );
+    check(true, 'a revision-4 encrypted sample opens and extracts its text');
+
+    // /CropBox and /UserUnit: the raster is the crop box at twice its size, so the
+    // canvas is square — the media box would make it 3:2.
+    await pick('/CropBox/');
+    await waitFor(`document.querySelector('#factName').textContent === 'cropbox.pdf'`, 'the crop sample');
+    await new Promise((done) => setTimeout(done, 400));
+    const shape = await evaluate(`
+      const canvas = document.querySelector('#canvas');
+      return { width: canvas.width, height: canvas.height };
+    `);
+    check(
+      Math.abs(shape.width - shape.height) <= 2,
+      `the crop box decides the shape: ${shape.width}x${shape.height}`,
+    );
+
+    // CJK: the page has no /ToUnicode and no embedded program, so the text can
+    // only come from the predefined CMap the crate ships as data.
+    await pick('/Shift-JIS/');
+    await waitFor(`document.querySelector('#factName').textContent === 'cjk.pdf'`, 'the CJK sample');
+    await new Promise((done) => setTimeout(done, 400));
+    const cjk = await evaluate(`return document.querySelector('#text').textContent;`);
+    check(cjk.includes('日本語テスト'), `the CJK sample extracts its text: ${cjk.slice(0, 40)}`);
+
     // Nothing above should have thrown or logged an error.
     const errors = [];
     for (const event of cdp.events) {
