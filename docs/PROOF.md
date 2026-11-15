@@ -121,10 +121,14 @@ added there rather than documented here as if it existed.
 - Committed (Q4): Tier A — 23 files, 827 249 bytes, hashed in
   `corpus/manifest.json`, with the Apache-2.0 text in `corpus/LICENSES/`, and
   `corpus/` excluded from the crate.
-- **First run, and it stopped at the door**: all 23 files were rejected at the
-  header (`malformed only PDF 2.x is supported`), so no construct and no pixel
-  was measured. The taxonomy is in [`docs/CORPUS.md`](CORPUS.md).
-  Oracle calibration is meaningless until one corpus file reaches a rasteriser;
-  Tier B fetching is deferred for the same reason.
-- Pending (Q5): the spike that opens the header gate far enough to price the top
-  gap and re-rank gaps 1–8 against files that actually parse.
+- **First run stopped at the door**: all 23 files were rejected at the header
+  (`malformed only PDF 2.x is supported`), which is itself the finding — see
+  [`docs/CORPUS.md`](CORPUS.md).
+- **Second run, after opening the gate** (`pdf2 1.1.0`, `cargo xtask corpus`):
+  21 of 23 parse and render, 14 are fully readable, and the nine failures fall
+  into three classes — composite (Type 0) extraction on 7 files, one xref edge
+  case, one 1.x-era encryption case. The measurement is reproducible with
+  `cargo xtask corpus`.
+- Oracle calibration is still pending: the files reach a rasteriser now, but the
+  oracle spread has not been measured yet (no poppler/mupdf on this machine;
+  the CI job that runs them is part of the roadmap).

@@ -4,6 +4,20 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-11-14
+
+**Reads PDF 1.x.** The header check accepted only `%PDF-2.x`, so the library
+refused every real-world file at byte 0 — the corpus run in `docs/CORPUS.md`
+rejected 23 of 23. The gate now accepts `1.x` and `2.x` (other versions are still
+refused), which is the whole change: no parser behaviour is version-gated
+elsewhere.
+
+Measured on the same corpus (`cargo xtask corpus`): **21 of 23 files parse and
+render, 14 are fully readable**; the nine remaining failures are pre-existing
+gaps, now measurable — composite (Type 0) extraction on 7 files, one
+cross-reference generation edge case, and one encrypted file (the 1.x-era
+RC4/AES-128 revisions are not implemented).
+
 ## [1.0.4] — 2026-11-14
 
 - `renderPageToCanvas` returns the renderer's report as JSON (`{"reason": count}`,

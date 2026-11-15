@@ -5,29 +5,42 @@ First measurement of the proof strategy in [`docs/PROOF.md`](PROOF.md): Tier A,
 [`corpus/manifest.json`](../corpus/manifest.json), run on 2026-11-14 with
 `pdf2 1.0.0` and `pdf2-render 1.1.0`.
 
-## The result, before the details
+## The result, before and after opening the header gate
 
-**All 23 files are rejected at the file header.** Not one construct in the corpus
-was reached:
+**Before** (2026-11-14, `pdf2 1.0.0`): all 23 files rejected at the header, not one
+construct reached.
 
 ```
 $ target/debug/pdf2 info corpus/tier-a/Embedded_font.pdf
-error: corpus/tier-a/Embedded_font.pdf: malformed only PDF 2.x is supported at offset 0
+error: … malformed only PDF 2.x is supported at offset 0
 ```
 
-`src/document.rs:486` requires the header version to start with `2.`, and
-`src/document.rs:967` asserts that `%PDF-1.7` is an error, so this is deliberate
-policy rather than a bug. It is also the most consequential fact in this survey:
-the real world is PDF 1.4–1.7, and this library refuses every one of those files
-before reading a single object.
+`src/document.rs:486` required the header version to start with `2.`, and
+`src/document.rs:967` asserted that `%PDF-1.7` is an error. Deliberate policy —
+and the single most consequential fact in the survey, because the real world is
+PDF 1.4–1.7.
 
-The same run through the CLI and the renderer:
+**After** the spike relaxed that one condition (accept `1.x` and `2.x`, refuse
+everything else; no other code is version-gated), measured with
+`cargo xtask corpus`:
 
-| Command | Files reaching the parser | Files rejected | First error |
-| --- | --- | --- | --- |
-| `pdf2 info` / `check` | 0 of 23 | 23 | `malformed only PDF 2.x is supported at offset 0` |
-| `pdf2 text` | 0 of 23 | 23 | same |
-| `pdf2-render-golden` (page 1) | 0 of 23 | 23 | same |
+| Measure | Files | Note |
+| --- | --- | --- |
+| parse (`pdf2 info`) | 21 of 23 | two fail before the header is useful: one xref edge case, one encrypted file |
+| fully readable (`check` + `text`) | 14 of 23 | |
+| page 1 rendered | 21 of 23 | the two that do not parse do not draw either |
+
+Failure taxonomy, and every class maps to a gap already in the scorecard:
+
+| Class | Files | Which |
+| --- | --- | --- |
+| `unsupported: composite (Type0) fonts` (text extraction) | 7 | `90ms_rksj_h_sample`, `ArabicCIDTrueType`, `Embedded_font`, `arial_unicode_ab_cidfont`, `arial_unicode_en_cidfont`, `cid_cff`, `cidfont_cmap_overflow` — all seven **do render** |
+| `malformed cross-reference generation at offset 2111` | 1 | `ContentStreamCycleType3insideType3.pdf` — a 1.x xref edge case |
+| `malformed object number must be positive at offset 0` | 1 | `encrypted-attachment.pdf` — 1.x-era RC4/AES-128 `/Encrypt`, which this library does not implement (it has AES-256 revision 6 only) |
+
+Read that table as the first honest measurement of the library on real files: the
+renderer is much further along than the extractor, and the three failure classes
+are exactly gaps 1, 9 and 7 of `docs/GAPS.md`.
 
 ## What the corpus contains
 
@@ -62,35 +75,32 @@ Every file was chosen to exercise a construct this repository cannot generate:
 Total 827 249 bytes; the manifest records each SHA-256 and the pdf.js commit
 (`d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a`).
 
-## Why this cannot be classified further yet
+## What the measurement changed
 
-The taxonomy the plan wanted — image filters, composite fonts, renderer reports —
-needs files that reach those code paths. With the header gate closed, every
-failure is the same failure, and no amount of corpus breadth changes it.
+- **The gate was the whole blocker.** One condition plus its test; nothing else
+  in the tree branches on the header version. The 2.0-only policy was buying
+  nothing except unmeasurability.
+- **Type 0 extraction is now confirmed by real files**, not by inference: seven
+  of the twenty-three, and all seven render — the renderer/extractor split the
+  ADR's D1 is about, visible in one table.
+- **A new gap surfaced**: `/Encrypt` revisions 2–4 (RC4 and AES-128) are 1.x-era
+  and unimplemented; the library has AES-256 revision 6 only. It goes into
+  `docs/GAPS.md` with this file as evidence.
+- **Images are not the blocker they were assumed to be**: `bug_jpx.pdf`,
+  `ccitt_EndOfBlock_false.pdf`, `cmykjpeg.pdf` and `colorkeymask.pdf` all parse
+  and render, because the renderer draws unsupported images as blanks and
+  reports them rather than failing the page.
+- **Tier B is now worth fetching**: a batch run over 690 pdf.js files would
+  measure the same classes at scale.
 
-Reading PDF 1.x is therefore **not one gap among the eight** in
-[`docs/GAPS.md`](GAPS.md): it is the precondition for measuring any of them.
-Two consequences follow, and both are recorded there and in the round plan:
+## Reproducing
 
-1. The scorecard gains a new top row, and the M7 spike is retargeted at it.
-2. Tier B corpora (pdf.js complete, veraPDF) are pointless to fetch until a
-   single Tier A file parses; the proof strategy stays at Tier A for now.
+```sh
+cargo xtask corpus
+```
 
-## What the spike has to measure
-
-The next round relaxes the gate in a branch, then answers with numbers rather
-than opinion:
-
-- how many of the 23 files parse, extract and render once the header is accepted;
-- which of them fail on what next — RC4/AES-128 encryption (`/Encrypt` revisions
-  2–4 are PDF 1.x-era and this library implements AES-256 revision 6 only),
-  CCITT/JPX/JBIG2 images (`src/filter.rs:41`), Type 0 extraction
-  (`src/content.rs:253`), CFF programs, Type 3, transparency;
-- what the change costs in code and risk, and whether the 2.0-only policy was
-  buying anything real.
-
-Until that measurement exists, the honest summary is: **the library reads PDF 2.0
-and cannot read the corpus at all.**
+The chore builds the CLI and the renderer, runs `check`, `text` and page 1 of
+every Tier A file, and prints the counts and the failure classes above.
 
 ## Method
 
