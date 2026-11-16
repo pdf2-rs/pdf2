@@ -93,6 +93,8 @@ real bugs:
 | `/Type0` without a usable program or with a CMap stream | **not drawn**, reported by reason: `font:Type0-no-program`, `font:Type0-cmap`, `font:CIDFontType0` (CFF) |
 | `/Type3` | **not drawn**: `font:Type3` |
 | `/FontFile3` CFF and OpenType programs on a `/Type0` font | **drawn**: the bare CFF is wrapped in the smallest OpenType container and its charset is inverted so a CID finds its glyph (`docs/adr/0003-cff-without-a-dependency.md`) |
+| A TrueType program with no `cmap` table | **not drawn**, reported: `font:TrueType-without-cmap`. The codes cannot be decoded without a map, and guessing glyph ids draws wrong glyphs (`docs/RENDERING-QUALITY.md`) |
+| A page that paints and produces an empty raster | reported: `drew-nothing`, so a blank page that should have had content is visible instead of silent |
 | `/FontFile` (Type 1) and simple-font `/FontFile3` programs | **not parsed**: the bitmap fallback is drawn and `font:FontFile`/`font:FontFile3` is reported |
 | Text render modes other than fill (`Tr`), vertical writing | not implemented |
 
