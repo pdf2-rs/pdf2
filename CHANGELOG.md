@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Rendering
 
+- **Two-dimensional CCITT fax images draw** (`/CCITTFaxDecode`, `/K` > 0 and
+  `/K` −1): T.4 §4.2.1.2's changing-element model — the coding line is a list of
+  change positions whose parity is the run's colour, `b1`/`b2` are tracked on the
+  reference line as `a0` advances, and the modes are pass, horizontal and vertical
+  ±3 with a backward vertical walking the list back. G4 codes every line this way;
+  G3 mixed mode reads the tag bit after an EOL, and the EOL is *looked for* even
+  when `/EndOfLine` is absent because writers emit it anyway. The corpus page draws
+  all six of its images — `/K` −1, 0 and 1, both `/EndOfBlock` values — and reports
+  every operator supported, where it reported four `Do` notes. The structure
+  follows pdf.js's `ccitt.js` (Apache-2.0, pinned), recorded in
+  `THIRD-PARTY-NOTICES.md`; an earlier attempt at this was withdrawn as
+  plausible-but-wrong, and the difference between the two is the tracked reference
+  position.
+
 - **CMYK JPEG images draw** (`7.4.8`): a four-component `/DCTDecode` image is
   decoded as CMYK (its RGB path assumes uninverted samples and comes out black),
   the Adobe APP14 inversion is undone — unless the writer stated it as `/Decode`,

@@ -58,7 +58,6 @@ whoever picks it up:
 - ~~**CMYK JPEG**~~ — drawn since 2026-11-16: the decoder returns CMYK, the Adobe
   APP14 inversion is undone, and the samples are converted multiplicatively. Proven
   by `tests/fixtures/cmyk-jpeg.pdf` (four ink quadrants) and by `cmykjpeg.pdf`.
-- **CCITT two-dimensional coding** (`/K` 1 and −1) — a first implementation drew
-  box borders with the text missing, i.e. plausible and wrong, so it was withdrawn;
-  `docs/RENDERING.md` records the symptom and the brief (rebuild from T.4
-  §4.2.1.2's changing-element model with hand-coded line tests). 1-D rows decode.
+- ~~**CCITT two-dimensional coding**~~ — drawn since 2026-11-16: the
+  changing-element model with the reference position tracked, proven by the corpus
+  page's six labelled images.

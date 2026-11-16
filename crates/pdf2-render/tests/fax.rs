@@ -1,80 +1,106 @@
-//! `/CCITTFaxDecode` (7.4.6): the one-dimensional half.
+//! CCITT fax images: one-dimensional rows, G3 mixed-mode lines, and G4.
 //!
-//! `ccitt_EndOfBlock_false.pdf` carries six fax images spanning every `/K` value
-//! with both `/EndOfBlock` values, so one page exercises the whole parameter set.
-//! The two `/K 0` images decode from the first commit of the decoder; the four
-//! two-dimensional ones are reported, because a half-decoded fax line is noise
-//! rather than an approximation.
+//! The corpus page is the proof: its six images are labelled with the mode they
+//! use (`/K -1`, `/K 0`, `/K 1`, two of each, with both `/EndOfBlock` values), so
+//! a mode that decodes wrongly is visible as a wrong label rather than as a blank
+//! page. Before two-dimensional decoding landed the page reported `Do×4`: only the
+//! `/K 0` images drew.
 
 use std::path::{Path, PathBuf};
 
 use pdf2::Document;
+use pdf2_render::{render_page_number, RenderOptions, RenderedPage};
 
-fn repo(relative: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(relative)
+fn corpus(name: &str) -> Vec<u8> {
+    let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/tier-a")
+        .join(name);
+    std::fs::read(&path).unwrap_or_else(|error| {
+        panic!(
+            "{}: {error} — restore the corpus with `cargo run -q -p xtask -- corpus`",
+            path.display()
+        )
+    })
+}
+
+fn render(name: &str) -> RenderedPage {
+    let document = Document::open(corpus(name)).expect("open corpus file");
+    render_page_number(&document, 0, &RenderOptions::default()).expect("render")
 }
 
 #[test]
-fn the_one_dimensional_images_decode_and_the_two_dimensional_ones_are_reported() {
-    let bytes = std::fs::read(repo("corpus/tier-a/ccitt_EndOfBlock_false.pdf")).expect("corpus");
-    let document = Document::open(bytes).expect("open");
-    let page = document.page(0).expect("page");
-    let rendered =
-        pdf2_render::render_page_number(&document, 0, &pdf2_render::RenderOptions::default())
-            .expect("render");
-    // Two `/K 0` images drew, four `/K 1` and `/K -1` ones were reported.
+fn every_fax_mode_on_the_corpus_page_decodes() {
+    let rendered = render("ccitt_EndOfBlock_false.pdf");
     assert_eq!(
         rendered.report.to_string(),
-        "Do×4",
-        "only the two-dimensional images are missing: {}",
+        "all operators supported",
+        "all six images draw, in all three modes: {}",
         rendered.report
     );
-    let mut ink = 0;
+}
+
+#[test]
+fn the_two_dimensional_images_have_text_in_them() {
+    // Each label is drawn on a white box: the page must have both the black glyphs
+    // and the white boxes, and it must have the blue backdrop they sit on. A
+    // decoder that produced plausible-but-wrong lines would still have ink, which
+    // is why the fixtures below pin the *shape* rather than the ink count.
+    let rendered = render("ccitt_EndOfBlock_false.pdf");
+    let mut black = 0;
+    let mut white = 0;
+    let mut blue = 0;
     for y in 0..rendered.canvas.height() {
         for x in 0..rendered.canvas.width() {
-            if rendered.canvas.pixel(x, y) != Some([255, 255, 255, 255]) {
-                ink += 1;
+            if let Some([r, g, b, _]) = rendered.canvas.pixel(x, y) {
+                let (r, g, b) = (u32::from(r), u32::from(g), u32::from(b));
+                if r < 60 && g < 60 && b < 60 {
+                    black += 1;
+                } else if r > 240 && g > 240 && b > 240 {
+                    white += 1;
+                } else if b > 200 && b > r + 60 {
+                    blue += 1;
+                }
             }
         }
     }
-    assert!(ink > 5_000, "the fax images put ink on the page: {ink}");
-    let _ = page;
+    assert!(black > 2_000, "the glyphs are drawn: {black} black pixels");
+    assert!(white > 20_000, "the boxes are white: {white} white pixels");
+    assert!(blue > 50_000, "the backdrop is blue: {blue} blue pixels");
 }
 
 #[test]
-fn a_fax_stream_decodes_to_rows_of_the_declared_width() {
-    // The first `/CCITTFaxDecode` stream in the file, decoded through the public
-    // filter API: 81 columns is eleven bytes per row, and the file declares 26.
-    let bytes = std::fs::read(repo("corpus/tier-a/ccitt_EndOfBlock_false.pdf")).expect("corpus");
-    let document = Document::open(bytes).expect("open");
-    let mut found = false;
-    for number in 1..=document
-        .trailer()
-        .get(b"Size")
-        .and_then(pdf2::Object::as_integer)
-        .unwrap_or(32)
-    {
-        let number = u32::try_from(number).unwrap_or(0);
-        if !document.contains_object(number) {
-            continue;
-        }
+fn the_corpus_g4_image_decodes_to_a_picture() {
+    // The `/K -1` image decoded on its own: 81 columns by 26 rows. A two-dimensional
+    // decode that produced noise would still be 286 bytes, so the claim is that the
+    // rows *differ* — a box with glyphs, not a single fill — and that the border
+    // rows are uniform, which is what a box looks like.
+    let document = Document::open(corpus("ccitt_EndOfBlock_false.pdf")).expect("open");
+    for number in 1..400_u32 {
         let Ok(pdf2::Object::Stream(stream)) = document.get_object_by_number(number) else {
             continue;
         };
-        let is_fax = matches!(stream.dict().get(b"Filter"), Some(pdf2::Object::Name(name)) if name == b"CCITTFaxDecode");
-        if !is_fax {
-            continue;
-        }
-        let Ok(decoded) = document.decode_stream(&stream) else {
+        let Some(pdf2::Object::Dictionary(parms)) = stream.dict().get(b"DecodeParms") else {
             continue;
         };
-        // 81 columns → 11 bytes per row (ceil(81/8)), 26 rows.
-        assert_eq!(decoded.len() % 11, 0, "rows are eleven bytes wide");
-        assert_eq!(decoded.len(), 11 * 26, "twenty-six rows");
-        found = true;
-        break;
+        if parms.get(b"K").and_then(pdf2::Object::as_integer) != Some(-1) {
+            continue;
+        }
+        let bytes = document.decode_stream(&stream).expect("G4 decodes");
+        assert_eq!(bytes.len(), 26 * 11, "26 rows of 81 columns");
+        let rows: Vec<&[u8]> = bytes.chunks(11).collect();
+        assert!(
+            rows[0].iter().all(|byte| *byte == rows[0][0]),
+            "the first row is a uniform border"
+        );
+        assert!(
+            rows.iter().any(|row| row != &rows[0]),
+            "and the glyph rows differ from it"
+        );
+        assert!(
+            rows[13].iter().any(|byte| *byte != rows[13][0]),
+            "a middle row carries glyph ink"
+        );
+        return;
     }
-    assert!(found, "the corpus file has a fax stream");
+    panic!("the page has no /K -1 image");
 }
