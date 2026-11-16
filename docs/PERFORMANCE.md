@@ -122,9 +122,16 @@ node --no-warnings crates/pdf2-wasm-smoke/smoke.mjs
 | Artifact | Raw | Gzip | Gzip budget |
 | --- | --- | --- | --- |
 | browser module (`wasm32-unknown-unknown`, release) | 410 421 B | 155 131 B | 160 KiB |
-| WASI binary (`wasm32-wasip1`, release) | 479 415 B | 179 922 B | 180 KiB |
+| WASI binary (`wasm32-wasip1`, release) | 479 415 B | 179 922 B | 187 KiB |
 
 Measured 2026-11-15 with `rustc 1.99.1` and the release profile.
+
+**The WASI budget moved from 180 KiB to 187 KiB on 2026-11-16 for the
+two-dimensional fax decoder**: the changing-element model, its mode table and the
+reference-position bookkeeping cost **+4 763 gzip bytes** (179 922 → 184 685 as
+measured in CI). It is what turns G4 and G3 mixed-mode scans — the format of every
+scanned document a decade old — from a reported image into a drawn one, and it is
+in-crate: no dependency, so no `no_std` verdict was needed.
 
 **The WASI budget moved from 175 KiB to 180 KiB on 2026-11-16, deliberately**:
 the decoded-stream budget (256 MiB, `Error::Limit`, a capped inflate) cost

@@ -55,3 +55,14 @@ the transcription is a courtesy. `hayro-ccitt` itself is **not** a dependency: i
 `rust-version` is 1.92, so only the tables travel.
 
 [hayro]: https://crates.io/crates/hayro-ccitt/0.5.0
+
+## pdf.js `src/core/ccitt.js` (Apache-2.0) — structure reference
+
+`src/fax.rs`'s two-dimensional decoder follows the *structure* of
+`src/core/ccitt.js` from mozilla/pdf.js, pinned at tag `v1.10.100` (fetched
+2026-11-16; Apache-2.0, and the notice above covers the licence). What was taken is
+the shape of the algorithm: the coding line as a list of change positions whose
+parity carries the run colour (`_addPixels`/`_addPixelsNeg`), the reference
+position tracked as `a0` advances, and the order of the mode codes. No code was
+copied verbatim — the Rust is written against the same model, and the mode tables
+come from the T.4 tables already cited above.

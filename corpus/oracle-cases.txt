@@ -39,3 +39,4 @@ tests/fixtures/separation.pdf 1
 # converts CMYK multiplicatively. That is the ICC gap (rank 10b, deferred), not a
 # decoding bug: against an independent decoder the page matches to 8 mean absolute
 # units, which is the same disagreement seen from the other side.
+corpus/tier-a/ccitt_EndOfBlock_false.pdf 1

@@ -22,7 +22,7 @@ const FILES = {
 };
 const BUDGET_GZIP = {
   browser: 160 * 1024,
-  wasi: 180 * 1024,
+  wasi: 187 * 1024,
 };
 
 const here = dirname(fileURLToPath(import.meta.url));
