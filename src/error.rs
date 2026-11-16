@@ -45,17 +45,6 @@ pub enum Error {
         text: String,
     },
 
-    /// A decoded stream grew past the document's decoded-bytes budget.
-    ///
-    /// `what` names the stage that hit it (`"a Flate stream"`, `"the
-    /// unfiltered stream"`) and `limit` is the budget in bytes.
-    Limit {
-        /// The filter stage that exceeded the budget.
-        what: &'static str,
-        /// The budget, in bytes.
-        limit: usize,
-    },
-
     /// The input is structurally wrong in a way particular to `what`.
     ///
     /// `offset` is where the problem was noticed, if it is known.
@@ -83,6 +72,19 @@ pub enum Error {
     Unsupported {
         /// What is missing, for example `"composite (Type0) fonts"`.
         what: &'static str,
+    },
+
+    /// A decoded stream grew past the document's decoded-bytes budget.
+    ///
+    /// `what` names the stage that hit it (`"a Flate stream"`, `"the
+    /// unfiltered stream"`) and `limit` is the budget in bytes. Added last on
+    /// purpose: a variant in the middle shifts the discriminants of the ones
+    /// after it, which `cargo-semver-checks` reports as a breaking change.
+    Limit {
+        /// The filter stage that exceeded the budget.
+        what: &'static str,
+        /// The budget, in bytes.
+        limit: usize,
     },
 }
 

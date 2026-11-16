@@ -122,9 +122,15 @@ node --no-warnings crates/pdf2-wasm-smoke/smoke.mjs
 | Artifact | Raw | Gzip | Gzip budget |
 | --- | --- | --- | --- |
 | browser module (`wasm32-unknown-unknown`, release) | 410 421 B | 155 131 B | 160 KiB |
-| WASI binary (`wasm32-wasip1`, release) | 472 511 B | 175 302 B | 175 KiB |
+| WASI binary (`wasm32-wasip1`, release) | 479 415 B | 179 922 B | 180 KiB |
 
 Measured 2026-11-15 with `rustc 1.99.1` and the release profile.
+
+**The WASI budget moved from 175 KiB to 180 KiB on 2026-11-16, deliberately**:
+the decoded-stream budget (256 MiB, `Error::Limit`, a capped inflate) cost
+**+4 620 gzip bytes** on that artifact — 175 302 → 179 922, which is the
+security fix's price: refusing a decompression bomb instead of allocating it. The
+browser artifact stayed inside its 160 KiB.
 
 **The browser budget moved from 150 KiB to 160 KiB on 2026-11-15, deliberately**:
 the crate now ships one predefined CMap, the Adobe-Japan1 `90ms-RKSJ-H` code →
