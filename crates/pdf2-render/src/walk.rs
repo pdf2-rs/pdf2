@@ -263,6 +263,10 @@ struct State {
     dash: Dash,
     fill: Color,
     stroke: Color,
+    /// `/ca`: constant alpha for fills and text, 0..=1.
+    fill_alpha: f64,
+    /// `/CA`: constant alpha for strokes.
+    stroke_alpha: f64,
     font: Option<Font>,
     font_size: f64,
     miter_limit: f64,
@@ -290,6 +294,8 @@ impl State {
             dash: Dash::solid(),
             fill: Color::BLACK,
             stroke: Color::BLACK,
+            fill_alpha: 1.0,
+            stroke_alpha: 1.0,
             font: None,
             font_size: 0.0,
             miter_limit: 10.0,
@@ -384,6 +390,12 @@ impl Walker<'_> {
             b"cm" => {
                 if let Some(matrix) = matrix_operand(operands) {
                     self.state.ctm = matrix.multiply(self.state.ctm);
+                }
+            }
+            b"gs" => {
+                if let Some(Object::Name(name)) = operands.first() {
+                    let name = name.clone();
+                    self.apply_ext_gstate(&name)?;
                 }
             }
             b"w" => self.state.line_width = number(operands, 0),
@@ -633,7 +645,7 @@ impl Walker<'_> {
                 &polylines,
                 self.state.fill,
                 even_odd,
-                1.0,
+                self.state.fill_alpha,
             );
         }
         if matches!(what, Paint::Stroke | Paint::Both) {
@@ -655,7 +667,7 @@ impl Walker<'_> {
                     &outline,
                     self.state.stroke,
                     false,
-                    1.0,
+                    self.state.stroke_alpha,
                 );
             }
         }
@@ -743,7 +755,7 @@ impl Walker<'_> {
                 &polygons,
                 self.state.fill,
                 false,
-                1.0,
+                self.state.fill_alpha,
             );
         }
         if matches!(mode, 1 | 2 | 5 | 6) {
@@ -769,7 +781,7 @@ impl Walker<'_> {
                     &outline,
                     self.state.stroke,
                     false,
-                    1.0,
+                    self.state.stroke_alpha,
                 );
             }
         }
@@ -815,7 +827,12 @@ impl Walker<'_> {
         }
         match Image::from_stream(self.document, &stream) {
             Ok(image) => {
-                image.paint(self.canvas, &self.mask, self.state.ctm);
+                image.paint(
+                    self.canvas,
+                    &self.mask,
+                    self.state.ctm,
+                    self.state.fill_alpha,
+                );
             }
             // An image we cannot decode is reported, not fatal: the rest of the
             // page still renders.
@@ -905,6 +922,89 @@ impl Walker<'_> {
         self.resources = saved_resources;
         self.path = saved_path;
         result
+    }
+
+    /// Apply an `/ExtGState` dictionary (8.4.5).
+    ///
+    /// What is honoured: `/ca` and `/CA` (constant alpha), a `/BM` of `/Normal`,
+    /// and the line state — `/LW`, `/LC`, `/LJ`, `/ML`, `/D`. What is not is
+    /// reported as `gs` rather than ignored, because a page that blends or masks
+    /// and says nothing would look correct and not be.
+    fn apply_ext_gstate(&mut self, name: &[u8]) -> crate::Result<()> {
+        let Some(resources) = self.resources.clone() else {
+            self.report.note(b"gs");
+            return Ok(());
+        };
+        let states = match resolve(self.document, resources.get(b"ExtGState")) {
+            Ok(Object::Dictionary(states)) => states,
+            _ => {
+                self.report.note(b"gs");
+                return Ok(());
+            }
+        };
+        let Some(entry) = states.get(name).cloned() else {
+            self.report.note(b"gs");
+            return Ok(());
+        };
+        let Object::Dictionary(dict) = resolve(self.document, Some(&entry))? else {
+            self.report.note(b"gs");
+            return Ok(());
+        };
+        // A soft mask or a blend mode this renderer cannot honour keeps the note:
+        // the state is only "supported" when everything it asks for is applied.
+        if dict.get(b"SMask").is_some() {
+            self.report.note(b"gs");
+            return Ok(());
+        }
+        if let Some(blend) = dict.get(b"BM") {
+            let normal = match blend {
+                Object::Name(name) => name == b"Normal",
+                Object::Array(items) => items
+                    .first()
+                    .and_then(Object::as_name)
+                    .is_some_and(|name| name == b"Normal"),
+                _ => false,
+            };
+            if !normal {
+                self.report.note(b"gs");
+                return Ok(());
+            }
+        }
+        if let Some(alpha) = dict.get(b"ca") {
+            self.state.fill_alpha = alpha.as_real().unwrap_or(1.0).clamp(0.0, 1.0);
+        }
+        if let Some(alpha) = dict.get(b"CA") {
+            self.state.stroke_alpha = alpha.as_real().unwrap_or(1.0).clamp(0.0, 1.0);
+        }
+        if let Some(width) = dict.get(b"LW") {
+            if let Some(width) = width.as_real() {
+                self.state.line_width = width;
+            }
+        }
+        if let Some(cap) = dict.get(b"LC").and_then(Object::as_integer) {
+            self.state.cap = if cap == 1 {
+                Cap::Round
+            } else if cap == 2 {
+                Cap::Square
+            } else {
+                Cap::Butt
+            };
+        }
+        if let Some(join) = dict.get(b"LJ").and_then(Object::as_integer) {
+            self.state.join = if join == 1 { Join::Round } else { Join::Miter };
+        }
+        if let Some(limit) = dict.get(b"ML").and_then(Object::as_real) {
+            self.state.miter_limit = limit;
+        }
+        // `/D` is `[dashArray dashPhase]` (table 58), not a flat list.
+        if let Some(Object::Array(items)) = dict.get(b"D") {
+            if let Some(Object::Array(pattern)) = items.first() {
+                let pattern: Vec<f64> = pattern.iter().filter_map(|item| item.as_real()).collect();
+                let phase = items.get(1).and_then(Object::as_real).unwrap_or(0.0);
+                self.state.dash = Dash { pattern, phase };
+            }
+        }
+        Ok(())
     }
 
     /// Draw every annotation that has an appearance stream (12.5.5).
