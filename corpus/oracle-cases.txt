@@ -32,3 +32,4 @@ tests/fixtures/blend-modes.pdf 1
 # Helvetica. Rows 2 and 4 — the embedded Arial subset — are what this page proves:
 # the simple-CFF glyph selection and a clean operator report, checked in
 # crates/pdf2-render/tests/cff.rs.
+tests/fixtures/separation.pdf 1

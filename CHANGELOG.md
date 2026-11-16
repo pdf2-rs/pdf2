@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+### Documentation
+
+- **`docs/DEFERRED.md`**: one page for everything deliberately not done yet — the
+  seven items out of scope for the 2026-11-16 plan (editing, forms filling and
+  annotation authoring, conformance validation, JPX/JBIG2 until the MSRV moves,
+  ICC colour management, tiling patterns, colour-key `/Mask`, the `Tr` clipping
+  half), the ADR's non-goals, and the two constructs refused by name (CMYK DCT,
+  CCITT two-dimensional coding) with the brief for whoever picks each up. Each row
+  names its ledger row or ADR line, so the register and `docs/FEATURES.md` cannot
+  drift apart.
+- `docs/ROADMAP-NEXT.md`'s ranking now marks what shipped: ranks 8, 10d, 10e, 10g
+  and 12b ✓, ranks 9, 10, 10c and 12 as half, and 10b, 11, 12's second half and 13
+  as deferred with the reason.
+
 - **Object and page ceilings** (`Error::TooMany`): `Document::set_object_limit`
   (default 1 048 576) bounds how many objects may be *held*, and
   `Document::set_page_limit` (default 131 072) bounds a page-tree walk, so a
