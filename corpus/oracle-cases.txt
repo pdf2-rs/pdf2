@@ -17,6 +17,7 @@ tests/fixtures/calibration.pdf 11
 tests/fixtures/forms.pdf 1
 tests/fixtures/annotations.pdf 1
 tests/fixtures/alpha.pdf 1
+tests/fixtures/soft-mask.pdf 1
 # cropbox.pdf is deliberately absent: poppler honours /CropBox and /UserUnit
 # (800x800 at 144 dpi, which matches this renderer), mupdf in its default
 # invocation ignores both (600x400), so the oracles disagree about the page's

@@ -155,7 +155,10 @@ impl Canvas {
 pub struct ClipMask {
     width: u32,
     height: u32,
-    inside: Vec<bool>,
+    /// Coverage per pixel, 0 (outside) to 255 (fully inside). A soft mask is the
+    /// same structure with values in between: that is what makes a luminosity
+    /// `/SMask` a multiply here rather than a second mechanism everywhere else.
+    coverage: Vec<u8>,
 }
 
 impl ClipMask {
@@ -164,7 +167,7 @@ impl ClipMask {
         Self {
             width,
             height,
-            inside: vec![true; (width as usize) * (height as usize)],
+            coverage: vec![255; (width as usize) * (height as usize)],
         }
     }
 
@@ -173,7 +176,7 @@ impl ClipMask {
         Self {
             width,
             height,
-            inside: vec![false; (width as usize) * (height as usize)],
+            coverage: vec![0; (width as usize) * (height as usize)],
         }
     }
 
@@ -182,7 +185,40 @@ impl ClipMask {
         if x >= self.width || y >= self.height {
             return false;
         }
-        self.inside[(y as usize) * (self.width as usize) + (x as usize)]
+        self.coverage[(y as usize) * (self.width as usize) + (x as usize)] > 0
+    }
+
+    /// How much of `(x, y)` is inside, 0.0 to 1.0.
+    pub fn alpha(&self, x: u32, y: u32) -> f64 {
+        if x >= self.width || y >= self.height {
+            return 0.0;
+        }
+        f64::from(self.coverage[(y as usize) * (self.width as usize) + (x as usize)]) / 255.0
+    }
+
+    /// Multiply this mask's coverage by a rendered group's luminosity (11.6.5.2).
+    ///
+    /// `group` is the soft mask's `/G` rendered onto black, so an unpainted area
+    /// has luminance 0 and hides everything, and white shows everything.
+    pub fn multiply_luminosity(&mut self, group: &Canvas) {
+        if group.width != self.width || group.height != self.height {
+            return;
+        }
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let pixel = group.pixel(x, y).unwrap_or([0, 0, 0, 255]);
+                let luminance = 0.3 * f64::from(pixel[0])
+                    + 0.59 * f64::from(pixel[1])
+                    + 0.11 * f64::from(pixel[2]);
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let coverage = (luminance * 255.0 / 255.0).round() as u8;
+                let index = (y as usize) * (self.width as usize) + (x as usize);
+                let scaled = u16::from(self.coverage[index]) * u16::from(coverage) / 255;
+                #[allow(clippy::cast_possible_truncation)]
+                let scaled = scaled as u8;
+                self.coverage[index] = scaled;
+            }
+        }
     }
 
     /// Intersect this mask with a new coverage mask of the same size.
@@ -190,21 +226,26 @@ impl ClipMask {
         if other.width != self.width || other.height != self.height {
             return;
         }
-        for (inside, other) in self.inside.iter_mut().zip(&other.inside) {
-            *inside = *inside && *other;
+        for (coverage, other) in self.coverage.iter_mut().zip(&other.coverage) {
+            let product = u16::from(*coverage) * u16::from(*other) / 255;
+            *coverage = u8::try_from(product).unwrap_or(u8::MAX);
         }
     }
 
     /// Set one pixel.
     pub fn set(&mut self, x: u32, y: u32, inside: bool) {
         if x < self.width && y < self.height {
-            self.inside[(y as usize) * (self.width as usize) + (x as usize)] = inside;
+            let value = if inside { 255 } else { 0 };
+            self.coverage[(y as usize) * (self.width as usize) + (x as usize)] = value;
         }
     }
 
     /// How many pixels are inside, for tests.
     pub fn count(&self) -> usize {
-        self.inside.iter().filter(|inside| **inside).count()
+        self.coverage
+            .iter()
+            .filter(|coverage| **coverage > 0)
+            .count()
     }
 }
 

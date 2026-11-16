@@ -34,6 +34,7 @@ const BLACK: [u8; 4] = [0, 0, 0, 255];
 const RED: [u8; 4] = [255, 0, 0, 255];
 const PINK: [u8; 4] = [255, 128, 128, 255];
 const BLUE_HALF: [u8; 4] = [128, 128, 255, 255];
+const MAGENTA: [u8; 4] = [255, 0, 255, 255];
 
 #[test]
 fn constant_alpha_reaches_the_fill() {
@@ -68,13 +69,15 @@ fn the_line_state_comes_from_the_dictionary() {
 }
 
 #[test]
-fn a_soft_mask_is_still_reported() {
-    // `cmykjpeg.pdf`'s state carries `/SMask`; honouring `/ca` must not make the
-    // operator look supported when the mask is not applied.
+fn a_soft_mask_of_none_is_not_a_mask() {
+    // `cmykjpeg.pdf`'s state says `/SMask /None` — a writer's way of stating
+    // "no mask" — so honouring its alpha must clear the note, not keep it. An
+    // earlier round read the key's presence as a mask and reported one that was
+    // not there.
     let rendered = render("corpus/tier-a/cmykjpeg.pdf");
     assert!(
-        rendered.report.to_string().contains("gs"),
-        "the soft mask keeps the note: {}",
+        !rendered.report.to_string().contains("gs"),
+        "there is no mask to report: {}",
         rendered.report
     );
 }
@@ -86,6 +89,36 @@ fn a_blend_mode_that_is_not_normal_is_still_reported() {
     assert!(
         rendered.report.to_string().contains("gs"),
         "blend modes keep the note: {}",
+        rendered.report
+    );
+}
+
+#[test]
+fn a_luminosity_soft_mask_hides_where_the_group_is_black() {
+    let rendered = render("tests/fixtures/soft-mask.pdf");
+    // The mask's `/G` paints the right half white, so the magenta square shows
+    // there and not over the black half — luminance 0 hides, 1 shows.
+    assert_eq!(pixel(&rendered, 150, 100), MAGENTA);
+    assert_eq!(pixel(&rendered, 60, 100), WHITE, "the mask hides this half");
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "a luminosity mask is applied, so its `gs` is not reported: {}",
+        rendered.report
+    );
+}
+
+#[test]
+fn an_alpha_soft_mask_is_reported_rather_than_approximated() {
+    // Page 2 asks for `/S /Alpha`: reading a transparent canvas is what that
+    // needs, so the state keeps its note instead of standing in brightness.
+    let bytes = std::fs::read(repo("tests/fixtures/soft-mask.pdf")).expect("fixture");
+    let document = Document::open(bytes).expect("open");
+    let rendered = render_page_number(&document, 1, &RenderOptions::default()).expect("render");
+    assert_eq!(
+        rendered.report.to_string(),
+        "gs×1",
+        "an unsupported mask keeps one note: {}",
         rendered.report
     );
 }
