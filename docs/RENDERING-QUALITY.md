@@ -7,6 +7,18 @@ smoothness and speed**, and each of those has a number.
 
 Measured 2026-11-15 with `pdf2 1.2.0`, `pdf2-render 1.2.0`.
 
+## CMYK images are a colour-management gap, not a decoding one
+
+`cmykjpeg.pdf`'s four-component JPEG now decodes and draws (the Adobe inversion undone,
+a multiplicative CMYK → RGB conversion). Measured against the engines it is **8.455
+mean against their 2.000**, over 6.0 % of 4×4 blocks — because the image states
+`/Intent /RelativeColorimetric` and poppler, mupdf and gs manage colour while this
+renderer converts by ink arithmetic. Against an **independent decoder** (Pillow, the
+same multiplicative rule) the page matches to **8 mean absolute units** on all three
+channels, so the decode is right and the difference is the colour management rank 10b
+defers. That is why the page is proven by a four-quadrant fixture and not by an oracle
+case, and it is the measurement that would justify ICC work if it were scheduled.
+
 ## Standard-14 text is the fidelity floor
 
 A page set in a standard-14 font embeds no program, and this renderer draws the code

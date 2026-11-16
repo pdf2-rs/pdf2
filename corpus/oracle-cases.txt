@@ -33,3 +33,9 @@ tests/fixtures/blend-modes.pdf 1
 # the simple-CFF glyph selection and a clean operator report, checked in
 # crates/pdf2-render/tests/cff.rs.
 tests/fixtures/separation.pdf 1
+# cmykjpeg.pdf is deliberately absent, measured 2026-11-16: our mean 8.455 (over
+# 6.0 % of blocks) against the oracles' 2.000, because the image states
+# /Intent /RelativeColorimetric and the engines manage colour while this renderer
+# converts CMYK multiplicatively. That is the ICC gap (rank 10b, deferred), not a
+# decoding bug: against an independent decoder the page matches to 8 mean absolute
+# units, which is the same disagreement seen from the other side.

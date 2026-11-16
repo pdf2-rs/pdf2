@@ -25,7 +25,7 @@ oversight.
 | **Forms *filling* and annotation *authoring*** (rank `12`'s second half) | Reading and *rendering* annotation appearance streams shipped (`12b`); writing `/Annots` and `/AcroForm` values is editing again | `docs/FEATURES.md` `12.7`, `12.5` rows: appearance streams shipped, authoring unplanned | Rank 11, plus a form model and a `/NeedAppearances` decision |
 | **Conformance validation** (PDF/A, PDF 2.0, rank `13`) | A validator is a different product: no rendering synergy, and the reference is `veraPDF` (Java) | Rank 13 in `docs/ROADMAP-NEXT.md` | A separate crate reading the same objects — a project, not a round |
 | **JPX and JBIG2 decoding** | `hayro-jpeg2000` 0.5.0, `hayro-jbig2` 0.4.0 and `hayro-ccitt` 0.5.0 all declare `rust-version = "1.92"` against this crate's **1.87** | `docs/adr/0004-image-decoders-and-the-msrv.md`; F7 in the plan | An MSRV move to 1.92 (a decision about who can build this crate), or an in-crate decoder for each — JPX alone is far larger than the CCITT one that was written in-crate |
-| **ICC colour management** (`10b`) | It is a fidelity decision, not a bug: the oracle calibration measures an **8 % spread** on the CMYK page *between the engines themselves*, and ICCBased **images** already decode by component count | `docs/RENDERING-QUALITY.md`; F18 in the plan | A profile parser and the decision to be *more* precise than the inter-oracle spread — measured before and after |
+| **ICC colour management** (`10b`) | It is a fidelity decision, not a bug: the oracle calibration measures an **8 % spread** on the CMYK page *between the engines themselves*, and ICCBased **images** already decode by component count. Measured 2026-11-16: the CMYK JPEG page draws correctly — it matches an independent decoder to 8 mean absolute units — yet sits **8.455 mean** from the engines' 2.000 because they honour `/Intent /RelativeColorimetric` and this renderer converts by ink arithmetic | `docs/RENDERING-QUALITY.md`; F18 in the plan | A profile parser and the decision to be *more* precise than the inter-oracle spread — measured before and after |
 | **Tiling patterns** (`/PatternType 1`) | Painting a tile means flattening a content stream into a cell and repeating it; two corpus pages use one (`colorkeymask.pdf` is one of them) | `docs/RENDERING.md` says the operator is reported; `crates/pdf2-render/src/walk.rs` handles `/PatternType 2` only | A pattern-tile renderer — a canvas, a cell, and a repeat rule — which is a round of its own |
 | **Colour-key `/Mask`** | One corpus page (`colorkeymask.pdf`), and it is the *same* page as the tiling pattern, so its case cannot be measured in isolation | `docs/RENDERING.md` masks row | Either the tiling patterns above (the page needs both), or a generated fixture proving the key alone |
 | **The clipping half of `Tr` modes 4–7** | Clipping text to its glyph outlines needs the path as a clip *without* painting; no corpus page asks for it, so nothing would prove it | `crates/pdf2-render/src/walk.rs` honours the fill and stroke halves (modes 0–3) and reports the rest | A generated fixture with `Tr 7` around an image — a hand-built page, not something the corpus offers |
@@ -55,9 +55,9 @@ tiling patterns).
 Two constructs are refused **by name** for the same reason, and each has a brief for
 whoever picks it up:
 
-- **CMYK JPEG** (`cmykjpeg.pdf`) — `zune-jpeg` hands back inverted CMYK for an
-  Adobe APP14 marker, and no engine-matched conversion exists here yet. The page
-  reports `unsupported: /DCTDecode CMYK images (colour is not matched yet)`.
+- ~~**CMYK JPEG**~~ — drawn since 2026-11-16: the decoder returns CMYK, the Adobe
+  APP14 inversion is undone, and the samples are converted multiplicatively. Proven
+  by `tests/fixtures/cmyk-jpeg.pdf` (four ink quadrants) and by `cmykjpeg.pdf`.
 - **CCITT two-dimensional coding** (`/K` 1 and −1) — a first implementation drew
   box borders with the text missing, i.e. plausible and wrong, so it was withdrawn;
   `docs/RENDERING.md` records the symptom and the brief (rebuild from T.4

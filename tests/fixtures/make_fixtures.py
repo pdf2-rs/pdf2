@@ -1450,6 +1450,53 @@ def make_separation():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("separation.pdf", bytes(writer.out))
 
+# A 16x16 four-component JPEG, one solid quadrant each: white (0,0,0,0 ink),
+# cyan (255,0,0,0), red (0,255,255,0) and black (0,0,0,255), written by Pillow 13
+# with `quality=95`. It is embedded rather than generated here so this script keeps
+# no dependency: a CMYK JPEG cannot be hand-built the way the other fixtures are,
+# and Pillow is not something `cargo test` may assume. Pillow's own decode of it
+# gives exactly the four values above, which is what `dct.rs` checks the renderer
+# against.
+CMYK_JPEG = (
+    b"/9j/7gAOQWRvYmUAZAAAAAAA/9sAQwACAQEBAQECAQEBAgICAgIEAwICAgIFBAQDBAYFBgYGBQYG"
+    b"BgcJCAYHCQcGBggLCAkKCgoKCgYICwwLCgwJCgoK/8AAFAgAEAAQBEMRAE0RAFkRAEsRAP/EAB8A"
+    b"AAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUS"
+    b"ITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElK"
+    b"U1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4"
+    b"ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/aAA4EQwBNAFkASwAAPwD9"
+    b"/K/fyv38r9/K/gDooor+/wAr+AOv4A6KK/v8r+/yv4A6/9k="
+)
+
+
+def make_cmyk_jpeg():
+    """A `/DeviceCMYK` `/DCTDecode` image (7.4.8), four quadrants, four colours.
+
+    The JPEG carries an Adobe APP14 marker, so its samples are stored inverted and
+    the reader must undo that: a page that skips the inversion draws the negative,
+    which is a failure the quadrant arithmetic catches immediately.
+    """
+    import base64
+
+    jpeg = base64.b64decode(CMYK_JPEG)
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 32 32] /Contents 4 0 R "
+        b"/Resources << /XObject << /Im1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", b"q 32 0 0 32 0 0 cm /Im1 Do Q")
+    writer.stream(
+        5,
+        b"/Type /XObject /Subtype /Image /Width 16 /Height 16"
+        b" /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Filter /DCTDecode",
+        jpeg,
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("cmyk-jpeg.pdf", bytes(writer.out))
+
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1677,3 +1724,4 @@ if __name__ == "__main__":
     make_blend_modes()
     make_shading()
     make_separation()
+    make_cmyk_jpeg()
