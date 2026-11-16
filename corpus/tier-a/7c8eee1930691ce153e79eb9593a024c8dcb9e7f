@@ -1,0 +1,53 @@
+%PDF-2.0
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Metadata %PDF-1.7
+%âãÏÓ
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 290 290] /Resources << /Shading << /Sh20 20 0 R /Sh21 21 0 R /Sh22 22 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1880 1260] /Resources << /Shading << /Sh30 30 0 R /Sh31 31 0 R /Sh32 32 0 R /Sh33 33 0 R /Sh34 34 0 R /Sh35 35 0 R >> >> /Conten*s 6 0 R >>
+endobj
+5 0 obj
+<< /Length 102 >>
+stream
+q 10 10 130 130 re W n /Sh20 sh Q
+q 150 10 60 60 re W n /Sh21 sh Q
+q 10 150 130 130 re W n /Sh22 sh Q
+
+endstream
+endobj
+6 0 obj
+<< /Length 213 >>
+stream
+q 20 20 600 600 re W n /Sh30 sh Q
+q 640 20 600 600 re W n /Sh31 sh Q
+q 1260 20 600 600 re W n /Sh32 sh Q
+q 20 640/Domain [0 1 0 1] /Matrix [600 0 0 600 1260 640] /Function 10 0 R >>
+endobj
+xref36
+ 0
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+00RDF xmlns:rdf="http://w‰ˆÑ‘3.org/1999/02/22-rdf-syntax-ns#"/></x:xmpmeta><?xpacket end="w"?>
+endstream
+endobj
+4 0 obj
+<< /Length 38 /Type /EmbeddedFile >>
+stream
+BT /F1 18 Tf 20 40 Td (page one) Tj ET
+endstream
+endobj
+xref
+0 10 R >>
+startxref
+2480
+%%EOF

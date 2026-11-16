@@ -1,0 +1,41 @@
+%∞ªπ“Œ—»Ï
+%‚„œ”
+
+1 0 obj
+<< /Type      /Catalog
+   /Pages     2 0 R
+>>
+ene      /Catalog
+   /Pages     2 0 R
+>>
+endobj
+
+2 0 obj
+<<50, etc
+    ( ab ba abba) Tj
+
+    T*
+    30 Tw        †  % Adjust this to: 0, 50, etc
+    ( ab ba abba) Tj
+
+    T*
+    20 Tw           % Adjust this to: 0, 50, etc
+ription = "a"
+8 0 obj
+<<
+  /Length 273
+>>
+stream
+1000 0 0 0 750 750 d1   % NO explicit colour 
+50 w                    % Explicitly set line width as depend on it for stroking
+[ 150 150 ] 0 d         % Explicitly set dashing as depend on it for stroking
+30 30 720 720 re S      % Stroke (only) with inherited colour  ˇˇˇˇˇˇg
+ 20  20 m
+350 730 l
+730  20 l
+b*                      % Close thendstream
+end
+>>
+startxref
+2413
+%%EOF

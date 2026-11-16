@@ -1,0 +1,74 @@
+%PDF-1.7
+%‚„œ”
+
+1 0 obj
+<< /Type      /Catalog
+   /Pages     2 0 R
+>>
+endobj
+
+2 0 obj
+<< /Type    /Pages
+   /Kids    [ 3 0 R ]
+   /Count   1
+>>
+endobj
+
+3 0 obj
+<< /Type        /Page
+   /Parent      2 0 R
+   /MediaBox    [ 0 0 300 80 ]
+   /Contents    4 0 R
+   /Resources   << 
+      /Font << /FTyp3 5 0 R >> 
+   >>
+>>
+endobj
+
+4 0 obj
+<< 
+  /Length 715
+>>
+stream
+  0 0 1 rg          % Blue non-stroking (fill)
+  1 0 0 RG          % Red stroking
+
+  BT
+    /FTyp3 10 Tf    % Select Type 3 font
+    0 Tr            % Text render mode: 0=fill, 1=stroke, 2=fill then stroke 
+
+ 0 obj
+<< 
+  /Length 316
+>>
+stream
+1000 0 0 0 750 750 d1   % NO explicit colour
+20 w         40 Tw           % Adjust this to: 0, 50, etc
+    ( ab ba abba) Tj
+
+    T*
+    30 Tw        †  % Adjust this to: 0, 50, etc
+    ( ab ba abba) Tj
+
+    T*
+    20 Tw           % Adjust this to: 0, 50, etc
+ription = "a"
+8 0 obj
+<<
+  /Length 273
+>>
+stream
+1000 0 0 0 750 750 d1   % NO explicit colour 
+50 w                    % Explicitly set line width as depend on it for stroking
+[ 150 150 ] 0 d         % Explicitly set dashing as depend on it for stroking
+30 30 720 720 re S      % Stroke (only) with inherited colour  ˇˇˇˇˇˇg
+ 20  20 m
+350 730 l
+730  20 l
+b*                      % Close then Fill then Stroke with inherited colours
+endstream
+end
+>>
+startxref
+2413
+%%EOF

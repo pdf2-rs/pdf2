@@ -11,6 +11,11 @@
 use pdf2::filter::DEFAULT_DECODE_LIMIT;
 use pdf2::{Document, Error};
 
+/// A committed fixture, read as bytes.
+fn read(path: &str) -> Vec<u8> {
+    std::fs::read(path).unwrap_or_else(|error| panic!("{path}: {error}"))
+}
+
 /// A one-page PDF whose content stream is `payload`, Flate-encoded.
 fn pdf_with_flate_stream(payload: &[u8]) -> Vec<u8> {
     let compressed = miniz_oxide::deflate::compress_to_vec_zlib(payload, 1);
@@ -188,4 +193,49 @@ fn a_stream_past_the_default_budget_is_refused() {
         elapsed.as_secs() < 30,
         "refused in bounded time: {elapsed:?}"
     );
+}
+
+#[test]
+fn the_object_ceiling_refuses_a_document_that_asks_for_too_much() {
+    // The counting is of objects *read*, so the fixture is an ordinary document
+    // and the budget is what makes it refuse: a crafted cross-reference naming
+    // millions costs the parse of every one of them.
+    let document = Document::open(read("tests/fixtures/page-tree.pdf")).expect("open");
+    document.set_object_limit(2);
+    assert_eq!(document.object_limit(), 2);
+    let mut seen = 0;
+    let mut refused = None;
+    for number in 1..=64_u32 {
+        match document.get_object_by_number(number) {
+            Ok(_) => seen += 1,
+            Err(Error::TooMany { what, limit }) => {
+                refused = Some((what, limit));
+                break;
+            }
+            Err(_) => {}
+        }
+    }
+    let (what, limit) = refused.expect("a third object is refused");
+    assert_eq!((what, limit), ("the number of objects read", 2));
+    assert_eq!(seen, 2, "exactly the budget is read");
+}
+
+#[test]
+fn the_page_ceiling_refuses_a_page_tree_that_lists_too_many() {
+    let document = Document::open(read("tests/fixtures/page-tree.pdf")).expect("open");
+    let total = document.page_count().expect("count");
+    assert!(total > 1, "the fixture has several pages");
+    document.set_page_limit(total - 1);
+    let error = document.pages().expect_err("one page over the ceiling");
+    match error {
+        Error::TooMany { what, limit } => {
+            assert_eq!(what, "the page tree");
+            assert_eq!(limit, total - 1);
+        }
+        other => panic!("wrong error: {other:?}"),
+    }
+    // Lifting it lets the same document through: the limit is a budget, not a
+    // verdict about the file.
+    document.set_page_limit(usize::MAX);
+    assert_eq!(document.page_count().expect("count"), total);
 }

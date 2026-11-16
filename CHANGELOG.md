@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Object and page ceilings** (`Error::TooMany`): `Document::set_object_limit`
+  (default 1 048 576) bounds how many objects may be *held*, and
+  `Document::set_page_limit` (default 131 072) bounds a page-tree walk, so a
+  crafted cross-reference or `/Pages` is refused with a typed error naming the
+  limit instead of costing unbounded parse time and memory. Both are settable and
+  both can be lifted; `tests/bounds.rs` proves they fire and that raising them lets
+  the same document through. A generated 65 000-object document measures the cost
+  this bounds (~10.7 ms and 9 MB per open and page walk).
 - **Type 3 fonts draw** (`9.6.5`): a Type 3 glyph is a content stream, and each
   now runs in glyph space — `/FontMatrix` first, then the text rendering matrix —
   with the font's own `/Resources`; codes reach glyph names through `/Encoding`'s
