@@ -104,7 +104,10 @@ async function launchChrome() {
   );
   const portFile = join(profile, 'DevToolsActivePort');
   let port = null;
-  for (let attempt = 0; attempt < 100 && port === null; attempt += 1) {
+  // Ten seconds was tight on a loaded runner — the job failed with "Chrome did
+  // not open a DevTools port" while every interaction check passed locally — so
+  // the wait is thirty, and the watchdog above still bounds the whole run.
+  for (let attempt = 0; attempt < 300 && port === null; attempt += 1) {
     await new Promise((done) => setTimeout(done, 100));
     try {
       const [first] = (await readFile(portFile, 'utf8')).split('\n');
