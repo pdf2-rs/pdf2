@@ -35,8 +35,12 @@ fn edges_of(polygons: &[Vec<Point>]) -> Vec<Edge> {
     edges
 }
 
-/// Horizontal pixel spans of a scanline, as `[first, past_last)`.
-fn spans(edges: &[Edge], row: f64, even_odd: bool) -> Vec<(i64, i64)> {
+/// Horizontal spans of a scanline in device x, fractional at the ends.
+///
+/// Anti-aliasing needs the *fraction* of a pixel a span covers, so this returns
+/// the exact crossing positions rather than rounding them; [`pixel_range`] does
+/// the rounding for the clip mask, which is a boolean by nature.
+fn spans_of(edges: &[Edge], row: f64, even_odd: bool) -> Vec<(f64, f64)> {
     let mut crossings: Vec<(f64, i32)> = Vec::new();
     for edge in edges {
         let low = edge.y0.min(edge.y1);
@@ -75,9 +79,8 @@ fn spans(edges: &[Edge], row: f64, even_odd: bool) -> Vec<(i64, i64)> {
             (false, true) => start_x = Some(x),
             (true, false) => {
                 if let Some(start) = start_x.take() {
-                    let (first, past) = pixel_range(start, x);
-                    if past > first {
-                        result.push((first, past));
+                    if x > start {
+                        result.push((start, x));
                     }
                 }
             }
@@ -85,21 +88,28 @@ fn spans(edges: &[Edge], row: f64, even_odd: bool) -> Vec<(i64, i64)> {
         }
     }
     if let Some(start) = start_x {
-        let (first, past) = pixel_range(start, start);
-        if past > first {
-            result.push((first, past));
-        }
+        result.push((start, start));
     }
     result
 }
 
-/// Pixels whose centres fall in `[start, end)`.
-fn pixel_range(start: f64, end: f64) -> (i64, i64) {
+/// Device x range a fractional span touches, as `[first, past)`.
+fn span_pixels(start: f64, end: f64) -> (i64, i64) {
     #[allow(clippy::cast_possible_truncation)]
-    let first = (start - 0.5).ceil() as i64;
+    let first = start.floor() as i64;
     #[allow(clippy::cast_possible_truncation)]
-    let past = (end - 0.5).ceil() as i64;
+    let past = end.ceil() as i64;
     (first, past.max(first))
+}
+
+/// Sub-scanlines per device row: 1 would be no anti-aliasing, 4 is enough to
+/// take the staircase off a glyph edge at normal sizes, and the horizontal
+/// coverage is exact, so the error is vertical only.
+const AA_SUBROWS: usize = 4;
+
+#[allow(clippy::cast_possible_truncation)]
+fn x_i32(x: i64) -> i32 {
+    x as i32
 }
 
 /// Fill polygons with `color`, restricted to `mask`.
@@ -142,18 +152,66 @@ pub fn fill_polygons(
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let past_last = ((high - 0.5).ceil().max(0.0) as u32).min(canvas.height());
     for y in first_row..past_last {
-        let row = f64::from(y) + 0.5;
-        for (first, past) in spans(&edges, row, even_odd) {
-            let from = first.max(0);
-            let to = past.min(i64::from(canvas.width()));
-            for x in from..to {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let x = x as u32;
-                let coverage = mask.alpha(x, y);
-                if coverage > 0.0 {
-                    canvas.blend_with(x, y, color, alpha * coverage, mode);
+        // Four sub-scanlines per device row, each contributing an exact
+        // horizontal fraction, summed and blended **once** per pixel: blending
+        // four times at a quarter alpha is not the same thing — it lands on
+        // `1-(1-a/4)^4`, about 68 % instead of 100 %.
+        let mut sub_spans: [Vec<(f64, f64)>; AA_SUBROWS] = Default::default();
+        let mut low_x = i64::MAX;
+        let mut high_x = i64::MIN;
+        for (sub, spans) in sub_spans.iter_mut().enumerate() {
+            #[allow(clippy::cast_precision_loss)]
+            let offset = (sub as f64 + 0.5) / AA_SUBROWS as f64;
+            *spans = spans_of(&edges, f64::from(y) + offset, even_odd);
+            for (start, end) in spans.iter() {
+                let (first, past) = span_pixels(*start, *end);
+                low_x = low_x.min(first);
+                high_x = high_x.max(past);
+            }
+        }
+        if low_x >= high_x {
+            continue;
+        }
+        let mut coverage = vec![0.0_f64; usize::try_from(high_x - low_x).unwrap_or(0)];
+        for spans in &sub_spans {
+            for (start, end) in spans {
+                let (first, past) = span_pixels(*start, *end);
+                for x in first.max(low_x)..past.min(high_x) {
+                    #[allow(clippy::cast_precision_loss)]
+                    let left = (x as f64).max(*start);
+                    #[allow(clippy::cast_precision_loss)]
+                    let right = ((x + 1) as f64).min(*end);
+                    if right > left {
+                        let index = usize::try_from(x - low_x).unwrap_or(0);
+                        coverage[index] += (right - left).min(1.0);
+                    }
                 }
             }
+        }
+        for (index, covered) in coverage.iter().enumerate() {
+            if *covered <= 0.0 {
+                continue;
+            }
+            let Some(x) = low_x.checked_add(i64::try_from(index).unwrap_or(0)) else {
+                continue;
+            };
+            if x < 0 || x >= i64::from(canvas.width()) {
+                continue;
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let pixel_x = x as u32;
+            let mask_coverage = mask.alpha(pixel_x, y);
+            if mask_coverage <= 0.0 {
+                continue;
+            }
+            let fraction = (covered / AA_SUBROWS as f64).min(1.0);
+            canvas.blend_with(
+                pixel_x,
+                y,
+                color,
+                alpha * mask_coverage * fraction,
+                mode,
+            );
         }
     }
 }
@@ -165,12 +223,17 @@ pub fn clip_mask(width: u32, height: u32, polygons: &[Vec<Point>], even_odd: boo
     let edges = edges_of(polygons);
     for y in 0..height {
         let row = f64::from(y) + 0.5;
-        for (first, past) in spans(&edges, row, even_odd) {
+        for (start, end) in spans_of(&edges, row, even_odd) {
+            let (first, past) = span_pixels(start, end);
             let from = first.max(0);
             let to = past.min(i64::from(width));
             for x in from..to {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                mask.set(x as u32, y, true);
+                // A pixel belongs to the clip when its centre is covered.
+                let centre = f64::from(x_i32(x)) + 0.5;
+                if start <= centre && centre < end {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    mask.set(x as u32, y, true);
+                }
             }
         }
     }
@@ -179,7 +242,7 @@ pub fn clip_mask(width: u32, height: u32, polygons: &[Vec<Point>], even_odd: boo
 
 #[cfg(test)]
 mod tests {
-    use super::{clip_mask, edges_of, fill_polygons, spans};
+    use super::{clip_mask, edges_of, fill_polygons, spans_of};
     use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
     use crate::geom::Point;
 
@@ -272,8 +335,50 @@ mod tests {
     #[test]
     fn spans_handle_shared_edges() {
         let edges = edges_of(&[rect(0.0, 0.0, 4.0, 4.0)]);
-        let row = spans(&edges, 2.5, false);
-        assert_eq!(row, vec![(0, 4)]);
-        assert!(spans(&edges, 5.5, false).is_empty());
+        let row = spans_of(&edges, 2.5, false);
+        assert_eq!(row, vec![(0.0, 4.0)]);
+        assert!(spans_of(&edges, 5.5, false).is_empty());
+    }
+
+    #[test]
+    fn an_edge_through_a_pixel_paints_half_of_it() {
+        // A rectangle whose right edge is at x = 3.5 covers half of pixel 3: with
+        // four sub-scanlines the blend composes to about 50 % grey.
+        let mut canvas = Canvas::new(8, 4, Color::WHITE);
+        fill_polygons(
+            &mut canvas,
+            &ClipMask::all(8, 4),
+            &[rect(1.0, 1.0, 2.5, 2.0)],
+            Color::BLACK,
+            false,
+            1.0,
+            BlendMode::Normal,
+        );
+        let partial = canvas.pixel(3, 2).expect("inside");
+        assert!(
+            (120..=135).contains(&u16::from(partial[0])),
+            "half coverage is about 128, got {partial:?}"
+        );
+        assert_eq!(canvas.pixel(2, 2), Some([0, 0, 0, 255]), "fully inside");
+        assert_eq!(canvas.pixel(4, 2), Some([255, 255, 255, 255]), "outside");
+    }
+
+    #[test]
+    fn an_edge_on_a_pixel_boundary_leaves_no_half_pixels() {
+        let mut canvas = Canvas::new(8, 4, Color::WHITE);
+        fill_polygons(
+            &mut canvas,
+            &ClipMask::all(8, 4),
+            &[rect(1.0, 1.0, 3.0, 2.0)],
+            Color::BLACK,
+            false,
+            1.0,
+            BlendMode::Normal,
+        );
+        for x in 1..4 {
+            assert_eq!(canvas.pixel(x, 2), Some([0, 0, 0, 255]), "pixel {x}");
+        }
+        assert_eq!(canvas.pixel(0, 2), Some([255, 255, 255, 255]));
+        assert_eq!(canvas.pixel(4, 2), Some([255, 255, 255, 255]));
     }
 }
