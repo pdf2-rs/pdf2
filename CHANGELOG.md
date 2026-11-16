@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Rendering
 
+- **Type 1 fonts draw** (`/FontFile`, `/Subtype /Type1`): `crates/pdf2-render/src/type1.rs`
+  reads the PostScript program in PFA or PFB form, decrypts its `eexec` section with
+  the format's fixed key (and the charstrings with `4330` unless `/lenIV` is `-1`),
+  reads `/Subrs` and `/CharStrings`, and interprets the drawing operators —
+  `hsbw`, `sbw`, the moveto/lineto family, `rrcurveto`, `closepath`, `callsubr`,
+  `callgsubr`, `return`, `endchar`, `div` and the flex group — with hints popped and
+  ignored. `seac` and `callothersubr` are refused by name rather than approximated.
+  No corpus page carries a Type 1 program, so the proof is the generated
+  `tests/fixtures/type1.pdf`: three glyphs, one drawn through `callsubr`, checked as
+  three ink bands in `crates/pdf2-render/tests/type1.rs`, and a second test that a
+  program without an `eexec` section is reported (`font:FontFile`) rather than drawn
+  as nothing.
+
 - **Two-dimensional CCITT fax images draw** (`/CCITTFaxDecode`, `/K` > 0 and
   `/K` −1): T.4 §4.2.1.2's changing-element model — the coding line is a list of
   change positions whose parity is the run's colour, `b1`/`b2` are tracked on the

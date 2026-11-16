@@ -26,6 +26,7 @@ mod path;
 mod png;
 mod raster;
 mod shading;
+mod type1;
 mod walk;
 
 pub use canvas::{Canvas, ClipMask, Color};

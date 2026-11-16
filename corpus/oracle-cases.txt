@@ -40,3 +40,10 @@ tests/fixtures/separation.pdf 1
 # decoding bug: against an independent decoder the page matches to 8 mean absolute
 # units, which is the same disagreement seen from the other side.
 corpus/tier-a/ccitt_EndOfBlock_false.pdf 1
+# type1.pdf is deliberately absent, measured 2026-11-16: mupdf reports
+# "Couldn't create a font for 'Fixture'" and gs "FT_New_Memory_Face(Fixture):
+# broken file", so the engines draw a substituted font and the comparison measures
+# the substitution, not our decoding — our mean 12.987 against their 12.118 is a
+# 0.869 difference between two pictures of different typefaces. The page is proven
+# by its three ink bands (crates/pdf2-render/tests/type1.rs); it can join this list
+# once the generated program is accepted by FreeType.

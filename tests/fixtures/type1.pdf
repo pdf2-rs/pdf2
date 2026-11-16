@@ -1,0 +1,62 @@
+%PDF-2.0
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 33  >>
+stream
+BT /F1 90 Tf 40 60 Td (ABC) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Fixture /FirstChar 65 /LastChar 67 /Widths [600 400 300] /Encoding << /Type /Encoding /BaseEncoding /StandardEncoding /Differences [65 /A /B /C] >> /FontDescriptor 6 0 R >>
+endobj
+6 0 obj
+<< /Type /FontDescriptor /FontName /Fixture /Flags 4 /FontBBox [0 0 600 700] /ItalicAngle 0 /Ascent 700 /Descent 0 /CapHeight 700 /StemV 80 /FontFile 7 0 R >>
+endobj
+7 0 obj
+<< /Length 1005 /Length1 1005 /Length3 0 >>
+stream
+%!PS-AdobeFont-1.0: Fixture 1.0
+%%CreationDate: 2026-11-16
+11 dict begin
+/FontInfo 3 dict dup begin
+/version (1.0) def
+/FullName (Fixture) def
+/FamilyName (Fixture) def
+end readonly def
+/FontName /Fixture def
+/PaintType 0 def
+/FontType 1 def
+/FontMatrix [0.001 0 0 0.001 0 0] readonly def
+/FontBBox [0 0 600 700] readonly def
+/Encoding StandardEncoding def
+currentdict end
+currentfile eexec
+d9dbfd590d1715ff4c60f76f080c3a13cffd57735d0c8a72ea0edc4708b3c9746bb5395f497b342a39c1a528dcfe15a81beb0db195b11620ba82fd7009bcde7900c70f2c56062d22d6bedb21c47c40fed46678be12ef36cafc256da0ce6cfe861c4d77e62df56e7c832e811bffbc86230ec69a4af5205eb15170f1c7160e7df34745460c58616b4485e4255ac2fd6e6eee72de88e826f557279f086cba343cd857b490a2918bc1b077319b6a48e7b67db30f8c81899461190b95e62449b0aad5bd35f343b18e40d8da5477127e05a854169a4a05104efe72d5251e54a53d22fec53c1c2f762e2a494b8aa18dc92d399accfd9bd327197d921dbc5d64db4b64fc65418f867ac80f6bd4ab1ca1b8c922e65d7603b064872abf91f67dc14d05be320b465ebb
+0000000000000000
+cleartomark
+
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000325 00000 n 
+0000000555 00000 n 
+0000000729 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1811
+%%EOF

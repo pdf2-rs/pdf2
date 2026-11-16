@@ -55,6 +55,18 @@ pub enum Font {
         /// Code → character table.
         encoding: Encoding,
     },
+    /// An embedded Type 1 program (`/FontFile`), whose glyphs are charstrings
+    /// (`crate::type1`). A simple font's code reaches a glyph through its
+    /// encoding's *name*, so the program is indexed by the character each name
+    /// stands for.
+    Type1 {
+        /// Code → character table.
+        encoding: Encoding,
+        /// The parsed program, shared with the clones of this font.
+        program: Rc<crate::type1::Program>,
+        /// Character → glyph name, for the names the library can resolve.
+        names: std::collections::HashMap<char, Vec<u8>>,
+    },
     /// An embedded CFF program, wrapped so the outlines come out of the same
     /// code path as TrueType. CID-keyed fonts select glyphs through their
     /// charset, not by using the CID as a glyph id.
@@ -136,6 +148,27 @@ impl Font {
         })
     }
 
+    /// A Type 1 program, indexed by the character each glyph name stands for.
+    ///
+    /// `None` when the program has no usable glyphs, which is what makes the
+    /// caller fall back rather than draw nothing.
+    pub fn type1(encoding: Encoding, program: crate::type1::Program) -> Option<Self> {
+        if !program.is_usable() {
+            return None;
+        }
+        let mut names = std::collections::HashMap::new();
+        for name in program.names() {
+            if let Some(character) = pdf2::encoding::glyph_name_character(name) {
+                names.entry(character).or_insert_with(|| name.to_vec());
+            }
+        }
+        Some(Self::Type1 {
+            encoding,
+            program: Rc::new(program),
+            names,
+        })
+    }
+
     /// An embedded TrueType program, rejected when it cannot be parsed.
     pub fn true_type(encoding: Encoding, data: Vec<u8>) -> Option<Self> {
         let face = ttf_parser::Face::parse(&data, 0).ok()?;
@@ -163,6 +196,14 @@ impl Font {
     pub fn glyph(&self, code: u8) -> Option<Glyph> {
         match self {
             Self::Builtin { encoding } => builtin_glyph(encoding.character(code)?),
+            Self::Type1 {
+                encoding,
+                program,
+                names,
+            } => {
+                let character = encoding.character(code)?;
+                program.glyph(names.get(&character)?)
+            }
             Self::TrueType {
                 encoding,
                 data,
@@ -197,6 +238,7 @@ impl Font {
     /// `cmap` of a TrueType program.
     pub fn has_glyph_names(&self) -> bool {
         match self {
+            Self::Type1 { names, .. } => !names.is_empty(),
             Self::Cff { names, .. } => !names.is_empty(),
             Self::TrueType { has_cmap, .. } => *has_cmap,
             Self::Builtin { .. } => false,
@@ -209,7 +251,7 @@ impl Font {
     /// the caller reports the page instead of drawing an empty one.
     pub fn has_character_map(&self) -> bool {
         match self {
-            Self::Builtin { .. } | Self::Cff { .. } => true,
+            Self::Builtin { .. } | Self::Cff { .. } | Self::Type1 { .. } => true,
             Self::TrueType { has_cmap, .. } => *has_cmap,
         }
     }
@@ -230,6 +272,7 @@ impl Font {
             Self::TrueType { data, cache, .. } => {
                 cached_glyph(data, cache, ttf_parser::GlyphId(id))
             }
+            Self::Type1 { .. } => None,
             Self::Cff {
                 data,
                 cid_to_gid,

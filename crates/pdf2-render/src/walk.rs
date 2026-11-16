@@ -1482,6 +1482,27 @@ impl Walker<'_> {
                         }
                     }
                 }
+                // A Type 1 program (`/FontFile`) is a PostScript program with
+                // charstrings, which `ttf-parser` cannot read: `crate::type1` does,
+                // and a simple font's code reaches its glyphs by the *names* the
+                // encoding declares.
+                if let Some(Object::Reference(id)) = descriptor.get(b"FontFile") {
+                    if let Some(font) = self
+                        .document
+                        .stream_data(*id)
+                        .ok()
+                        .and_then(|data| crate::type1::Program::parse(&data))
+                        .and_then(|program| Font::type1(encoding.clone(), program))
+                    {
+                        return Some(LoadedFont {
+                            font: Some(font),
+                            widths,
+                            cid: None,
+                            type3: None,
+                            note: None,
+                        });
+                    }
+                }
                 for (key, kind) in [
                     (&b"FontFile3"[..], "font:FontFile3"),
                     (&b"FontFile"[..], "font:FontFile"),
