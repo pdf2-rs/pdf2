@@ -161,8 +161,16 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 
 | File | Raw | Gzip |
 | --- | --- | --- |
-| `pdf2_wasm_bg.wasm` | 554 051 B | 194 065 B |
-| `pdf2_wasm.js` (glue) | 18 336 B | 4 667 B |
+| `pdf2_wasm_bg.wasm` | 883 830 B | 307 582 B |
+| `pdf2_wasm.js` (glue) | 19 047 B | 4 833 B |
+
+**The npm bundle budget moved from 260 KiB to 320 KiB on 2026-11-16,
+deliberately**: `/DCTDecode` support (`zune-jpeg`) costs **+66 759 gzip bytes** on
+the module — 241 174 → 307 582 — because a JPEG decoder reads tables, does
+Huffman and hands back RGB. The bundle was 245 656 gzip before the feature and
+312 415 after. It is the price of drawing the images every office PDF contains
+without a C build, and the feature is optional: a size-sensitive caller builds
+`pdf2-render` with `default-features = false` and the dependency is not linked.
 | **total** | 572 387 B | **198 732 B** |
 
 Budget: **260 KiB gzip** for the pair, ~30% above the measured size, so a

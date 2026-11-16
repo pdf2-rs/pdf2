@@ -819,6 +819,10 @@ impl Walker<'_> {
                 return Ok(());
             }
         };
+        let object_id = match &entry {
+            Object::Reference(id) => Some(*id),
+            _ => None,
+        };
         let object = resolve(self.document, Some(&entry))?;
         let Object::Stream(stream) = object else {
             self.report.note(b"Do");
@@ -832,7 +836,7 @@ impl Walker<'_> {
                 return Ok(());
             }
         }
-        match Image::from_stream(self.document, &stream) {
+        match Image::from_stream(self.document, &stream, object_id) {
             Ok(image) => {
                 image.paint(
                     self.canvas,

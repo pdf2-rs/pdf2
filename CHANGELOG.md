@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **`/DCTDecode` (JPEG) images draw** (`7.4.8`): `zune-jpeg` decodes them behind
+  the `dct` feature (on by default, `MIT OR Apache-2.0 OR Zlib`, MSRV 1.75), the
+  size is taken from the JPEG's own header and checked against the decode budget
+  before the pixels are built. `cmykjpeg.pdf` and `alphatrans.pdf` — the two
+  corpus pages that used to render blank — now draw their artwork, and
+  `cmykjpeg.pdf` joins the oracle cases. The dependency costs **66.8 KB gzip** on
+  the npm bundle (245 656 → 312 415), so that budget moved 260 → 320 KiB with the
+  measurement recorded, and the feature is optional for a size-sensitive build.
 - **Anti-aliased rasterisation** (`10.7`): polygons and glyphs are filled from
   four sub-scanlines per device row with exact horizontal coverage, summed and
   blended once per pixel — so the staircase along every glyph and curve is gone.

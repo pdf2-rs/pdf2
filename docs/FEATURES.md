@@ -84,7 +84,8 @@ Checked 2026-11-15 — `cargo test -p pdf2 --test filters`; the four image filte
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | FlateDecode (+ PNG/TIFF predictors), LZW, ASCIIHex, ASCII85, RunLength | shipped | `src/filter.rs`, `tests/filters.rs` |
-| `/DCTDecode` (JPEG) | scheduled 9 | Refused today with "image filters are out of scope" (`src/filter.rs:41`); `cmykjpeg.pdf` renders blank. The decoder crates and their `rust-version` requirement are in §Outside facts |
+| `/DCTDecode` (JPEG), 1- and 3-component | shipped | `zune-jpeg` 0.5.15 behind the `dct` feature (on by default): `Image::from_dct` decodes, checks the header's size against the budget and honours `/Decode`. `alphatrans.pdf`'s photograph draws (`crates/pdf2-render/tests/dct.rs`); costs +66.8 KB gzip on the npm bundle, recorded in `docs/PERFORMANCE.md`. Owner: item 9 (DCT half, shipped 2026-11-16) |
+| `/DCTDecode` CMYK images | scheduled 9 | Four-component JPEG: the Adobe APP14 inversion plus a CMYK conversion that agrees with the engines is missing, and on `cmykjpeg.pdf` the picture is black via the RGB path and too dark via an inversion (`docs/RENDERING.md`). Reported as `Do` rather than drawn wrong. Owner: item 9 (remainder) |
 | `/JPXDecode` (JPEG 2000) | scheduled 9 | `bug_jpx.pdf` in the corpus |
 | `/CCITTFaxDecode` | scheduled 9 | `ccitt_EndOfBlock_false.pdf` |
 | `/JBIG2Decode` | scheduled 9 | No committed sample; `jbig2-bench` shows decoder divergence |
