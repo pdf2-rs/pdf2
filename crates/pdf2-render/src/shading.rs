@@ -26,7 +26,7 @@ pub(crate) struct Shading {
 }
 
 #[derive(Debug, Clone)]
-enum Space {
+pub(crate) enum Space {
     Gray,
     Rgb,
     Cmyk,
@@ -66,6 +66,30 @@ enum Kind {
 }
 
 impl Shading {
+    /// Read a shading from an object that may be a reference or a dictionary.
+    pub(crate) fn from_object(document: &Document, object: &Object) -> Result<Self> {
+        let object = match object {
+            Object::Reference(id) => document.get_object(*id)?,
+            other => other.clone(),
+        };
+        let Object::Dictionary(dict) = object else {
+            return Err(Error::malformed("a /Shading that is not a dictionary"));
+        };
+        Self::parse(document, &dict)
+    }
+
+    /// The colours this shading produces, as a fill would use them: `sh` paints
+    /// it whole, a shading pattern paints it where a path fills.
+    pub(crate) fn paint_through(
+        &self,
+        canvas: &mut Canvas,
+        mask: &ClipMask,
+        alpha: f64,
+        mode: BlendMode,
+    ) {
+        paint(self, canvas, mask, alpha, mode);
+    }
+
     /// Read a shading dictionary.
     pub(crate) fn parse(document: &Document, dict: &Dictionary) -> Result<Self> {
         let space_object = match dict.get(b"ColorSpace") {
@@ -235,7 +259,7 @@ pub(crate) fn paint(
 }
 
 /// Resolve a colour space object, including the array forms a shading may use.
-fn parse_space(document: &Document, object: &Object) -> Result<Space> {
+pub(crate) fn parse_space(document: &Document, object: &Object) -> Result<Space> {
     let object = match object {
         Object::Reference(id) => document.get_object(*id)?,
         other => other.clone(),
@@ -284,7 +308,7 @@ fn parse_space(document: &Document, object: &Object) -> Result<Space> {
 }
 
 /// A colour in `space` from `values` (tints for `/Separation` and `/DeviceN`).
-fn color_in(space: &Space, values: &[f64]) -> Color {
+pub(crate) fn color_in(space: &Space, values: &[f64]) -> Color {
     let at = |index: usize| values.get(index).copied().unwrap_or(0.0).clamp(0.0, 1.0);
     match space {
         Space::Gray => Color::rgb(at(0), at(0), at(0)),
