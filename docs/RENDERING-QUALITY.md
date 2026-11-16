@@ -69,9 +69,39 @@ cannot see it at all, because it compares 4×4 blocks — a tolerance that exist
 precisely because we have no anti-aliasing.
 
 Consequence: **anti-aliasing cannot be gated by the current oracle**, so it needs
-either a full-resolution comparison mode (mean error at 1×1, or SSE) or it ships
-as a visible, reviewed change with re-blessed goldens and a written before/after.
-Rank 10g.
+a full-resolution comparison, and that comparison is now recorded rather than
+argued about: `cargo run` the oracle job with `blocks: 1` and the committed
+`corpus/oracle-summary-1x1.csv` is the result.
+
+**The 1×1 baseline, measured 2026-11-16** (poppler 26.01.0, mupdf 1.27.0,
+Ghostscript 10.06.0 at 144 dpi; `ours` is this renderer's distance to the median
+oracle):
+
+| Case | ours (over / mean) | spread (over / mean) |
+| --- | --- | --- |
+| `book#1` (embedded serif prose) | 0.0381 / 3.68 | 0.0422 / 5.02 |
+| `calibration#1` (CMYK conversion) | 0.0800 / 3.05 | 0.0800 / 3.33 |
+| `calibration#2`, `#3` (caps, joins, Béziers) | 0.0009 / 0.09, 0.0000 / 0.00 | 0.0046 / 0.96, 0.0029 / 0.50 |
+| `calibration#4`, `#5`, `#9`–`#11` | 0.0000 / 0.00 | 0.0000 / 0.00 |
+| `forms#1`, `alpha#1`, `soft-mask#1`, `blend-modes#1` | ≤ 0.0000 / ≤ 0.75 | 0.0000–0.0031 / 0.01–0.80 |
+| `annotations#1` | 0.0625 / 10.63 | 0.0625 / 10.63 |
+
+Three things follow, and they change the plan:
+
+1. **At full resolution we are inside the engines' own disagreement on thirteen of
+   fourteen cases** — missing anti-aliasing is not the dominant error on this set,
+   which is why the gate stays at 4×4 until AA lands rather than flipping now.
+2. **`annotations#1` is the exception and it is not about AA**: our distance is
+   *exactly* the inter-oracle spread, i.e. we sit at one extreme of the engines'
+   disagreement. The likely cause is that `/Square` annotations carry a default
+   `/Border` (12.5.4) which this renderer does not paint; that is a hypothesis to
+   confirm with a border-styled fixture, not a conclusion.
+3. The five fixtures added this release (forms, annotations, alpha, soft-mask,
+   blend-modes) are at or near zero distance, so the new features match the
+   engines rather than merely drawing something.
+
+Rank 10g still owns the AA itself; this section now owns the yardstick it will be
+judged by.
 
 ## Speed: two hot spots, one of them unexpected
 

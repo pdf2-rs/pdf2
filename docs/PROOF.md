@@ -103,6 +103,15 @@ mutool draw -r 144 -o /tmp/mupdf.png corpus/tier-a/<file>.pdf 1
 The CLI has no `render` subcommand yet; if the Q4 batch run needs one, it is
 added there rather than documented here as if it existed.
 
+## What the oracle also measures: full resolution
+
+The gate compares 4×4 blocks. A dispatch of `.github/workflows/oracle.yml` with
+`blocks: 1` measures at every pixel instead, and its result is committed as
+`corpus/oracle-summary-1x1.csv` — the baseline anti-aliasing will be judged by
+(`docs/RENDERING-QUALITY.md`). Both CSVs carry this renderer's own distance beside
+the inter-oracle spread, so "we are within the engines' disagreement" is a
+column, not a claim.
+
 ## What the oracle also measures: time
 
 The same job that compares pixels times each case's render and checks it against
