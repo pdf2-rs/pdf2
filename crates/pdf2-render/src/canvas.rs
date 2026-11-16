@@ -68,12 +68,15 @@ pub struct Canvas {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    /// The pixel value a blank canvas holds, as RGBA bytes.
+    background: [u8; 4],
 }
 
 impl Canvas {
     /// A canvas filled with `background`.
     pub fn new(width: u32, height: u32, background: Color) -> Self {
         let [r, g, b] = background.to_bytes();
+        let background = [r, g, b, 255];
         let mut pixels = Vec::with_capacity((width as usize) * (height as usize) * 4);
         for _ in 0..(width as usize) * (height as usize) {
             pixels.extend_from_slice(&[r, g, b, 255]);
@@ -82,6 +85,7 @@ impl Canvas {
             width,
             height,
             pixels,
+            background,
         }
     }
 
@@ -108,6 +112,16 @@ impl Canvas {
         let index = ((y as usize) * (self.width as usize) + (x as usize)) * 4;
         let slice = &self.pixels[index..index + 4];
         Some([slice[0], slice[1], slice[2], slice[3]])
+    }
+
+    /// Whether every pixel is the background colour.
+    ///
+    /// Used to tell "this page is empty" from "this page is drawn": a page that
+    /// ran painting operators and left the canvas uniform is reported as
+    /// `drew-nothing` rather than as fully supported.
+    pub fn is_blank(&self) -> bool {
+        let background = self.background;
+        self.pixels.chunks_exact(4).all(|pixel| pixel == background)
     }
 
     /// Paint one pixel with `color` at `alpha`, source-over.

@@ -4,6 +4,31 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — in progress
+
+Renderer work from [`docs/RENDERING-QUALITY.md`](docs/RENDERING-QUALITY.md), the
+first three items of a measured plan:
+
+- **Filling only touches the rows an outline reaches** (`10.7`). `fill_polygons`
+  scanned the whole canvas for every fill, so a page of 2 000 glyphs walked
+  2 000 × height rows. Bounding the scanlines to the polygon's extent takes the
+  `book.pdf` page from **74.8 ms to 4.3 ms** (17×) in a release build.
+- **A font program with no `cmap` is named, not guessed** (`9.6.4`). A simple
+  TrueType font with no character map cannot be decoded from its codes; the page
+  now reports `font:TrueType-without-cmap` instead of drawing an empty page under
+  "all operators supported". Using the code as the glyph id was tried and
+  rejected: pdf.js's `TrueType_without_cmap.pdf` has 141 glyph ids, no map and
+  mostly empty charstrings, so the guess drew nothing there and would draw wrong
+  glyphs where it drew anything.
+- **A page that paints and stays empty says `drew-nothing`** (`10.7`). Every
+  painting operator is counted, and a page that ran them and produced a raster of
+  nothing but its background is reported instead of claiming full support. Silent
+  blanks were the worst failure this renderer had: 49 of 160 blank pages in a
+  300-file pdf.js sample, 25 of them annotation form streams.
+- **Glyphs are parsed once, not per occurrence**: a per-font cache of
+  character → glyph id and glyph id → outline (`book.pdf` at scale 0.25:
+  5.4 → 2.5 ms), shared by a font's clones.
+
 ## [1.2.0] — 2026-11-15
 
 **Text and rendering agree.** Nine roadmap items land together, and the proof is

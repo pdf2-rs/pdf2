@@ -122,7 +122,25 @@ pub fn fill_polygons(
     if edges.is_empty() {
         return;
     }
-    for y in 0..canvas.height() {
+    // Only the rows the outline touches: a glyph is a dozen rows tall, and
+    // scanning the whole canvas for each of the two thousand glyphs on a page of
+    // prose was most of that page's render time.
+    let (low, high) = edges
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(low, high), edge| {
+            (
+                low.min(edge.y0.min(edge.y1)),
+                high.max(edge.y0.max(edge.y1)),
+            )
+        });
+    if high <= low {
+        return;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let first_row = ((low - 0.5).ceil().max(0.0) as u32).min(canvas.height());
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let past_last = ((high - 0.5).ceil().max(0.0) as u32).min(canvas.height());
+    for y in first_row..past_last {
         let row = f64::from(y) + 0.5;
         for (first, past) in spans(&edges, row, even_odd) {
             let from = first.max(0);

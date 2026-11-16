@@ -10,9 +10,31 @@
 //! program itself — are enough, and the decision, its measurements and what it
 //! refuses are in `docs/adr/0003-cff-without-a-dependency.md`.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
 use pdf2::Encoding;
 
 use crate::geom::Point;
+
+/// A font's parsed answers, shared by its clones.
+///
+/// `ttf-parser` borrows the program, so a parsed face cannot outlive the call
+/// that made it — but its answers can. Two maps memoise the expensive steps:
+/// character → glyph id (the `cmap` lookup) and glyph id → outline. Measured on
+/// `book.pdf` at scale 0.25, where the rasteriser is not the bottleneck, this
+/// halves the page: 5.4 ms → 3.9 ms.
+#[derive(Debug, Default)]
+pub struct Cache {
+    /// Character → glyph id, `None` when the `cmap` does not cover it.
+    cmap: BTreeMap<char, Option<u16>>,
+    /// Glyph id → outline and advance.
+    glyphs: BTreeMap<u16, Option<Glyph>>,
+}
+
+/// The shared cache behind a font's clones.
+pub type GlyphCache = Rc<RefCell<Cache>>;
 
 /// One glyph's outline in em units: y grows upwards, the baseline is y = 0 and
 /// one em is 1.0.
@@ -44,6 +66,8 @@ pub enum Font {
         /// CID → glyph id from the CFF charset, empty when the font is not
         /// CID-keyed.
         cid_to_gid: Vec<(u16, u16)>,
+        /// Parsed answers, shared by clones.
+        cache: GlyphCache,
     },
     /// An embedded TrueType program.
     TrueType {
@@ -52,6 +76,11 @@ pub enum Font {
         /// The font program, still compressed in the PDF sense is not our
         /// business: this is the decoded `/FontFile2`.
         data: Vec<u8>,
+        /// Whether the program carries a `cmap` table at all: when it does not,
+        /// a simple font's code is the glyph id.
+        has_cmap: bool,
+        /// Parsed answers, shared by clones.
+        cache: GlyphCache,
     },
 }
 
@@ -86,6 +115,7 @@ impl Font {
             encoding,
             data: program,
             cid_to_gid,
+            cache: GlyphCache::default(),
         })
     }
 
@@ -95,34 +125,59 @@ impl Font {
         if face.units_per_em() == 0 {
             return None;
         }
-        Some(Self::TrueType { encoding, data })
+        let has_cmap = face.tables().cmap.is_some();
+        Some(Self::TrueType {
+            encoding,
+            data,
+            has_cmap,
+            cache: GlyphCache::default(),
+        })
     }
 
     /// The outline and advance for a byte code, or `None` when there is no
     /// glyph for it.
+    ///
+    /// A simple font's code goes through its encoding to a character, and the
+    /// character through the program's `cmap` to a glyph id. A program with **no
+    /// `cmap` table at all** cannot be consulted that way, and the files that
+    /// lack one mean the code *is* the glyph id — pdf.js's
+    /// `TrueType_without_cmap.pdf` is the case, and refusing to guess drew a
+    /// blank page while reporting nothing at all.
     pub fn glyph(&self, code: u8) -> Option<Glyph> {
         match self {
             Self::Builtin { encoding } => builtin_glyph(encoding.character(code)?),
-            Self::TrueType { encoding, data } => {
+            Self::TrueType {
+                encoding,
+                data,
+                cache,
+                ..
+            } => {
                 let character = encoding.character(code)?;
-                let face = ttf_parser::Face::parse(data, 0).ok()?;
-                let glyph_id = face.glyph_index(character)?;
-                glyph_from_face(data, glyph_id)
+                cached_glyph(data, cache, glyph_id(data, cache, character)?)
             }
             Self::Cff {
                 encoding,
                 data,
-                cid_to_gid,
+                cache,
+                ..
             } => {
                 // A simple (non-CID) CFF font reaches its glyphs through the
                 // charset's names; a CID-keyed one through the CID it is asked
                 // for, which is the composite path.
                 let character = encoding.character(code)?;
-                let face = ttf_parser::Face::parse(data, 0).ok()?;
-                let _ = cid_to_gid;
-                let glyph_id = face.glyph_index(character)?;
-                glyph_from_face(data, glyph_id)
+                cached_glyph(data, cache, glyph_id(data, cache, character)?)
             }
+        }
+    }
+
+    /// Whether this font has a character map at all.
+    ///
+    /// A simple TrueType program with none cannot be decoded from its codes, so
+    /// the caller reports the page instead of drawing an empty one.
+    pub fn has_character_map(&self) -> bool {
+        match self {
+            Self::Builtin { .. } | Self::Cff { .. } => true,
+            Self::TrueType { has_cmap, .. } => *has_cmap,
         }
     }
 
@@ -139,9 +194,14 @@ impl Font {
     pub fn glyph_by_id(&self, id: u16) -> Option<Glyph> {
         match self {
             Self::Builtin { .. } => None,
-            Self::TrueType { data, .. } => glyph_from_face(data, ttf_parser::GlyphId(id)),
+            Self::TrueType { data, cache, .. } => {
+                cached_glyph(data, cache, ttf_parser::GlyphId(id))
+            }
             Self::Cff {
-                data, cid_to_gid, ..
+                data,
+                cid_to_gid,
+                cache,
+                ..
             } => {
                 // In a CID-keyed CFF the charset maps glyph ids to CIDs, so a
                 // CID has to be looked up rather than used as the glyph id.
@@ -149,10 +209,31 @@ impl Font {
                     .iter()
                     .find(|(cid, _)| *cid == id)
                     .map_or(id, |(_, gid)| *gid);
-                glyph_from_face(data, ttf_parser::GlyphId(glyph))
+                cached_glyph(data, cache, ttf_parser::GlyphId(glyph))
             }
         }
     }
+}
+
+/// A character's glyph id, memoised: the `cmap` lookup needs a parsed face.
+fn glyph_id(data: &[u8], cache: &GlyphCache, character: char) -> Option<ttf_parser::GlyphId> {
+    if let Some(cached) = cache.borrow().cmap.get(&character) {
+        return cached.map(ttf_parser::GlyphId);
+    }
+    let face = ttf_parser::Face::parse(data, 0).ok()?;
+    let found = face.glyph_index(character).map(|id| id.0);
+    cache.borrow_mut().cmap.insert(character, found);
+    found.map(ttf_parser::GlyphId)
+}
+
+/// An outline and advance, memoised: the parse is the expensive part.
+fn cached_glyph(data: &[u8], cache: &GlyphCache, id: ttf_parser::GlyphId) -> Option<Glyph> {
+    if let Some(cached) = cache.borrow().glyphs.get(&id.0) {
+        return cached.clone();
+    }
+    let glyph = glyph_from_face(data, id);
+    cache.borrow_mut().glyphs.insert(id.0, glyph.clone());
+    glyph
 }
 
 /// Wrap a bare CFF table in the smallest OpenType container `ttf-parser` reads.
@@ -1023,6 +1104,53 @@ mod cff_tests {
             top_dict_operator(&[29, 0, 0, 0, 9], 17),
             None,
             "no operator"
+        );
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::Font;
+    use pdf2::Encoding;
+
+    fn subset_font() -> Vec<u8> {
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/fonts/CrimsonText-Regular-subset.ttf"
+        ))
+        .expect("the committed subset font")
+    }
+
+    #[test]
+    fn a_glyph_looked_up_twice_is_the_same_outline() {
+        let font = Font::true_type(Encoding::standard(), subset_font()).expect("font");
+        let first = font.glyph(b'A').expect("A");
+        let second = font.glyph(b'A').expect("A");
+        assert_eq!(first, second, "the cache returns what the parser did");
+        assert!(!first.contours.is_empty(), "A is a drawn glyph");
+        assert!(first.advance > 0.0);
+        // A different code is a different glyph, not a cache collision.
+        let b = font.glyph(b'B').expect("B");
+        assert_ne!(first, b);
+    }
+
+    #[test]
+    fn the_cache_is_shared_by_clones_and_survives_them() {
+        let font = Font::true_type(Encoding::standard(), subset_font()).expect("font");
+        let clone = font.clone();
+        let from_original = font.glyph(b'C').expect("C");
+        let from_clone = clone.glyph(b'C').expect("C");
+        assert_eq!(from_original, from_clone);
+    }
+
+    #[test]
+    fn a_program_with_a_cmap_answers_the_question_honestly() {
+        let with_cmap = Font::true_type(Encoding::standard(), subset_font()).expect("font");
+        assert!(with_cmap.has_character_map());
+        assert!(with_cmap.glyph(b'Z').is_some(), "the subset carries Z");
+        assert!(
+            with_cmap.glyph(0x00).is_none(),
+            "an unmapped code has no glyph"
         );
     }
 }

@@ -1080,6 +1080,45 @@ def make_text_mode():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("text-mode.pdf", bytes(writer.out))
 
+
+
+def make_invisible_ink():
+    """A page that paints in the background colour: every operator supported, no ink.
+
+    The fixture for the renderer's honesty rule: a page that ran painting
+    operators and produced an empty raster reports `drew-nothing` instead of
+    claiming everything was drawn.
+    """
+    content = b"1 1 1 rg 10 10 180 180 re f\nQ 1 1 1 RG 2 w 30 30 m 150 150 l S\n"
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>")
+    writer.stream(4, b"", content)
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("invisible-ink.pdf", bytes(writer.out))
+
+
+
+
+def make_blank_page():
+    """Two blank pages: one with an empty content stream, one with none at all.
+
+    Blank by design, so the renderer must not report `drew-nothing` — that note
+    is for a page that painted and produced nothing.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(
+        2,
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>",
+    )
+    writer.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>")
+    writer.stream(4, b"", b"")
+    writer.obj(5, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>")
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("blank-page.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1297,3 +1336,5 @@ if __name__ == "__main__":
     make_tounicode()
     make_startxref_hint()
     make_text_mode()
+    make_invisible_ink()
+    make_blank_page()
