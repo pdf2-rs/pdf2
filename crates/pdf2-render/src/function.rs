@@ -310,7 +310,18 @@ impl Function {
                 encode,
                 decode,
                 samples,
-            } => sample(sizes, *bits, encode, decode, samples, &values),
+            } => {
+                // The number of outputs comes from `/Decode` when it is stated and
+                // from `/Range` otherwise — inferring it from `/Decode` alone gave
+                // zero components for the corpus functions that omit it, which
+                // painted a black page.
+                let outputs = if decode.len() >= 2 {
+                    decode.len() / 2
+                } else {
+                    (self.range.len() / 2).max(1)
+                };
+                sample(sizes, *bits, encode, decode, samples, &values, outputs)
+            }
         };
         if self.range.is_empty() {
             return outputs;
@@ -327,6 +338,13 @@ impl Function {
 }
 
 /// Multilinear interpolation in the sample table (7.10.2).
+///
+/// Only axes with more than one entry are interpolated: a table of eighteen
+/// inputs whose sizes are all one has a single sample, and enumerating `2^18`
+/// corners per pixel is the difference between a gradient and a hang — which is
+/// exactly what `axial_shading_many_inputs.pdf` found the first time this was
+/// written. Beyond eight interpolated axes the nearest sample is used, because a
+/// page is painted per pixel and `2^9` corners is already too many.
 fn sample(
     sizes: &[usize],
     bits: u8,
@@ -334,55 +352,59 @@ fn sample(
     decode: &[f64],
     samples: &[u32],
     values: &[f64],
+    outputs: usize,
 ) -> Vec<f64> {
-    let outputs = decode.len().max(1) / 2;
     if sizes.is_empty() {
         return Vec::new();
     }
-    // Encode each input into its own axis, then interpolate the corners.
-    let mut positions = Vec::with_capacity(sizes.len());
-    for (index, size) in sizes.iter().enumerate() {
-        let (low, high) = encode
-            .get(index * 2)
-            .copied()
-            .zip(encode.get(index * 2 + 1).copied())
-            .unwrap_or((0.0, 1.0));
-        let value = values.get(index).copied().unwrap_or(0.0);
-        let position = low + value * (high - low);
-        positions.push(position.clamp(0.0, (*size as f64).max(1.0)));
-    }
+    let active: Vec<usize> = (0..sizes.len()).filter(|axis| sizes[*axis] > 1).collect();
+    let interpolate = active.len() <= 8;
     let max_bits = (1u32 << bits.min(31)) - 1;
     let mut result = Vec::with_capacity(outputs);
     for output in 0..outputs {
-        // Linear interpolation along every axis, one axis at a time.
-        let mut corners: Vec<(f64, f64)> = Vec::new();
-        for (axis, size) in sizes.iter().enumerate() {
-            let position = positions[axis];
-            let low_index = (position.floor() as usize).min(size.saturating_sub(1));
-            let high_index = (low_index + 1).min(size.saturating_sub(1));
-            let fraction = position - position.floor();
-            corners.push((low_index as f64, high_index as f64));
-            let _ = fraction;
-        }
         let mut accumulator = 0.0;
-        // Enumerate every corner of the cell, weighted by the fractions.
-        for corner in 0..(1usize << sizes.len()) {
+        let corners = if interpolate {
+            1usize << active.len()
+        } else {
+            1
+        };
+        for corner in 0..corners {
             let mut weight = 1.0;
             let mut index = 0usize;
             let mut stride = 1usize;
+            let mut position_into = 0usize;
             for (axis, size) in sizes.iter().enumerate() {
-                let position = positions[axis];
+                let (low, high) = encode
+                    .get(axis * 2)
+                    .copied()
+                    .zip(encode.get(axis * 2 + 1).copied())
+                    .unwrap_or((0.0, 1.0));
+                let value = values.get(axis).copied().unwrap_or(0.0);
+                let position = (low + value * (high - low)).clamp(0.0, (*size as f64).max(1.0));
                 let low_index = (position.floor() as usize).min(size.saturating_sub(1));
-                let high_index = (low_index + 1).min(size.saturating_sub(1));
                 let fraction = (position - position.floor()).clamp(0.0, 1.0);
-                let (selected, selected_weight) = if corner & (1 << axis) != 0 {
-                    (high_index, fraction)
-                } else {
-                    (low_index, 1.0 - fraction)
-                };
-                weight *= selected_weight;
-                index += selected * stride;
+                if *size > 1 && interpolate {
+                    let bit = corner & (1 << position_into) != 0;
+                    position_into += 1;
+                    let (selected, selected_weight) = if bit {
+                        ((low_index + 1).min(size - 1), fraction)
+                    } else {
+                        (low_index, 1.0 - fraction)
+                    };
+                    weight *= selected_weight;
+                    index += selected * stride;
+                } else if *size > 1 {
+                    // Nearest sample on the axes that are not interpolated.
+                    index += if fraction >= 0.5 {
+                        (low_index + 1).min(size - 1)
+                    } else {
+                        low_index
+                    } * stride;
+                }
                 stride *= (*size).max(1);
+            }
+            if weight <= 0.0 {
+                continue;
             }
             let sample_index = index * outputs + output;
             let raw = samples.get(sample_index).copied().unwrap_or(0);
@@ -401,7 +423,6 @@ fn sample(
         }
         result.push(accumulator);
     }
-    let _ = bits;
     result
 }
 
@@ -1055,6 +1076,46 @@ mod tests {
             }
             assert!(parsed > 0, "{path} has functions");
         }
+    }
+
+    #[test]
+    fn a_sampled_function_with_three_outputs_interpolates_each() {
+        // Two samples: black then red, so the midpoint is half red.
+        let (number, body) = stream(
+            7,
+            "/FunctionType 0 /Domain [0 1] /Range [0 1 0 1 0 1] /Size [2] /BitsPerSample 8 \
+             /Encode [0 1] /Decode [0 1 0 1 0 1]",
+            &[0, 0, 0, 255, 0, 0],
+        );
+        let function = parse(&[(number, body)], number);
+        let values = function.eval(&[0.5]);
+        assert_eq!(values.len(), 3, "three components");
+        assert!((values[0] - 0.5).abs() < 1e-2, "{values:?}");
+        assert!((values[1]).abs() < 1e-2, "{values:?}");
+        assert!((values[2]).abs() < 1e-2, "{values:?}");
+    }
+
+    #[test]
+    fn the_eighteen_input_corpus_function_is_constant_by_design() {
+        let full = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        let bytes = std::fs::read(format!(
+            "{full}/corpus/tier-a/axial_shading_many_inputs.pdf"
+        ))
+        .expect("corpus");
+        let document = Document::open(bytes).expect("open");
+        let function = Function::parse(&document, &Object::Reference(pdf2::ObjectId::new(5, 0)))
+            .expect("function 5");
+        let mut seen = Vec::new();
+        for step in 0..=10 {
+            #[allow(clippy::cast_precision_loss)]
+            let t = f64::from(step) / 10.0;
+            seen.push(function.eval(&[t]));
+        }
+        // `axial_shading_many_inputs.pdf` is a decodability test: eighteen inputs,
+        // all of size one, and sixty-four zero samples, so its page is black on
+        // purpose. Reading it *without* crashing is the whole assertion.
+        assert!(seen[0] == seen[10], "constant, as its samples say");
+        assert_eq!(seen[0], vec![0.0], "one output, zero");
     }
 
     #[test]

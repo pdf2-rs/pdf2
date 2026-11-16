@@ -623,6 +623,12 @@ impl Walker<'_> {
                     self.draw_image(&name)?;
                 }
             }
+            b"sh" => {
+                if let Some(Object::Name(name)) = operands.first() {
+                    let name = name.clone();
+                    self.paint_shading(&name)?;
+                }
+            }
             b"BI" => {
                 skip_inline_image(parser)?;
                 self.report.note(operator);
@@ -1100,6 +1106,50 @@ impl Walker<'_> {
         }
         self.mask.multiply_luminosity(&backdrop);
         Ok(true)
+    }
+
+    /// `sh`: paint a `/Shading` resource (8.7.4.3).
+    ///
+    /// The shading is sampled per pixel inside the current clip and its own
+    /// bounding box, with the current fill alpha and blend mode — the same
+    /// treatment a fill gets, which is what keeps a gradient under `/ca` and
+    /// inside a `/BM` looking like the rest of the page.
+    fn paint_shading(&mut self, name: &[u8]) -> crate::Result<()> {
+        let Some(resources) = self.resources.clone() else {
+            self.report.note(b"sh");
+            return Ok(());
+        };
+        let Object::Dictionary(shadings) = resolve(self.document, resources.get(b"Shading"))?
+        else {
+            self.report.note(b"sh");
+            return Ok(());
+        };
+        let Some(entry) = shadings.get(name).cloned() else {
+            self.report.note(b"sh");
+            return Ok(());
+        };
+        let Object::Dictionary(dict) = resolve(self.document, Some(&entry))? else {
+            self.report.note(b"sh");
+            return Ok(());
+        };
+        let shading = match crate::shading::Shading::parse(self.document, &dict) {
+            Ok(shading) => shading,
+            Err(_) => {
+                self.report.note(b"sh");
+                return Ok(());
+            }
+        };
+        // The shading's own space is mapped into the page by its `/Matrix` and
+        // then the CTM; painting goes through the inverse of that product.
+        let to_device = shading.matrix().multiply(self.state.ctm);
+        crate::shading::paint(
+            &shading.with_matrix(to_device),
+            self.canvas,
+            &self.mask,
+            self.state.fill_alpha,
+            self.state.blend,
+        );
+        Ok(())
     }
 
     /// Draw every annotation that has an appearance stream (12.5.5).

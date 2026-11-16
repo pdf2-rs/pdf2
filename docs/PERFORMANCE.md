@@ -164,6 +164,11 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 | `pdf2_wasm_bg.wasm` | 883 830 B | 307 582 B |
 | `pdf2_wasm.js` (glue) | 19 047 B | 4 833 B |
 
+**The bundle moved from 320 KiB to 336 KiB on the same day, for shadings**:
+`sh` plus the `/Function` evaluator cost **+7 465 gzip bytes** (327 567 →
+335 032) — a gradient is a function evaluated per pixel, and the calculator's
+operators are the bulk of it.
+
 **The npm bundle budget moved from 260 KiB to 320 KiB on 2026-11-16,
 deliberately**: `/DCTDecode` support (`zune-jpeg`) costs **+66 759 gzip bytes** on
 the module — 241 174 → 307 582 — because a JPEG decoder reads tables, does

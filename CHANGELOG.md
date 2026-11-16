@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Shadings draw** (`8.7.4`, types 1–3): axial, radial and function-based
+  shadings are sampled per pixel through their `/Function`, inside the current
+  clip and with the fill alpha and blend mode, so a gradient under `/ca` looks
+  like the rest of the page. `axial_shading_many_inputs.pdf` and
+  `function_based_shading*.pdf` — five corpus pages of gradients — now draw with
+  no `sh` note. Mesh shadings (types 4–7) are reported by name.
 - **`/Function` objects are read** (`7.10`): the renderer parses and evaluates
   types 0 (sampled, with bit unpacking and multilinear interpolation), 2
   (exponential), 3 (stitching, choosing by `/Bounds` and mapping through

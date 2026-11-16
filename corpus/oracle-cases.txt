@@ -17,6 +17,7 @@ tests/fixtures/calibration.pdf 11
 tests/fixtures/forms.pdf 1
 tests/fixtures/annotations.pdf 1
 tests/fixtures/alpha.pdf 1
+tests/fixtures/shading.pdf 1
 tests/fixtures/soft-mask.pdf 1
 tests/fixtures/blend-modes.pdf 1
 # cropbox.pdf is deliberately absent: poppler honours /CropBox and /UserUnit
