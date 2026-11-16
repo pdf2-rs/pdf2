@@ -99,6 +99,7 @@ fn run() -> Result<(), String> {
     let mut failures = 0;
     let mut calibrated = Vec::new();
     let mut timings: Vec<(String, f64)> = Vec::new();
+    let mut our_distances: Vec<(String, Distance)> = Vec::new();
     for case in &cases {
         let bytes = std::fs::read(&case.path)
             .map_err(|error| format!("{}: {error}", case.path.display()))?;
@@ -191,6 +192,7 @@ fn run() -> Result<(), String> {
             );
         }
         timings.push((case.name.clone(), elapsed_ms));
+        our_distances.push((case.name.clone(), median));
         if options.calibrate {
             calibrated.push((case.name.clone(), spread));
         } else if verdict == "OVER" {
@@ -218,15 +220,25 @@ fn run() -> Result<(), String> {
         println!("wrote {} case(s) to {}", calibrated.len(), path.display());
     }
     if let Some(path) = &options.summary {
-        let mut text = String::from("case,spread_over,spread_mean,render_ms\n");
+        // `ours_*` is this renderer's distance to the oracles at whatever
+        // `--blocks` was asked for: the 4×4 gate's numbers, or the 1×1 numbers
+        // that anti-aliasing needs (`docs/RENDERING-QUALITY.md`).
+        let mut text = String::from("case,spread_over,spread_mean,ours_over,ours_mean,render_ms\n");
         for (name, spread) in &calibrated {
             let ms = timings
                 .iter()
                 .find(|(case, _)| case == name)
                 .map_or(0.0, |(_, ms)| *ms);
+            let distance = our_distances
+                .iter()
+                .find(|(case, _)| case == name)
+                .map(|(_, d)| *d);
             text.push_str(&format!(
-                "{name},{:.6},{:.6},{ms:.1}\n",
-                spread.over, spread.mean
+                "{name},{:.6},{:.6},{:.6},{:.6},{ms:.1}\n",
+                spread.over,
+                spread.mean,
+                distance.map_or(0.0, |d| d.over),
+                distance.map_or(0.0, |d| d.mean)
             ));
         }
         std::fs::write(path, text).map_err(|error| format!("{}: {error}", path.display()))?;
