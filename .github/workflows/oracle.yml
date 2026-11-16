@@ -16,6 +16,14 @@ on:
         type: choice
         options: [calibrate, check]
         default: calibrate
+      blocks:
+        description: "Comparison block size: 4 for the gate, 1 for the full-resolution anti-aliasing measurement"
+        required: false
+        default: "4"
+      summary:
+        description: "Name of the summary CSV artefact"
+        required: false
+        default: "oracle-summary.csv"
   schedule:
     - cron: "0 4 * * 1" # Mondays, after the nightly fuzz job
 
@@ -57,8 +65,9 @@ jobs:
         if: inputs.mode != 'check' && github.event_name == 'workflow_dispatch'
         run: |
           ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt --calibrate \
+            --blocks "${{ inputs.blocks || '4' }}" \
             --write-tolerances corpus/tolerances.tsv \
-            --summary oracle-summary.csv | tee oracle-report.txt
+            --summary "${{ inputs.summary || 'oracle-summary.csv' }}" | tee oracle-report.txt
 
       - name: Upload the calibration
         if: inputs.mode != 'check' && github.event_name == 'workflow_dispatch'
@@ -67,7 +76,7 @@ jobs:
           name: oracle-calibration
           path: |
             corpus/tolerances.tsv
-            oracle-summary.csv
+            ${{ inputs.summary || 'oracle-summary.csv' }}
             oracle-report.txt
           if-no-files-found: error
 
