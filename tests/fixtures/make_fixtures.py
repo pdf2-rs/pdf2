@@ -1365,6 +1365,54 @@ def make_blend_modes():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("blend-modes.pdf", bytes(writer.out))
 
+
+
+def make_shading():
+    """Two gradient pages whose colours follow from arithmetic.
+
+    Page 1 is axial from red at x = 0 to blue at x = 200, so the middle is half of
+    each. Page 2 is radial from yellow at the centre to black at radius 80 with
+    `/Extend [false false]`, so outside the circle is untouched.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(
+        2,
+        b"<< /Type /Pages /Kids [3 0 R 7 0 R] /Count 2 >>",
+    )
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /Shading << /S1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", b"/S1 sh")
+    writer.obj(
+        5,
+        b"<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 200 0] "
+        b"/Function 6 0 R /Extend [true true] >>",
+    )
+    writer.obj(
+        6,
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >>",
+    )
+    writer.obj(
+        7,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 8 0 R "
+        b"/Resources << /Shading << /S2 9 0 R >> >> >>",
+    )
+    writer.stream(8, b"", b"/S2 sh")
+    writer.obj(
+        9,
+        b"<< /ShadingType 3 /ColorSpace /DeviceRGB /Coords [100 100 0 100 100 80] "
+        b"/Function 10 0 R /Extend [false false] >>",
+    )
+    writer.obj(
+        10,
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [1 1 0] /C1 [0 0 0] /N 1 >>",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("shading.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1590,3 +1638,4 @@ if __name__ == "__main__":
     make_alpha()
     make_soft_mask()
     make_blend_modes()
+    make_shading()
