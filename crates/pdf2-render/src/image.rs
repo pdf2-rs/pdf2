@@ -156,7 +156,8 @@ impl Image {
             .min(f64::from(canvas.height()));
         for y in min_y as u32..max_y as u32 {
             for x in min_x as u32..max_x as u32 {
-                if !mask.contains(x, y) {
+                let coverage = mask.alpha(x, y);
+                if coverage <= 0.0 {
                     continue;
                 }
                 let device = Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
@@ -167,7 +168,7 @@ impl Image {
                 // Image space has its origin at the bottom-left, but the first
                 // sample row is the top one.
                 let colour = self.sample(user.x, 1.0 - user.y);
-                canvas.blend(x, y, colour, alpha);
+                canvas.blend(x, y, colour, alpha * coverage);
             }
         }
     }

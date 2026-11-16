@@ -1281,6 +1281,51 @@ def make_alpha():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("alpha.pdf", bytes(writer.out))
 
+
+
+def make_soft_mask():
+    """A luminosity `/SMask` on one page and an `/Alpha` one on the next.
+
+    The mask's `/G` form paints the right half white, so the magenta square only
+    shows where the mask is white — luminance 0 hides, white shows. Page 2 asks
+    for `/S /Alpha`, which needs a transparent canvas this rasteriser does not
+    have, so it must keep the `gs` note rather than be approximated.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(
+        2,
+        b"<< /Type /Pages /Kids [3 0 R 7 0 R] /Count 2 >>",
+    )
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /ExtGState << /GS1 5 0 R >> /XObject << /G 6 0 R >> >> >>",
+    )
+    writer.stream(4, b"", b"q /GS1 gs 1 0 1 rg 20 20 160 160 re f Q")
+    writer.obj(
+        5,
+        b"<< /Type /ExtGState /SMask << /S /Luminosity /G 6 0 R >> >>",
+    )
+    writer.stream(
+        6,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] "
+        b"/Group << /S /Transparency /CS /DeviceGray >>",
+        b"1 g 100 0 100 200 re f",
+    )
+    writer.obj(
+        7,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 8 0 R "
+        b"/Resources << /ExtGState << /GS2 9 0 R >> /XObject << /G 6 0 R >> >> >>",
+    )
+    writer.stream(8, b"", b"q /GS2 gs 1 0 1 rg 20 20 160 160 re f Q")
+    writer.obj(
+        9,
+        b"<< /Type /ExtGState /SMask << /S /Alpha /G 6 0 R >> >>",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("soft-mask.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1504,3 +1549,4 @@ if __name__ == "__main__":
     make_form_cycle()
     make_annotations()
     make_alpha()
+    make_soft_mask()

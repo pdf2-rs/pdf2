@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Luminosity soft masks are applied** (`11.6.5.2`): an `/ExtGState` `/SMask`
+  with `/S /Luminosity` renders its `/G` form onto black and multiplies the
+  result into the page's coverage mask, so a masked logo fades by its mask
+  instead of drawing as a rectangle. `/SMask /None` — which `cmykjpeg.pdf`
+  carries, and which an earlier round mistook for a mask — is no mask at all,
+  and an `/S /Alpha` mask keeps the `gs` note instead of being approximated,
+  because this rasteriser has no transparent canvas.
 - **Constant alpha and the line state come from `/ExtGState`** (`8.4.5`):
   `/ca` and `/CA` now reach fills, strokes, text and images (the canvas already
   blended with an alpha, so this was wiring plus the state plumbing), `/BM

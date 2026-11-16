@@ -148,8 +148,9 @@ pub fn fill_polygons(
             for x in from..to {
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                 let x = x as u32;
-                if mask.contains(x, y) {
-                    canvas.blend(x, y, color, alpha);
+                let coverage = mask.alpha(x, y);
+                if coverage > 0.0 {
+                    canvas.blend(x, y, color, alpha * coverage);
                 }
             }
         }

@@ -89,7 +89,8 @@ Checked 2026-11-15 — `cargo test -p pdf2 --test filters`; the four image filte
 | `/CCITTFaxDecode` | scheduled 9 | `ccitt_EndOfBlock_false.pdf` |
 | `/JBIG2Decode` | scheduled 9 | No committed sample; `jbig2-bench` shows decoder divergence |
 | Images above 8 bits per component | unplanned | `crates/pdf2-render/src/image.rs` accepts 8 only; rare in practice, needs a corpus count first |
-| `/SMask`, `/Mask` (soft mask, colour key) | scheduled 10 | `colorkeymask.pdf` renders today without the mask — visibly wrong; it folds into item 10 with transparency. Owner: item 10 |
+| `/SMask` (soft mask) | shipped (partial) | `/S /Luminosity` is rendered from its `/G` onto black and multiplied into the coverage mask (`ClipMask::multiply_luminosity`); `/SMask /None` is not a mask, and `/S /Alpha` keeps the `gs` note because this rasteriser has no transparent canvas. `tests/fixtures/soft-mask.pdf` (page 1 masked, page 2 refused) and `tests/ext_gstate.rs`. Owner: item 10e (partial 2026-11-16) |
+| `/Mask`, colour key (image stencil) | scheduled 10 | `colorkeymask.pdf` renders today without the mask — visibly wrong; it folds into item 10 with transparency. Owner: item 10 |
 | `/Interpolate` beyond bilinear | unplanned | Nearest and bilinear are both implemented; other filters are viewer-defined |
 
 ## Colour

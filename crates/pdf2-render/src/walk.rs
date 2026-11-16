@@ -952,9 +952,22 @@ impl Walker<'_> {
         };
         // A soft mask or a blend mode this renderer cannot honour keeps the note:
         // the state is only "supported" when everything it asks for is applied.
-        if dict.get(b"SMask").is_some() {
-            self.report.note(b"gs");
-            return Ok(());
+        // `/SMask /None` is how a writer says "no mask" — `cmykjpeg.pdf` carries
+        // exactly that, so it is not a mask to report.
+        if let Some(mask) = dict.get(b"SMask") {
+            match resolve(self.document, Some(mask))? {
+                Object::Name(name) if name == b"None" => {}
+                Object::Dictionary(mask) => {
+                    if !self.apply_soft_mask(&mask)? {
+                        self.report.note(b"gs");
+                        return Ok(());
+                    }
+                }
+                _ => {
+                    self.report.note(b"gs");
+                    return Ok(());
+                }
+            }
         }
         if let Some(blend) = dict.get(b"BM") {
             let normal = match blend {
@@ -1005,6 +1018,75 @@ impl Walker<'_> {
             }
         }
         Ok(())
+    }
+
+    /// Apply an `/SMask` entry (11.6.5.2) by multiplying its luminosity into the
+    /// current coverage mask.
+    ///
+    /// The mask's `/G` form is rendered onto **black**, which is the backdrop the
+    /// standard specifies: unpainted areas then have luminance 0 and hide
+    /// everything, white shows everything, and greys fade proportionally. Only
+    /// `/S /Luminosity` is honoured; an `/Alpha` mask needs a transparent canvas,
+    /// which this rasteriser does not have, so it keeps the `gs` note instead of
+    /// being approximated by a different definition of alpha.
+    fn apply_soft_mask(&mut self, mask: &Dictionary) -> crate::Result<bool> {
+        let kind = mask
+            .get(b"S")
+            .and_then(Object::as_name)
+            .unwrap_or(b"Luminosity")
+            .to_vec();
+        if kind != b"Luminosity" {
+            return Ok(false);
+        }
+        let Some(group) = mask.get(b"G") else {
+            return Ok(false);
+        };
+        let Object::Stream(stream) = resolve(self.document, Some(group))? else {
+            return Ok(false);
+        };
+        let content = match self.document.decode_stream(&stream) {
+            Ok(content) => content,
+            Err(_) => return Ok(false),
+        };
+        let resources = match stream.dict().get(b"Resources") {
+            Some(value) => match resolve(self.document, Some(value))? {
+                Object::Dictionary(dict) => Some(dict),
+                _ => self.resources.clone(),
+            },
+            None => self.resources.clone(),
+        };
+        let mut backdrop = Canvas::new(
+            self.canvas.width(),
+            self.canvas.height(),
+            Color::rgb(0.0, 0.0, 0.0),
+        );
+        let mut group_report = Report::default();
+        let mut walker = Walker {
+            canvas: &mut backdrop,
+            report: &mut group_report,
+            document: self.document,
+            resources,
+            state: State {
+                ctm: self.state.ctm,
+                // The mask group starts from a clean graphics state.
+                ..State::new(self.state.ctm)
+            },
+            stack: Vec::new(),
+            path: Path::new(),
+            pending_clip: None,
+            mask: ClipMask::all(self.canvas.width(), self.canvas.height()),
+            form_depth: self.form_depth,
+        };
+        walker.run(&content)?;
+        // A `Do` inside the mask group is the page's business too: merging the
+        // counts keeps the report honest about what was not drawn.
+        for (name, count) in &group_report.unsupported {
+            for _ in 0..*count {
+                self.report.note(name.as_bytes());
+            }
+        }
+        self.mask.multiply_luminosity(&backdrop);
+        Ok(true)
     }
 
     /// Draw every annotation that has an appearance stream (12.5.5).
