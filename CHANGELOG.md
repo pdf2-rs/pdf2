@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Anti-aliased rasterisation** (`10.7`): polygons and glyphs are filled from
+  four sub-scanlines per device row with exact horizontal coverage, summed and
+  blended once per pixel — so the staircase along every glyph and curve is gone.
+  Measured, not asserted: at full resolution `book#1`'s mean distance to the
+  oracle median falls from 3.68 to 2.58 channels, and the new
+  `corpus/aa-ceilings.tsv` gate sits between the two numbers, so a renderer
+  without it fails CI. Every committed golden was re-blessed.
 - **The sixteen `/BM` blend modes are applied** (`11.3.5`): every mode in Table
   136 — the twelve separable ones per channel and the four non-separable ones
   over the colour triplet — uses the CSS formulae the standard refers to, composed

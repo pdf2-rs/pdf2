@@ -47,6 +47,9 @@ struct Options {
     calibrate: bool,
     write_tolerances: Option<PathBuf>,
     summary: Option<PathBuf>,
+    /// Per-case mean-distance ceilings that apply at any block size: the
+    /// anti-aliasing gate (`corpus/aa-ceilings.tsv`).
+    aa_ceilings: Option<PathBuf>,
 }
 
 const FLOOR_OVER: f64 = 0.01;
@@ -79,6 +82,17 @@ fn run() -> Result<(), String> {
     // A missing budget is a warning, not a failure: the first run of a new
     // machine has nothing to compare with yet, and refusing to measure would be
     // refusing to produce the number the budget is set from.
+    let ceilings = match &options.aa_ceilings {
+        Some(path) if path.exists() => read_ceilings(path)?,
+        Some(path) => {
+            eprintln!(
+                "warning: {} not found; no per-case ceiling is applied",
+                path.display()
+            );
+            std::collections::BTreeMap::new()
+        }
+        None => std::collections::BTreeMap::new(),
+    };
     let budget = match &options.budget {
         Some(path) if path.exists() => read_budget(path)?,
         Some(path) => {
@@ -161,11 +175,21 @@ fn run() -> Result<(), String> {
         let over_time = !options.calibrate
             && matches!(budget.get(&case.name), Some(limit) if elapsed_ms > *limit);
         let within = median.over <= allowed.over && median.mean <= allowed.mean;
+        // A committed per-case ceiling is what makes anti-aliasing gated rather
+        // than merely present: the AA-less renderer missed `book#1`'s 3.2 by
+        // half a channel, and the number comes from both measurements.
+        let coarse = !options.calibrate
+            && ceilings
+                .get(&case.name)
+                .is_some_and(|ceiling| median.mean > *ceiling);
         let verdict = if options.calibrate {
             "calibrated"
         } else if !within {
             failures += 1;
             "OVER"
+        } else if coarse {
+            failures += 1;
+            "COARSE"
         } else if over_time {
             failures += 1;
             "SLOW"
@@ -183,6 +207,14 @@ fn run() -> Result<(), String> {
             elapsed_ms,
             verdict
         );
+        if coarse {
+            println!(
+                "  mean distance {:.3} is over the committed {:.3} for this case \
+                 (corpus/aa-ceilings.tsv); anti-aliasing regressed or was skipped",
+                median.mean,
+                ceilings.get(&case.name).copied().unwrap_or(0.0)
+            );
+        }
         if over_time {
             println!(
                 "  render took {:.1} ms against a {:.0} ms budget; raise it in \
@@ -263,6 +295,7 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
         calibrate: false,
         write_tolerances: None,
         summary: None,
+        aa_ceilings: None,
     };
     let mut index = 0;
     while index < args.len() {
@@ -305,6 +338,10 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
                 options.summary = Some(PathBuf::from(value(index)?));
                 index += 2;
             }
+            "--aa-ceilings" => {
+                options.aa_ceilings = Some(PathBuf::from(value(index)?));
+                index += 2;
+            }
             "--help" | "-h" => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -330,9 +367,35 @@ Options:
   --write-tolerances <path> write the measured spread to this file
   --budget <path>           per-page render budget (default corpus/render-budget.tsv)
   --summary <path>          write the measured spread and timing as CSV
+  --aa-ceilings <path>      per-case mean-distance ceilings (`case<TAB>mean`)
   --help, -h                this help";
 
 /// The committed per-page render budgets: `case<TAB>milliseconds`.
+/// The committed per-case ceilings: `case<TAB>mean distance`.
+fn read_ceilings(path: &Path) -> Result<std::collections::BTreeMap<String, f64>, String> {
+    let text =
+        std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut ceilings = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('\t') else {
+            return Err(format!(
+                "{}: `{line}` is not `case<TAB>mean`",
+                path.display()
+            ));
+        };
+        let value: f64 = value
+            .trim()
+            .parse()
+            .map_err(|_| format!("{}: `{value}` is not a number", path.display()))?;
+        ceilings.insert(name.trim().to_owned(), value);
+    }
+    Ok(ceilings)
+}
+
 fn read_budget(path: &Path) -> Result<std::collections::BTreeMap<String, f64>, String> {
     let text =
         std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;

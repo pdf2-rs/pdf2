@@ -205,13 +205,7 @@ pub fn fill_polygons(
                 continue;
             }
             let fraction = (covered / AA_SUBROWS as f64).min(1.0);
-            canvas.blend_with(
-                pixel_x,
-                y,
-                color,
-                alpha * mask_coverage * fraction,
-                mode,
-            );
+            canvas.blend_with(pixel_x, y, color, alpha * mask_coverage * fraction, mode);
         }
     }
 }
