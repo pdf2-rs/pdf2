@@ -8,6 +8,9 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
+use miniz_oxide::inflate::stream::{inflate, InflateState};
+use miniz_oxide::{DataFormat, MZFlush, MZStatus};
+
 use crate::error::{Error, Result};
 use crate::lexer::{hex_value, is_whitespace};
 use crate::object::{Dictionary, Object, Stream};
@@ -141,28 +144,76 @@ impl FilterSpec {
     }
 }
 
+/// The most bytes one stream may decode to, unless a document sets another
+/// budget ([`crate::Document::set_decoded_limit`]).
+///
+/// 256 MiB, chosen to match mupdf's `FZ_STORE_DEFAULT` rather than invented:
+/// real files are orders of magnitude below it, and a decompression bomb is
+/// orders of magnitude above. Without a cap a 1 MiB file expands to a gigabyte
+/// (measured: 0.43 s into 1 073 741 824 bytes), which in a browser tab is a
+/// denial of service rather than a rendering failure.
+pub const DEFAULT_DECODE_LIMIT: usize = 256 << 20;
+
 /// Apply a filter chain in order: the first `/Filter` is the outermost.
 pub fn decode_chain(data: &[u8], chain: &[FilterSpec]) -> Result<Vec<u8>> {
+    decode_chain_with_limit(data, chain, DEFAULT_DECODE_LIMIT)
+}
+
+/// Apply a filter chain with an explicit byte budget on its output.
+pub fn decode_chain_with_limit(data: &[u8], chain: &[FilterSpec], limit: usize) -> Result<Vec<u8>> {
+    if data.len() > limit {
+        return Err(Error::Limit {
+            what: "the unfiltered stream",
+            limit,
+        });
+    }
     let mut current = data.to_vec();
     for spec in chain {
-        current = decode_filter(spec.filter, &current, spec.parms.as_ref())?;
+        current = decode_filter_with_limit(spec.filter, &current, spec.parms.as_ref(), limit)?;
     }
     Ok(current)
 }
 
 /// Apply one filter, then its predictor when the filter has one.
 pub fn decode_filter(filter: Filter, data: &[u8], parms: Option<&Dictionary>) -> Result<Vec<u8>> {
+    decode_filter_with_limit(filter, data, parms, DEFAULT_DECODE_LIMIT)
+}
+
+/// Apply one filter under a byte budget, then its predictor under the same one.
+///
+/// Flate is capped *while* inflating; the other filters
+/// expand by a bounded factor and are checked once they return, so the budget
+/// still refuses them before the result reaches a caller.
+pub fn decode_filter_with_limit(
+    filter: Filter,
+    data: &[u8],
+    parms: Option<&Dictionary>,
+    limit: usize,
+) -> Result<Vec<u8>> {
     let decoded = match filter {
-        Filter::FlateDecode => flate_decode(data)?,
+        Filter::FlateDecode => flate_decode(data, limit)?,
         Filter::LzwDecode => lzw_decode(data, early_change(parms)?)?,
         Filter::AsciiHexDecode => ascii_hex_decode(data)?,
         Filter::Ascii85Decode => ascii85_decode(data)?,
         Filter::RunLengthDecode => run_length_decode(data)?,
     };
+    if decoded.len() > limit {
+        return Err(Error::Limit {
+            what: filter.name(),
+            limit,
+        });
+    }
     match filter {
         Filter::FlateDecode | Filter::LzwDecode => {
             let predictor = Predictor::from_dict(parms)?;
-            apply_predictor(&decoded, predictor)
+            let expanded = apply_predictor(&decoded, predictor)?;
+            if expanded.len() > limit {
+                return Err(Error::Limit {
+                    what: filter.name(),
+                    limit,
+                });
+            }
+            Ok(expanded)
         }
         _ => Ok(decoded),
     }
@@ -238,15 +289,82 @@ impl Predictor {
     }
 }
 
-fn flate_decode(data: &[u8]) -> Result<Vec<u8>> {
+fn flate_decode(data: &[u8], limit: usize) -> Result<Vec<u8>> {
     // PDF Flate streams are zlib-wrapped, but some writers emit raw DEFLATE.
-    if let Ok(out) = miniz_oxide::inflate::decompress_to_vec_zlib(data) {
-        return Ok(out);
+    match inflate_capped(data, DataFormat::Zlib, limit) {
+        Ok(out) => return Ok(out),
+        // A budget failure is final: retrying the same bytes as raw DEFLATE
+        // would double the work and then report the wrong reason.
+        Err(Error::Limit { limit, .. }) => {
+            return Err(Error::Limit {
+                what: "a Flate stream",
+                limit,
+            })
+        }
+        Err(_) => {}
     }
-    miniz_oxide::inflate::decompress_to_vec(data).map_err(|_| Error::Malformed {
-        what: "FlateDecode payload",
-        offset: None,
-    })
+    match inflate_capped(data, DataFormat::Raw, limit) {
+        Ok(out) => Ok(out),
+        Err(Error::Limit { limit, .. }) => Err(Error::Limit {
+            what: "a Flate stream",
+            limit,
+        }),
+        Err(_) => Err(Error::Malformed {
+            what: "FlateDecode payload",
+            offset: None,
+        }),
+    }
+}
+
+/// Inflate with an output budget, stopping as soon as it is passed.
+///
+/// This is the part that makes a bomb harmless: `decompress_to_vec` grows a
+/// vector until the stream ends, so the budget would only be checked after a
+/// gigabyte had already been allocated.
+fn inflate_capped(data: &[u8], format: DataFormat, limit: usize) -> Result<Vec<u8>> {
+    let mut state = InflateState::new(format);
+    // Reserve what the input implies (zlib rarely beats 1:4 on real streams)
+    // and inflate into a stack buffer: a heap chunk per stream was 110 kB of
+    // the benchmark's allocations on a one-page document.
+    let mut out: Vec<u8> = Vec::with_capacity(limit.min(data.len().saturating_mul(4).max(64)));
+    let mut chunk = [0u8; 32 * 1024];
+    let mut consumed = 0usize;
+    loop {
+        let flush = if consumed >= data.len() {
+            MZFlush::Finish
+        } else {
+            MZFlush::None
+        };
+        let result = inflate(&mut state, &data[consumed..], &mut chunk, flush);
+        consumed += result.bytes_consumed;
+        if result.bytes_written > 0 {
+            if out.len().saturating_add(result.bytes_written) > limit {
+                return Err(Error::Limit {
+                    what: "a Flate stream",
+                    limit,
+                });
+            }
+            out.extend_from_slice(&chunk[..result.bytes_written]);
+        }
+        match result.status {
+            Ok(MZStatus::StreamEnd) => return Ok(out),
+            Ok(MZStatus::Ok) => {
+                // No progress with no input left means a truncated stream.
+                if consumed >= data.len() && result.bytes_written == 0 {
+                    return Err(Error::Malformed {
+                        what: "FlateDecode payload",
+                        offset: None,
+                    });
+                }
+            }
+            _ => {
+                return Err(Error::Malformed {
+                    what: "FlateDecode payload",
+                    offset: None,
+                })
+            }
+        }
+    }
 }
 
 fn early_change(parms: Option<&Dictionary>) -> Result<bool> {

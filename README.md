@@ -22,7 +22,9 @@ Working today:
   streams (`/ObjStm`) and hybrid files (`/XRefStm`).
 - Filters: FlateDecode (with PNG 10–15 and TIFF 2 predictors), LZWDecode,
   ASCIIHexDecode, ASCII85Decode and RunLengthDecode, including `/Filter` and
-  `/DecodeParms` arrays and indirect `/Length`.
+  `/DecodeParms` arrays and indirect `/Length`. Every stream decodes under a
+  **256 MiB budget** (`Document::set_decoded_limit` moves it), so a
+  decompression bomb is refused instead of allocated.
 - Every base object type, parsed and re-serialized byte-for-byte.
 - The document model: catalog, page tree with inherited `/MediaBox`,
   `/CropBox`, `/Rotate` and `/Resources`, page content streams, and XMP
@@ -90,6 +92,11 @@ rather than silently misread, and [`docs/CORPUS.md`](docs/CORPUS.md) counts how
 often that happens on real files.
 
 Known limits inside the supported surface:
+
+- One stream may decode to at most 256 MiB by default. It is a budget, not a
+  guess: a 1 MiB file can otherwise expand to a gigabyte, which in a browser tab
+  is a denial of service. `Document::set_decoded_limit` raises or lowers it, and
+  `Error::Limit` names the budget it refused.
 
 - Text extraction: composite (Type0) fonts with a `/ToUnicode` map and an
   Identity encoding are read (codes split by the CMap's code space, CID widths
