@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **`/Separation` and `/DeviceN` colour spaces are read** (`8.6.6.4`,
+  `8.6.6.5`): where a shading or an image names one, its tint runs through the
+  space's own `/Function` into the alternate space —
+  `function_based_shading_cmyk.pdf`'s `/Spot` gradient now draws, and
+  `tests/fixtures/separation.pdf` pins the arithmetic (half a tint is half ink).
+  `/Pattern` colour spaces in the content stream are still reported.
 - **Shadings draw** (`8.7.4`, types 1–3): axial, radial and function-based
   shadings are sampled per pixel through their `/Function`, inside the current
   clip and with the fill alpha and blend mode, so a gradient under `/ca` looks

@@ -115,3 +115,35 @@ fn the_corpus_function_shading_page_stops_reporting_sh() {
     }
     assert!(ink > 50_000, "the page is covered in gradients: {ink}");
 }
+
+#[test]
+fn a_separation_colour_space_tints_through_its_function() {
+    // `separation.pdf`: a `/Separation /Spot /DeviceCMYK` gradient whose tint
+    // runs 0 to 1, so the middle is half ink — (1, 0.5, 0.5) in RGB.
+    let rendered = render("tests/fixtures/separation.pdf", 0);
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "the separation shading is painted: {}",
+        rendered.report
+    );
+    // The gradient starts at white and reaches it only at x = 0; a probe two
+    // pixels in already carries a tint, which is the point of a gradient.
+    let start = pixel(&rendered, 2, 100);
+    assert!(
+        (0..=6).contains(&(255 - i32::from(start[1]))),
+        "almost no ink at the start: {start:?}"
+    );
+    let middle = pixel(&rendered, 100, 100);
+    assert!(
+        (i32::from(middle[0]) - 255).abs() <= 4
+            && (i32::from(middle[1]) - 128).abs() <= 6
+            && (i32::from(middle[2]) - 128).abs() <= 6,
+        "half ink at the middle: {middle:?}"
+    );
+    assert!(
+        close(pixel(&rendered, 194, 100), [255, 8, 8]),
+        "full ink: {:?}",
+        pixel(&rendered, 194, 100)
+    );
+}
