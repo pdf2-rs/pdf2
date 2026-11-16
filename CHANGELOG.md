@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Annotation appearance streams draw** (`12.5.5`): a page whose `/Contents` is
+  empty and whose visible content is `/Annots → /AP → /N` now renders — the
+  appearance is placed by mapping its transformed `/BBox` onto the annotation's
+  `/Rect`, `/AS` picks from a state dictionary, and invisible, hidden or no-view
+  annotations (`/F`) are skipped. It is the shape behind 25 of the 49 sample
+  pages that were blank *and reported nothing*, which was this renderer's worst
+  failure mode: an empty page with no explanation.
 - **Form XObjects draw** (`8.10`): `Do` on a `/Subtype /Form` stream now runs it
   as a nested content stream — the form's `/Matrix` concatenated into the CTM,
   its `/BBox` clipping what it paints, its `/Resources` replacing the current
