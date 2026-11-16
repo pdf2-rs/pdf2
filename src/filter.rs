@@ -28,6 +28,8 @@ pub enum Filter {
     Ascii85Decode,
     /// `/RunLengthDecode` — literal and repeat runs.
     RunLengthDecode,
+    /// `/CCITTFaxDecode` — Group 3 or 4 fax, one bit per sample.
+    CcittFaxDecode,
 }
 
 impl Filter {
@@ -41,7 +43,8 @@ impl Filter {
             b"RunLengthDecode" | b"RL" => Ok(Self::RunLengthDecode),
             other => Err(Error::Malformed {
                 what: match other {
-                    b"DCTDecode" | b"JPXDecode" | b"CCITTFaxDecode" | b"JBIG2Decode" => {
+                    b"CCITTFaxDecode" | b"CCF" => return Ok(Filter::CcittFaxDecode),
+                    b"DCTDecode" | b"JPXDecode" | b"JBIG2Decode" => {
                         "image filters are out of scope"
                     }
                     b"Crypt" => "the /Crypt filter is Q9's job",
@@ -60,6 +63,7 @@ impl Filter {
             Self::AsciiHexDecode => "ASCIIHexDecode",
             Self::Ascii85Decode => "ASCII85Decode",
             Self::RunLengthDecode => "RunLengthDecode",
+            Self::CcittFaxDecode => "CCITTFaxDecode",
         }
     }
 }
@@ -196,6 +200,7 @@ pub fn decode_filter_with_limit(
         Filter::AsciiHexDecode => ascii_hex_decode(data)?,
         Filter::Ascii85Decode => ascii85_decode(data)?,
         Filter::RunLengthDecode => run_length_decode(data)?,
+        Filter::CcittFaxDecode => return fax_decode(data, parms, limit),
     };
     if decoded.len() > limit {
         return Err(Error::Limit {
@@ -217,6 +222,36 @@ pub fn decode_filter_with_limit(
         }
         _ => Ok(decoded),
     }
+}
+
+/// `/CCITTFaxDecode`: the parameters live in `/DecodeParms` (7.4.6).
+fn fax_decode(data: &[u8], parms: Option<&Dictionary>, limit: usize) -> Result<Vec<u8>> {
+    let mut params = crate::fax::Params::default();
+    if let Some(dict) = parms {
+        if let Some(k) = dict.get(b"K").and_then(Object::as_integer) {
+            params.k = k;
+        }
+        if let Some(columns) = dict.get(b"Columns").and_then(Object::as_integer) {
+            params.columns = u32::try_from(columns)
+                .map_err(|_| Error::malformed("fax /Columns must not be negative"))?;
+        }
+        if let Some(rows) = dict.get(b"Rows").and_then(Object::as_integer) {
+            params.rows = u32::try_from(rows)
+                .map_err(|_| Error::malformed("fax /Rows must not be negative"))?;
+        }
+        params.end_of_line = flag(dict, b"EndOfLine");
+        params.encoded_byte_align = flag(dict, b"EncodedByteAlign");
+        params.end_of_block = match dict.get(b"EndOfBlock") {
+            Some(Object::Boolean(value)) => *value,
+            _ => true,
+        };
+        params.black_is_1 = flag(dict, b"BlackIs1");
+    }
+    crate::fax::decode(data, &params, limit)
+}
+
+fn flag(dict: &Dictionary, key: &[u8]) -> bool {
+    matches!(dict.get(key), Some(Object::Boolean(true)))
 }
 
 impl Stream {

@@ -84,6 +84,8 @@ Checked 2026-11-15 — `cargo test -p pdf2 --test filters`; the four image filte
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | FlateDecode (+ PNG/TIFF predictors), LZW, ASCIIHex, ASCII85, RunLength | shipped | `src/filter.rs`, `tests/filters.rs` |
+| `/CCITTFaxDecode`, one-dimensional (`7.4.6`) | shipped (partial) | `src/fax.rs`: a bit reader, the full `/DecodeParms` set and the T.4 one-dimensional tables, decoding to one-bit rows that `image.rs` widens; `ccitt_EndOfBlock_false.pdf` draws its two `/K 0` images and reports the four two-dimensional ones (`crates/pdf2-render/tests/fax.rs`). Owner: item 9 (CCITT's 1-D half, shipped 2026-11-16) |
+| `/CCITTFaxDecode`, two-dimensional (G3 2-D and G4) | scheduled 9 | The next round of the CCITT item: vertical/horizontal/pass modes against a reference line, for `/K` > 0 and `/K` −1. Owner: item 9 (remainder) |
 | `/DCTDecode` (JPEG), 1- and 3-component | shipped | `zune-jpeg` 0.5.15 behind the `dct` feature (on by default): `Image::from_dct` decodes, checks the header's size against the budget and honours `/Decode`. `alphatrans.pdf`'s photograph draws (`crates/pdf2-render/tests/dct.rs`); costs +66.8 KB gzip on the npm bundle, recorded in `docs/PERFORMANCE.md`. Owner: item 9 (DCT half, shipped 2026-11-16) |
 | `/DCTDecode` CMYK images | scheduled 9 | Four-component JPEG: the Adobe APP14 inversion plus a CMYK conversion that agrees with the engines is missing, and on `cmykjpeg.pdf` the picture is black via the RGB path and too dark via an inversion (`docs/RENDERING.md`). Reported as `Do` rather than drawn wrong. Owner: item 9 (remainder) |
 | `/JPXDecode` (JPEG 2000) | scheduled 9 | `bug_jpx.pdf` in the corpus |

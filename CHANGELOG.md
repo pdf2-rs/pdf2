@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **One-dimensional CCITT fax images decode** (`7.4.6`): `src/fax.rs` reads the
+  bit stream, honours the whole `/DecodeParms` set (`/K`, `/Columns`, `/Rows`,
+  `/EndOfLine`, `/EncodedByteAlign`, `/EndOfBlock`, `/BlackIs1`) and decodes the
+  T.4 run-length lines into one-bit rows, which the image path widens to samples.
+  `ccitt_EndOfBlock_false.pdf` draws its two `/K 0` images — legible text, which is
+  the proof the tables are right — and reports the four two-dimensional ones
+  rather than half-decoding them.
 - **`/DCTDecode` (JPEG) images draw** (`7.4.8`): `zune-jpeg` decodes them behind
   the `dct` feature (on by default, `MIT OR Apache-2.0 OR Zlib`, MSRV 1.75), the
   size is taken from the JPEG's own header and checked against the decode budget
