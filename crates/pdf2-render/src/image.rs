@@ -21,7 +21,11 @@ impl Image {
     /// Supports 8 bits per component, `DeviceGray`/`DeviceRGB`/`DeviceCMYK`,
     /// `Indexed` images with those bases, and `ICCBased` streams by component
     /// count. Anything else is reported rather than guessed.
-    pub fn from_stream(document: &Document, stream: &Stream) -> Result<Self> {
+    pub fn from_stream(
+        document: &Document,
+        stream: &Stream,
+        id: Option<pdf2::ObjectId>,
+    ) -> Result<Self> {
         let dict = stream.dict();
         let width = integer(dict, b"Width")?;
         let height = integer(dict, b"Height")?;
@@ -57,6 +61,9 @@ impl Image {
                 limit,
             });
         }
+        if is_dct(dict) {
+            return Self::from_dct(document, stream, id, interpolate);
+        }
         let data = document.decode_stream(stream)?;
         if data.len() < count {
             return Err(Error::Malformed {
@@ -83,6 +90,99 @@ impl Image {
             height,
             pixels,
             interpolate,
+        })
+    }
+
+    /// Decode a `/DCTDecode` image through `zune-jpeg`.
+    ///
+    /// A JPEG in a PDF has no leading filters to unwind, so the bytes come
+    /// straight from [`Document::stream_bytes`] — decrypted, not decoded — and
+    /// `zune-jpeg` converts YCbCr to RGB itself. The size is checked against the
+    /// budget twice: once from the dictionary, and once from the JPEG's own
+    /// header, because the header is the authority on what the decoder produces.
+    #[cfg(feature = "dct")]
+    fn from_dct(
+        document: &Document,
+        _stream: &Stream,
+        id: Option<pdf2::ObjectId>,
+        interpolate: bool,
+    ) -> Result<Self> {
+        let Some(id) = id else {
+            return Err(Error::malformed(
+                "a /DCTDecode image without an object number",
+            ));
+        };
+        let data = document.stream_bytes(id)?;
+        let mut decoder =
+            zune_jpeg::JpegDecoder::new(zune_jpeg::zune_core::bytestream::ZCursor::new(&data));
+        let pixels = decoder
+            .decode()
+            .map_err(|_| Error::malformed("/DCTDecode payload"))?;
+        let Some(info) = decoder.info() else {
+            return Err(Error::malformed(
+                "/DCTDecode payload without a frame header",
+            ));
+        };
+        let components = match decoder.output_colorspace() {
+            Some(zune_jpeg::zune_core::colorspace::ColorSpace::Luma) => 1,
+            Some(zune_jpeg::zune_core::colorspace::ColorSpace::CMYK) => 4,
+            _ => 3,
+        };
+        let count = usize::from(info.width)
+            .checked_mul(usize::from(info.height))
+            .and_then(|samples| samples.checked_mul(components))
+            .ok_or_else(|| Error::malformed("image dimensions overflow"))?;
+        let limit = document.decoded_limit();
+        if count > limit {
+            return Err(Error::Limit {
+                what: "a /DCTDecode image of the size its header declares",
+                limit,
+            });
+        }
+        if pixels.len() < count {
+            return Err(Error::malformed(
+                "/DCTDecode payload is shorter than its header",
+            ));
+        }
+        let pixels = pixels[..count]
+            .chunks_exact(components)
+            .map(|sample| match components {
+                1 => Color::rgb(
+                    f64::from(sample[0]) / 255.0,
+                    f64::from(sample[0]) / 255.0,
+                    f64::from(sample[0]) / 255.0,
+                ),
+                4 => Color::from_cmyk(
+                    f64::from(sample[0]) / 255.0,
+                    f64::from(sample[1]) / 255.0,
+                    f64::from(sample[2]) / 255.0,
+                    f64::from(sample[3]) / 255.0,
+                ),
+                _ => Color::rgb(
+                    f64::from(sample[0]) / 255.0,
+                    f64::from(sample[1]) / 255.0,
+                    f64::from(sample[2]) / 255.0,
+                ),
+            })
+            .collect();
+        Ok(Self {
+            width: u32::from(info.width),
+            height: u32::from(info.height),
+            pixels,
+            interpolate,
+        })
+    }
+
+    /// Without the feature a JPEG is reported, not guessed at.
+    #[cfg(not(feature = "dct"))]
+    fn from_dct(
+        _document: &Document,
+        _stream: &Stream,
+        _id: Option<pdf2::ObjectId>,
+        _interpolate: bool,
+    ) -> Result<Self> {
+        Err(Error::Unsupported {
+            what: "/DCTDecode images (build with the `dct` feature)",
         })
     }
 
@@ -322,6 +422,19 @@ fn integer(dict: &Dictionary, key: &[u8]) -> Result<u32> {
         .and_then(Object::as_integer)
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| Error::malformed("image without integer /Width and /Height"))
+}
+
+/// Whether the stream's filter chain ends in `/DCTDecode`.
+fn is_dct(dict: &Dictionary) -> bool {
+    match dict.get(b"Filter") {
+        Some(Object::Name(name)) => name == b"DCTDecode",
+        Some(Object::Array(items)) => items
+            .iter()
+            .rev()
+            .find_map(Object::as_name)
+            .is_some_and(|name| name == b"DCTDecode"),
+        _ => false,
+    }
 }
 
 /// Follow one indirect reference; deeper chains are not needed for images.

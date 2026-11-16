@@ -72,7 +72,8 @@ fn a_lying_width_is_refused_before_the_stream_is_decoded() {
     let bytes = pdf_with_image(10_000, 10_000, b"not deflate at all", Some("FlateDecode"));
     let document = Document::open(bytes).expect("open");
     let stream = image_stream(&document);
-    let error = Image::from_stream(&document, &stream).expect_err("past the budget");
+    let error = Image::from_stream(&document, &stream, Some(pdf2::ObjectId::new(4, 0)))
+        .expect_err("past the budget");
     assert!(
         matches!(error, Error::Limit { limit, .. } if limit == 256 << 20),
         "{error}"
@@ -95,12 +96,13 @@ fn the_budget_bounds_a_real_image_too_and_the_setter_moves_it() {
 
     document.set_decoded_limit(256 << 10);
     assert!(matches!(
-        Image::from_stream(&document, &stream),
+        Image::from_stream(&document, &stream, Some(pdf2::ObjectId::new(4, 0))),
         Err(Error::Limit { limit, .. }) if limit == 256 << 10
     ));
 
     document.set_decoded_limit(1 << 20);
-    let image = Image::from_stream(&document, &stream).expect("480 kB fits");
+    let image = Image::from_stream(&document, &stream, Some(pdf2::ObjectId::new(4, 0)))
+        .expect("480 kB fits");
     assert_eq!((image.width(), image.height()), (400, 400));
 }
 
@@ -111,7 +113,8 @@ fn an_image_shorter_than_its_dimensions_still_says_so() {
     let bytes = pdf_with_image(100, 100, &[0u8; 10], None);
     let document = Document::open(bytes).expect("open");
     let stream = image_stream(&document);
-    let error = Image::from_stream(&document, &stream).expect_err("short");
+    let error =
+        Image::from_stream(&document, &stream, Some(pdf2::ObjectId::new(4, 0))).expect_err("short");
     assert!(error.to_string().contains("shorter than width"), "{error}");
     assert!(!matches!(error, Error::Limit { .. }), "{error}");
 }

@@ -313,6 +313,21 @@ impl Document {
         filter::decode_chain_with_limit(&data, &chain, self.decode_limit.get())
     }
 
+    /// Fetch a stream's payload with decryption applied and its filters left alone.
+    ///
+    /// A caller that brings its own decoder — the renderer's `/DCTDecode` path —
+    /// needs the bytes the file holds, decrypted if the document is encrypted,
+    /// because [`Document::decode_stream`] would refuse an image filter.
+    pub fn stream_bytes(&self, id: ObjectId) -> Result<Vec<u8>> {
+        let stream = self.stream(id)?;
+        match &self.encryption {
+            // Cross-reference and cleartext metadata streams pass through, as in
+            // `decode_stream`; both rules live in `decrypt_stream`.
+            Some(encryption) => encryption.decrypt_stream(&stream),
+            None => Ok(stream.data().to_vec()),
+        }
+    }
+
     /// Fetch a stream by id and decode its payload in one step.
     pub fn stream_data(&self, id: ObjectId) -> Result<Vec<u8>> {
         let stream = self.stream(id)?;

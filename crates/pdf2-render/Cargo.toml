@@ -10,10 +10,18 @@ readme = "README.md"
 keywords = ["pdf", "pdf2", "render", "raster"]
 categories = ["graphics"]
 
+[features]
+default = ["dct"]
+# `/DCTDecode` (JPEG) images, through `zune-jpeg`: MSRV 1.75, `MIT OR Apache-2.0
+# OR Zlib`, already on `deny.toml`'s allow-list. Off only for a caller that would
+# rather not pay the wasm bytes for an image codec.
+dct = ["dep:zune-jpeg"]
+
 [dependencies]
 miniz_oxide = "0.9"
 pdf2 = { path = "../..", version = "1.2.0" }
 ttf-parser = "0.25.1"
+zune-jpeg = { version = "0.5.15", optional = true }
 
 [lints]
 workspace = true
