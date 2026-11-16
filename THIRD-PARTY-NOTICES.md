@@ -45,3 +45,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 The generated table is a derived work: it contains no Adobe code, only the
 code → text pairs the two resources imply, ranked so that an ordinary ideograph
 wins over a compatibility variant.
+
+## CCITT fax run-length tables
+
+`src/fax.rs` carries the ITU-T T.4/T.6 white and black run-length code tables as
+data. They were transcribed mechanically from [`hayro-ccitt` 0.5.0][hayro]
+(Apache-2.0 OR MIT) rather than typed from memory — the facts are the standard's,
+the transcription is a courtesy. `hayro-ccitt` itself is **not** a dependency: its
+`rust-version` is 1.92, so only the tables travel.
+
+[hayro]: https://crates.io/crates/hayro-ccitt/0.5.0

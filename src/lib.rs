@@ -16,6 +16,7 @@ pub mod crypto;
 pub mod document;
 pub mod encoding;
 pub mod error;
+pub mod fax;
 pub mod filter;
 pub mod lexer;
 pub mod object;

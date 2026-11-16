@@ -36,9 +36,11 @@ impl Image {
             .get(b"BitsPerComponent")
             .and_then(Object::as_integer)
             .unwrap_or(8);
-        if bits != 8 {
+        // One bit per component is how every fax image arrives; the packed rows
+        // are widened to bytes here so the sampler below has one path.
+        if bits != 8 && bits != 1 {
             return Err(Error::malformed(
-                "only 8 bits per component images are rendered",
+                "only 1 and 8 bits per component images are rendered",
             ));
         }
         let interpolate = matches!(dict.get(b"Interpolate"), Some(Object::Boolean(true)));
@@ -64,7 +66,12 @@ impl Image {
         if is_dct(dict) {
             return Self::from_dct(document, stream, id, interpolate);
         }
-        let data = document.decode_stream(stream)?;
+        let decoded = document.decode_stream(stream)?;
+        let data = if bits == 1 {
+            widen_one_bit(&decoded, width, height, per_pixel)?
+        } else {
+            decoded
+        };
         if data.len() < count {
             return Err(Error::Malformed {
                 what: "image data is shorter than width × height × components",
@@ -452,6 +459,36 @@ fn dict_component_count(stream: &Stream) -> Option<usize> {
         Some(Object::Name(name)) if name == b"DeviceRGB" => Some(3),
         _ => None,
     }
+}
+
+/// Widen packed one-bit samples to one byte each, 0 or 255.
+///
+/// PDF pads each row to a byte boundary, so a 1728-pixel fax line occupies 216
+/// bytes; a row shorter than its padding is malformed rather than merely short.
+fn widen_one_bit(data: &[u8], width: u32, height: u32, components: usize) -> Result<Vec<u8>> {
+    if components != 1 {
+        return Err(Error::malformed(
+            "one-bit samples need a single-component colour space",
+        ));
+    }
+    let bits_per_row = usize::try_from(width).unwrap_or(0);
+    let stride = bits_per_row.div_ceil(8);
+    let rows = usize::try_from(height).unwrap_or(0);
+    if data.len() < stride.saturating_mul(rows) {
+        return Err(Error::malformed(
+            "one-bit image data is shorter than its rows",
+        ));
+    }
+    let mut out = Vec::with_capacity(bits_per_row.saturating_mul(rows));
+    for row in 0..rows {
+        for column in 0..bits_per_row {
+            let byte = data[row * stride + column / 8];
+            let shift = 7 - column % 8;
+            let bit = (byte >> shift) & 1;
+            out.push(if bit == 1 { 255 } else { 0 });
+        }
+    }
+    Ok(out)
 }
 
 /// Whether the stream's filter chain ends in `/DCTDecode`.

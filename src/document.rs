@@ -304,12 +304,20 @@ impl Document {
         if let Some(parms) = self.resolve(dict.get(b"DecodeParms"))? {
             resolved.insert(b"DecodeParms", parms);
         }
-        let chain = FilterSpec::from_dict(&resolved)?;
         // Decryption happens before decompression (§7.6.1).
         let data = match &self.encryption {
             Some(encryption) => encryption.decrypt_stream(stream)?,
             None => stream.data().to_vec(),
         };
+        // `/CCITTFaxDecode` is a bitmap decoder rather than a byte filter, so it
+        // is dispatched here — after decryption, before the chain is parsed —
+        // instead of widening the public `Filter` enum with a variant that would
+        // break every exhaustive match downstream.
+        if Self::is_fax_stream(&resolved) {
+            let parms = resolved.get(b"DecodeParms").and_then(Object::as_dict);
+            return filter::fax_decode(&data, parms, self.decode_limit.get());
+        }
+        let chain = FilterSpec::from_dict(&resolved)?;
         filter::decode_chain_with_limit(&data, &chain, self.decode_limit.get())
     }
 
@@ -332,6 +340,18 @@ impl Document {
     pub fn stream_data(&self, id: ObjectId) -> Result<Vec<u8>> {
         let stream = self.stream(id)?;
         self.decode_stream(&stream)
+    }
+
+    /// Whether a resolved stream dictionary names `/CCITTFaxDecode`.
+    fn is_fax_stream(dict: &Dictionary) -> bool {
+        match dict.get(b"Filter") {
+            Some(Object::Name(name)) => name == b"CCITTFaxDecode" || name == b"CCF",
+            Some(Object::Array(items)) => items
+                .first()
+                .and_then(Object::as_name)
+                .is_some_and(|name| name == b"CCITTFaxDecode" || name == b"CCF"),
+            _ => false,
+        }
     }
 
     /// Replace indirect references with the objects they point at.
