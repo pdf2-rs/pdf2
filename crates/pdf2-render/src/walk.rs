@@ -239,6 +239,10 @@ pub fn render_page(
         form_depth: 0,
     };
     walker.run(&content)?;
+    // Annotation appearance streams are drawn after the page content (12.5.5),
+    // and are the reason a page with an empty `/Contents` can still show
+    // something: 25 of the 49 silent-blank sample pages were exactly this.
+    walker.draw_annotations(page)?;
     // A page that ran painting operators and produced an empty raster is not
     // "all operators supported" — it is a page that drew nothing, and a reader
     // deserves to know which. Silent blanks are the worst failure this renderer
@@ -828,6 +832,16 @@ impl Walker<'_> {
     /// says and what most writers rely on. Depth is capped by
     /// [`MAX_FORM_DEPTH`] so a cycle is reported instead of followed.
     fn run_form(&mut self, stream: &pdf2::Stream) -> crate::Result<()> {
+        self.run_form_nested(stream, Matrix::IDENTITY)
+    }
+
+    /// Run a form with `outer` composed after its own `/Matrix`.
+    ///
+    /// An annotation appearance is placed by mapping its transformed `/BBox`
+    /// onto the annotation's `/Rect` (12.5.5): the form's `/Matrix` runs first,
+    /// the placement is a transform of the enclosing user space, so it is
+    /// applied after — `Matrix::multiply` applies its receiver first.
+    fn run_form_nested(&mut self, stream: &pdf2::Stream, outer: Matrix) -> crate::Result<()> {
         if self.form_depth >= MAX_FORM_DEPTH {
             self.report.note(b"Do");
             return Ok(());
@@ -867,7 +881,7 @@ impl Walker<'_> {
         let saved_resources = self.resources.clone();
         let saved_path = core::mem::replace(&mut self.path, Path::new());
 
-        self.state.ctm = matrix.multiply(self.state.ctm);
+        self.state.ctm = matrix.multiply(outer).multiply(self.state.ctm);
         let corners = [
             Point::new(bbox.x0, bbox.y0),
             Point::new(bbox.x1, bbox.y0),
@@ -891,6 +905,127 @@ impl Walker<'_> {
         self.resources = saved_resources;
         self.path = saved_path;
         result
+    }
+
+    /// Draw every annotation that has an appearance stream (12.5.5).
+    ///
+    /// `/Rect` is the area the annotation occupies in page user space;
+    /// `/AP /N` is the normal appearance, either a form stream or a dictionary
+    /// of them keyed by `/AS`. Annotations flagged invisible, hidden or
+    /// no-view are skipped, which is what a viewer does with them.
+    fn draw_annotations(&mut self, page: &Page) -> crate::Result<()> {
+        let Some(id) = page.id else {
+            return Ok(());
+        };
+        let annotations = match self.document.get_object(id)? {
+            Object::Dictionary(dict) => match dict.get(b"Annots") {
+                Some(value) => resolve(self.document, Some(value))?,
+                None => return Ok(()),
+            },
+            _ => return Ok(()),
+        };
+        let Object::Array(annotations) = annotations else {
+            return Ok(());
+        };
+        for annotation in annotations {
+            let annotation = resolve(self.document, Some(&annotation))?;
+            let Object::Dictionary(dict) = annotation else {
+                continue;
+            };
+            if annotation_is_hidden(&dict) {
+                continue;
+            }
+            let Some(rect) = dict.get(b"Rect").and_then(rect_of) else {
+                continue;
+            };
+            if rect.width() <= 0.0 || rect.height() <= 0.0 {
+                continue;
+            }
+            let Some(appearance) = self.normal_appearance(&dict)? else {
+                continue;
+            };
+            let Some(bbox) = appearance.dict().get(b"BBox").and_then(rect_of) else {
+                continue;
+            };
+            let matrix = appearance
+                .dict()
+                .get(b"Matrix")
+                .and_then(Object::as_array)
+                .and_then(matrix_operand)
+                .unwrap_or(Matrix::IDENTITY);
+            // The appearance's box, after its own matrix, is what gets mapped
+            // onto `/Rect`.
+            let corners = [
+                Point::new(bbox.x0, bbox.y0),
+                Point::new(bbox.x1, bbox.y0),
+                Point::new(bbox.x1, bbox.y1),
+                Point::new(bbox.x0, bbox.y1),
+            ]
+            .map(|point| matrix.apply(point));
+            let (min_x, max_x) = corners
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(low, high), point| {
+                    (low.min(point.x), high.max(point.x))
+                });
+            let (min_y, max_y) = corners
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(low, high), point| {
+                    (low.min(point.y), high.max(point.y))
+                });
+            let width = max_x - min_x;
+            let height = max_y - min_y;
+            if width <= 0.0 || height <= 0.0 {
+                continue;
+            }
+            let scale_x = rect.width() / width;
+            let scale_y = rect.height() / height;
+            let place = Matrix::new(
+                scale_x,
+                0.0,
+                0.0,
+                scale_y,
+                rect.x0 - min_x * scale_x,
+                rect.y0 - min_y * scale_y,
+            );
+            self.run_form_nested(&appearance, place)?;
+        }
+        Ok(())
+    }
+
+    /// The annotation's normal appearance: a form stream, or the `/AS` entry of
+    /// a dictionary of them. `None` when there is nothing to draw.
+    fn normal_appearance(&self, dict: &Dictionary) -> crate::Result<Option<pdf2::Stream>> {
+        let Some(ap) = dict.get(b"AP") else {
+            return Ok(None);
+        };
+        let Object::Dictionary(ap) = resolve(self.document, Some(ap))? else {
+            return Ok(None);
+        };
+        let Some(normal) = ap.get(b"N") else {
+            return Ok(None);
+        };
+        let normal = resolve(self.document, Some(normal))?;
+        match normal {
+            Object::Stream(stream) => Ok(Some(stream)),
+            Object::Dictionary(states) => {
+                // `/AS` names the state a viewer shows; without it the first
+                // entry is the only thing to go on.
+                let state = dict
+                    .get(b"AS")
+                    .and_then(Object::as_name)
+                    .and_then(|name| states.get(name))
+                    .cloned()
+                    .or_else(|| states.iter().next().map(|(_, value)| value.clone()));
+                match state {
+                    Some(value) => match resolve(self.document, Some(&value))? {
+                        Object::Stream(stream) => Ok(Some(stream)),
+                        _ => Ok(None),
+                    },
+                    None => Ok(None),
+                }
+            }
+            _ => Ok(None),
+        }
     }
 
     fn load_font(&mut self, name: &[u8]) -> (Option<Font>, Option<SimpleWidths>, Option<CidFont>) {
@@ -1207,6 +1342,16 @@ fn number_of(document: &Document, object: Option<&Object>) -> Option<f64> {
     resolve(document, object)
         .ok()
         .and_then(|object| object.as_real())
+}
+
+/// Whether an annotation's `/F` flags say a viewer hides it (12.5.3, table 165):
+/// invisible (bit 1), hidden (bit 2) and no-view (bit 6).
+fn annotation_is_hidden(dict: &Dictionary) -> bool {
+    let flags = dict
+        .get(b"F")
+        .and_then(Object::as_integer)
+        .unwrap_or_default();
+    flags & 0b100011 != 0
 }
 
 /// A `/BBox` (or any four-number rectangle) as a [`pdf2::Rect`].

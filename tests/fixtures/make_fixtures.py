@@ -1189,6 +1189,67 @@ def make_form_cycle():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("form-cycle.pdf", bytes(writer.out))
 
+
+
+def make_annotations():
+    """A page whose only content is annotation appearance streams.
+
+    This is the shape that made 25 of the 49 silent-blank sample pages blank: an
+    empty `/Contents` and everything visible inside `/Annots → /AP → /N`. Three
+    annotations, each proving one rule of 12.5.5:
+
+    - a square whose appearance has `/BBox [0 0 10 10]` and `/Matrix [2 0 0 2 0 0]`
+      painting a 5 × 5 red square — the transformed box is what maps onto `/Rect`;
+    - a widget whose `/AP /N` is a *dictionary* keyed by `/AS`, with `/On` green
+      and `/Off` grey, so the state selection is visible;
+    - a hidden one (`/F 2`) painting blue where nothing may appear.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Annots [10 0 R 11 0 R 12 0 R] >>",
+    )
+    writer.stream(4, b"", b"")
+    writer.stream(
+        5,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Matrix [2 0 0 2 0 0]",
+        b"1 0 0 rg 0 0 5 5 re f",
+    )
+    writer.stream(
+        6,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 50 50]",
+        b"0 1 0 rg 0 0 50 50 re f",
+    )
+    writer.stream(
+        7,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 50 50]",
+        b"0.5 0.5 0.5 rg 0 0 50 50 re f",
+    )
+    writer.stream(
+        8,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 50 50]",
+        b"0 0 1 rg 0 0 50 50 re f",
+    )
+    writer.obj(9, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    writer.obj(
+        10,
+        b"<< /Type /Annot /Subtype /Square /Rect [50 50 100 100] /F 4 /AP << /N 5 0 R >> >>",
+    )
+    writer.obj(
+        11,
+        b"<< /Type /Annot /Subtype /Widget /Rect [120 50 170 100] /F 4 /AS /On "
+        b"/AP << /N << /On 6 0 R /Off 7 0 R >> >> >>",
+    )
+    writer.obj(
+        12,
+        b"<< /Type /Annot /Subtype /Square /Rect [50 120 100 170] /F 2 /AP << /N 8 0 R >> >>",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("annotations.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1410,3 +1471,4 @@ if __name__ == "__main__":
     make_blank_page()
     make_forms()
     make_form_cycle()
+    make_annotations()
