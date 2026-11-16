@@ -79,3 +79,36 @@ fn an_open_type_cff_font_draws_the_glyph_its_charset_names() {
     );
     assert!(ink(&rendered) > 200, "the glyph is drawn");
 }
+
+/// A **simple** (non-CID) CFF font carries no `cmap`: it selects glyphs by the
+/// charset's names. Before this was read, the page drew its text in the
+/// built-in fallback font and reported `font:FontFile3`, so the report was the
+/// only thing that said the page was wrong — the ink was there either way.
+#[test]
+fn a_simple_cff_font_draws_its_own_glyphs() {
+    let rendered = render("ShowText-ShadingPattern.pdf");
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "the simple CFF font loads and the page needs nothing else: {}",
+        rendered.report
+    );
+    // Row 2 of the page is set in the embedded Arial subset, row 1 in a
+    // standard-14 Helvetica; both lines must have ink, and the shading swatch
+    // gives the page colour.
+    let band = |top: usize, bottom: usize| {
+        let mut painted = 0;
+        for y in top..bottom {
+            for x in 0..rendered.canvas.width() {
+                if rendered.canvas.pixel(x, u32::try_from(y).unwrap())
+                    != Some([255_u8, 255, 255, 255])
+                {
+                    painted += 1;
+                }
+            }
+        }
+        painted
+    };
+    assert!(band(410, 440) > 500, "the Arial row has ink");
+    assert!(band(360, 390) > 500, "the Helvetica row has ink");
+}

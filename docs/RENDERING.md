@@ -107,7 +107,8 @@ real bugs:
 | `/FontFile3` CFF and OpenType programs on a `/Type0` font | **drawn**: the bare CFF is wrapped in the smallest OpenType container and its charset is inverted so a CID finds its glyph (`docs/adr/0003-cff-without-a-dependency.md`) |
 | A TrueType program with no `cmap` table | **not drawn**, reported: `font:TrueType-without-cmap`. The codes cannot be decoded without a map, and guessing glyph ids draws wrong glyphs (`docs/RENDERING-QUALITY.md`) |
 | A page that paints and produces an empty raster | reported: `drew-nothing`, so a blank page that should have had content is visible instead of silent |
-| `/FontFile` (Type 1) and simple-font `/FontFile3` programs | **not parsed**: the bitmap fallback is drawn and `font:FontFile`/`font:FontFile3` is reported |
+| simple-font `/FontFile3` CFF programs | **drawn**: a bare CFF has no `cmap`, so the charset's glyph **names** are the route — each name is read back to a character and a code finds its glyph through the encoding. `ShowText-ShadingPattern.pdf` stopped reporting `font:FontFile3` and set its text in the embedded Arial subset |
+| `/FontFile` (Type 1) programs | **not parsed**: the bitmap fallback is drawn and `font:FontFile` is reported |
 | Text render modes other than fill (`Tr`), vertical writing | not implemented |
 
 The report is the honest part: a page that used a font this renderer cannot draw

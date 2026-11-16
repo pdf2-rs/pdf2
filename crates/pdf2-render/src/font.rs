@@ -66,6 +66,11 @@ pub enum Font {
         /// CID → glyph id from the CFF charset, empty when the font is not
         /// CID-keyed.
         cid_to_gid: Vec<(u16, u16)>,
+        /// A **simple** (non-CID) CFF font selects its glyphs by name: the
+        /// charset names each glyph, and a code reaches one through the
+        /// encoding's character. A bare CFF carries no `cmap`, so this is the
+        /// only route to its outlines.
+        names: std::collections::HashMap<char, u16>,
         /// Parsed answers, shared by clones.
         cache: GlyphCache,
     },
@@ -102,7 +107,13 @@ impl Font {
             data.clone()
         };
         let (charset_at, glyphs) = cff_layout(&table)?;
-        let cid_to_gid = cff_charset(&table, charset_at, glyphs);
+        // A CID-keyed font's Top DICT declares an ROS; without one the charset
+        // holds *names* (SIDs), which is what a simple font selects by.
+        let cid_to_gid = if top_dict_declares_ros(&table) {
+            cff_charset(&table, charset_at, glyphs)
+        } else {
+            Vec::new()
+        };
         let program = if wrapped {
             data
         } else {
@@ -110,11 +121,17 @@ impl Font {
         };
         // Parse once here so a program that cannot be read is rejected at load,
         // not at the first glyph.
-        ttf_parser::Face::parse(&program, 0).ok()?;
+        let face = ttf_parser::Face::parse(&program, 0).ok()?;
+        let names = if cid_to_gid.is_empty() {
+            glyph_names(&face)
+        } else {
+            std::collections::HashMap::new()
+        };
         Some(Self::Cff {
             encoding,
             data: program,
             cid_to_gid,
+            names,
             cache: GlyphCache::default(),
         })
     }
@@ -158,15 +175,31 @@ impl Font {
             Self::Cff {
                 encoding,
                 data,
+                names,
                 cache,
                 ..
             } => {
+                let character = encoding.character(code)?;
                 // A simple (non-CID) CFF font reaches its glyphs through the
                 // charset's names; a CID-keyed one through the CID it is asked
                 // for, which is the composite path.
-                let character = encoding.character(code)?;
-                cached_glyph(data, cache, glyph_id(data, cache, character)?)
+                let id = if names.is_empty() {
+                    glyph_id(data, cache, character)?
+                } else {
+                    ttf_parser::GlyphId(*names.get(&character)?)
+                };
+                cached_glyph(data, cache, id)
             }
+        }
+    }
+
+    /// Whether glyphs are selectable at all — the name map of a simple CFF, a
+    /// `cmap` of a TrueType program.
+    pub fn has_glyph_names(&self) -> bool {
+        match self {
+            Self::Cff { names, .. } => !names.is_empty(),
+            Self::TrueType { has_cmap, .. } => *has_cmap,
+            Self::Builtin { .. } => false,
         }
     }
 
@@ -213,6 +246,24 @@ impl Font {
             }
         }
     }
+}
+
+/// The character each glyph of a simple CFF font is named for.
+///
+/// A name that is not a character name (`/uni20AC` style is handled by the
+/// library's table) simply does not appear, and the code that would have
+/// selected it draws nothing rather than a wrong glyph.
+fn glyph_names(face: &ttf_parser::Face<'_>) -> std::collections::HashMap<char, u16> {
+    let mut map = std::collections::HashMap::new();
+    for id in 0..face.number_of_glyphs() {
+        let Some(name) = face.glyph_name(ttf_parser::GlyphId(id)) else {
+            continue;
+        };
+        if let Some(character) = pdf2::encoding::glyph_name_character(name.as_bytes()) {
+            map.entry(character).or_insert(id);
+        }
+    }
+    map
 }
 
 /// A character's glyph id, memoised: the `cmap` lookup needs a parsed face.
@@ -339,6 +390,22 @@ fn cff_layout(cff: &[u8]) -> Option<(usize, u16)> {
     let (glyphs, _) = cff_index(cff, charstrings_at)?;
     let charset_at = top_dict_operator(top_dict, 15).unwrap_or(0);
     Some((charset_at, u16::try_from(glyphs).ok()?))
+}
+
+/// Whether the Top DICT declares an ROS (registry, ordering, supplement), which
+/// is what makes a CFF font CID-keyed (`9.7.4` of the CFF spec).
+fn top_dict_declares_ros(cff: &[u8]) -> bool {
+    let Some(header_size) = cff.get(2).map(|size| usize::from(*size)) else {
+        return false;
+    };
+    let Some((_, after_name)) = cff_index(cff, header_size) else {
+        return false;
+    };
+    let Some(dict) = cff_index_item(cff, after_name, 0) else {
+        return false;
+    };
+    // Operator 12 30 (ROS): operands, then the two bytes, in that order.
+    dict.windows(2).any(|window| window == [12, 30])
 }
 
 /// The CID → glyph id pairs a CID-keyed CFF charset declares.

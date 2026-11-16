@@ -25,3 +25,10 @@ tests/fixtures/blend-modes.pdf 1
 # invocation ignores both (600x400), so the oracles disagree about the page's
 # size rather than about its pixels. It is proven by arithmetic and its golden;
 # see docs/PROOF.md.
+# ShowText-ShadingPattern.pdf is deliberately absent, measured 2026-11-16: our
+# mean 21.271 against the oracles' 1.400, because half its lines are set in
+# standard-14 Helvetica, which this renderer draws with the built-in bitmap
+# alphabet (it embeds no system fonts) while poppler, mupdf and gs draw a real
+# Helvetica. Rows 2 and 4 — the embedded Arial subset — are what this page proves:
+# the simple-CFF glyph selection and a clean operator report, checked in
+# crates/pdf2-render/tests/cff.rs.
