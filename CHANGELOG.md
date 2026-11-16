@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **`cs`/`scn` select colour spaces, and a shading pattern paints** (`8.6.8`,
+  `8.7.3.3`): the content stream's colour operators now choose a tint space
+  (`/Separation`, `/DeviceN`) or a `/Pattern` space, and an `scn` naming a
+  `/PatternType 2` fills the path with that shading — `ShowText-ShadingPattern.pdf`
+  draws its gradient swatch and reports only its simple-CFF font. Tiling patterns
+  (`/PatternType 1`) are still reported.
 - **`/Separation` and `/DeviceN` colour spaces are read** (`8.6.6.4`,
   `8.6.6.5`): where a shading or an image names one, its tint runs through the
   space's own `/Function` into the alternate space —

@@ -269,6 +269,10 @@ struct State {
     stroke_alpha: f64,
     /// `/BM`: how a painted colour combines with what is already there.
     blend: BlendMode,
+    /// The colour space `cs`/`CS` selected, when it is one this renderer can tint.
+    space: Option<crate::shading::Space>,
+    /// A `/PatternType 2` fill: the shading, when `scn` named one.
+    pattern: Option<std::rc::Rc<crate::shading::Shading>>,
     font: Option<Font>,
     font_size: f64,
     miter_limit: f64,
@@ -299,6 +303,8 @@ impl State {
             fill_alpha: 1.0,
             stroke_alpha: 1.0,
             blend: BlendMode::Normal,
+            space: None,
+            pattern: None,
             font: None,
             font_size: 0.0,
             miter_limit: 10.0,
@@ -623,6 +629,28 @@ impl Walker<'_> {
                     self.draw_image(&name)?;
                 }
             }
+            b"cs" | b"CS" => {
+                if let Some(Object::Name(name)) = operands.first() {
+                    let name = name.clone();
+                    self.select_colour_space(&name)?;
+                }
+            }
+            b"sc" | b"SC" | b"scn" | b"SCN" => {
+                let stroke = operator == b"SC" || operator == b"SCN";
+                // `scn` may name a pattern instead of giving components.
+                if let Some(Object::Name(name)) = operands.first() {
+                    let name = name.clone();
+                    self.select_pattern(&name)?;
+                } else if let Some(space) = self.state.space.clone() {
+                    let values: Vec<f64> = operands.iter().filter_map(Object::as_real).collect();
+                    let colour = crate::shading::color_in(&space, &values);
+                    if stroke {
+                        self.state.stroke = colour;
+                    } else {
+                        self.state.fill = colour;
+                    }
+                }
+            }
             b"sh" => {
                 if let Some(Object::Name(name)) = operands.first() {
                     let name = name.clone();
@@ -648,6 +676,26 @@ impl Walker<'_> {
             Paint::Stroke => false,
         };
         if painted && !polylines.is_empty() {
+            if let Some(pattern) = self.state.pattern.clone() {
+                // A shading pattern paints where the path fills: the path becomes
+                // the clip and the shading the paint (8.7.3.3).
+                let mut mask = self.mask.clone();
+                mask.intersect(&clip_mask(
+                    self.canvas.width(),
+                    self.canvas.height(),
+                    &polylines,
+                    even_odd,
+                ));
+                let to_device = pattern.matrix().multiply(ctm);
+                pattern.with_matrix(to_device).paint_through(
+                    self.canvas,
+                    &mask,
+                    self.state.fill_alpha,
+                    self.state.blend,
+                );
+                self.path = Path::new();
+                return Ok(());
+            }
             fill_polygons(
                 self.canvas,
                 &self.mask,
@@ -1106,6 +1154,60 @@ impl Walker<'_> {
         }
         self.mask.multiply_luminosity(&backdrop);
         Ok(true)
+    }
+
+    /// `cs`/`CS`: select a colour space from the page's `/ColorSpace` resources.
+    ///
+    /// Only the spaces this renderer can tint are kept — a tint space
+    /// (`/Separation`, `/DeviceN`) or a named device space; a `/Pattern` space is
+    /// remembered as "no tint", because the next `scn` names the pattern instead.
+    fn select_colour_space(&mut self, name: &[u8]) -> crate::Result<()> {
+        self.state.pattern = None;
+        let Some(resources) = self.resources.clone() else {
+            return Ok(());
+        };
+        let Some(entry) = resources.get(b"ColorSpace").cloned() else {
+            return Ok(());
+        };
+        let Object::Dictionary(spaces) = resolve(self.document, Some(&entry))? else {
+            return Ok(());
+        };
+        let Some(value) = spaces.get(name).cloned() else {
+            return Ok(());
+        };
+        self.state.space = crate::shading::parse_space(self.document, &value).ok();
+        Ok(())
+    }
+
+    /// `scn` naming a pattern: a `/PatternType 2` becomes the fill's paint.
+    fn select_pattern(&mut self, name: &[u8]) -> crate::Result<()> {
+        let Some(resources) = self.resources.clone() else {
+            return Ok(());
+        };
+        let Some(entry) = resources.get(b"Pattern").cloned() else {
+            return Ok(());
+        };
+        let Object::Dictionary(patterns) = resolve(self.document, Some(&entry))? else {
+            return Ok(());
+        };
+        let Some(pattern) = patterns.get(name).cloned() else {
+            return Ok(());
+        };
+        let Object::Dictionary(dict) = resolve(self.document, Some(&pattern))? else {
+            return Ok(());
+        };
+        // Only shading patterns are paint this renderer has; a tiling pattern
+        // (type 1) would need the pattern's content stream flattened.
+        if dict.get(b"PatternType").and_then(Object::as_integer) != Some(2) {
+            return Ok(());
+        }
+        let Some(shading) = dict.get(b"Shading") else {
+            return Ok(());
+        };
+        if let Ok(shading) = crate::shading::Shading::from_object(self.document, shading) {
+            self.state.pattern = Some(std::rc::Rc::new(shading));
+        }
+        Ok(())
     }
 
     /// `sh`: paint a `/Shading` resource (8.7.4.3).
