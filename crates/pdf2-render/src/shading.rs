@@ -25,11 +25,22 @@ pub(crate) struct Shading {
     kind: Kind,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Space {
     Gray,
     Rgb,
     Cmyk,
+    /// `/Separation` (8.6.6.4): one tint value through its function into the
+    /// alternate space.
+    Separation {
+        alternate: Box<Space>,
+        tint: Function,
+    },
+    /// `/DeviceN` (8.6.6.5): N tint values through one function.
+    DeviceN {
+        alternate: Box<Space>,
+        tint: Function,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -57,16 +68,12 @@ enum Kind {
 impl Shading {
     /// Read a shading dictionary.
     pub(crate) fn parse(document: &Document, dict: &Dictionary) -> Result<Self> {
-        let space = match dict.get(b"ColorSpace").and_then(Object::as_name) {
-            Some(b"DeviceGray") | Some(b"CalGray") => Space::Gray,
-            Some(b"DeviceRGB") | Some(b"CalRGB") => Space::Rgb,
-            Some(b"DeviceCMYK") => Space::Cmyk,
-            _ => {
-                return Err(Error::Unsupported {
-                    what: "a shading colour space other than DeviceGray, DeviceRGB or DeviceCMYK",
-                })
-            }
+        let space_object = match dict.get(b"ColorSpace") {
+            Some(Object::Reference(id)) => document.get_object(*id)?,
+            Some(other) => other.clone(),
+            None => return Err(Error::malformed("a shading without a /ColorSpace")),
         };
+        let space = parse_space(document, &space_object)?;
         let function = parse_function(document, dict.get(b"Function"))?;
         let matrix = dict
             .get(b"Matrix")
@@ -192,12 +199,7 @@ impl Shading {
     }
 
     fn color(&self, values: &[f64]) -> Color {
-        let at = |index: usize| values.get(index).copied().unwrap_or(0.0).clamp(0.0, 1.0);
-        match self.space {
-            Space::Gray => Color::rgb(at(0), at(0), at(0)),
-            Space::Rgb => Color::rgb(at(0), at(1), at(2)),
-            Space::Cmyk => Color::from_cmyk(at(0), at(1), at(2), at(3)),
-        }
+        color_in(&self.space, values)
     }
 }
 
@@ -229,6 +231,67 @@ pub(crate) fn paint(
             };
             canvas.blend_with(x, y, colour, alpha * coverage, mode);
         }
+    }
+}
+
+/// Resolve a colour space object, including the array forms a shading may use.
+fn parse_space(document: &Document, object: &Object) -> Result<Space> {
+    let object = match object {
+        Object::Reference(id) => document.get_object(*id)?,
+        other => other.clone(),
+    };
+    match object {
+        Object::Name(name) => match name.as_slice() {
+            b"DeviceGray" | b"CalGray" => Ok(Space::Gray),
+            b"DeviceRGB" | b"CalRGB" => Ok(Space::Rgb),
+            b"DeviceCMYK" => Ok(Space::Cmyk),
+            _ => Err(Error::Unsupported {
+                what: "a colour space other than Gray, RGB, CMYK, Separation or DeviceN",
+            }),
+        },
+        Object::Array(items) => {
+            let family = items
+                .first()
+                .and_then(Object::as_name)
+                .unwrap_or(b"")
+                .to_vec();
+            // `[/Separation /Spot /DeviceCMYK fn]` and
+            // `[/DeviceN [/A /B] /DeviceCMYK fn]`: the alternate space is the
+            // third entry in both, and the function is the last.
+            let alternate_at = 2;
+            let Some(alternate) = items.get(alternate_at) else {
+                return Err(Error::malformed(
+                    "a colour space array without an alternate",
+                ));
+            };
+            let alternate = Box::new(parse_space(document, alternate)?);
+            let Some(tint_object) = items.last() else {
+                return Err(Error::malformed("a colour space array without a function"));
+            };
+            let tint = Function::parse(document, tint_object)?;
+            match family.as_slice() {
+                b"Separation" => Ok(Space::Separation { alternate, tint }),
+                b"DeviceN" => Ok(Space::DeviceN { alternate, tint }),
+                _ => Err(Error::Unsupported {
+                    what: "an array colour space other than Separation or DeviceN",
+                }),
+            }
+        }
+        _ => Err(Error::malformed(
+            "a colour space that is neither a name nor an array",
+        )),
+    }
+}
+
+/// A colour in `space` from `values` (tints for `/Separation` and `/DeviceN`).
+fn color_in(space: &Space, values: &[f64]) -> Color {
+    let at = |index: usize| values.get(index).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+    match space {
+        Space::Gray => Color::rgb(at(0), at(0), at(0)),
+        Space::Rgb => Color::rgb(at(0), at(1), at(2)),
+        Space::Cmyk => Color::from_cmyk(at(0), at(1), at(2), at(3)),
+        Space::Separation { alternate, tint } => color_in(alternate, &tint.eval(&[at(0)])),
+        Space::DeviceN { alternate, tint } => color_in(alternate, &tint.eval(values)),
     }
 }
 
@@ -293,4 +356,53 @@ fn matrix_operand(items: &[Object]) -> Option<Matrix> {
         value(4),
         value(5),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{color_in, parse_space, Color};
+    use pdf2::{Document, Object};
+
+    fn corpus(name: &str) -> Document {
+        let full = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        let bytes = std::fs::read(format!("{full}/corpus/tier-a/{name}")).expect("corpus");
+        Document::open(bytes).expect("open")
+    }
+
+    #[test]
+    fn a_separation_reaches_its_alternate_space_through_the_tint() {
+        // Object 13 of the corpus page is `[/Separation /Spot /DeviceCMYK fn]`,
+        // whose tint function runs to `[0.1 0.9 0.8 0.05]` at full ink.
+        let document = corpus("function_based_shading_cmyk.pdf");
+        let space = parse_space(&document, &Object::Reference(pdf2::ObjectId::new(13, 0)))
+            .expect("separation space");
+        let none = color_in(&space, &[0.0]).to_bytes();
+        let full = color_in(&space, &[1.0]).to_bytes();
+        assert_eq!(none, [255, 255, 255], "no ink is white");
+        assert_eq!(full, Color::from_cmyk(0.1, 0.9, 0.8, 0.05).to_bytes());
+        let half = color_in(&space, &[0.5]).to_bytes();
+        assert_ne!(half, none);
+        assert_ne!(half, full);
+    }
+
+    #[test]
+    fn a_devicen_space_feeds_its_function_every_tint() {
+        // `[/DeviceN [/A /B] /DeviceCMYK fn]` with one input per colourant.
+        let document = corpus("function_based_shading_cmyk.pdf");
+        let space = parse_space(
+            &document,
+            &Object::Array(vec![
+                Object::name("DeviceN"),
+                Object::Array(vec![Object::name("A"), Object::name("B")]),
+                Object::name("DeviceCMYK"),
+                Object::Reference(pdf2::ObjectId::new(12, 0)),
+            ]),
+        )
+        .expect("devicen space");
+        // Object 12 is `C0 [0 0 0 0] → C1 [0.1 0.9 0.8 0.05]` over one input.
+        assert_eq!(
+            color_in(&space, &[1.0, 0.0]).to_bytes(),
+            Color::from_cmyk(0.1, 0.9, 0.8, 0.05).to_bytes()
+        );
+    }
 }

@@ -1413,6 +1413,43 @@ def make_shading():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("shading.pdf", bytes(writer.out))
 
+
+
+def make_separation():
+    """A `/Separation` colour space with its tint transform (8.6.6.4).
+
+    The tint runs `/Spot` from no ink to full magenta in the alternate CMYK space,
+    so the middle of the gradient is half ink — checkable arithmetic rather than a
+    colour that "looks about right".
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /Shading << /S1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", b"/S1 sh")
+    writer.obj(
+        5,
+        b"<< /ShadingType 2 /ColorSpace 6 0 R /Coords [0 0 200 0] "
+        b"/Function 7 0 R /Extend [true true] >>",
+    )
+    writer.obj(6, b"[/Separation /Spot /DeviceCMYK 8 0 R]")
+    # A Separation shading's function returns the *tint*, one value: the colour
+    # space's own function turns that into the alternate space's components.
+    writer.obj(
+        7,
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] /N 1 >>",
+    )
+    writer.obj(
+        8,
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 1 1 0] /N 1 >>",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("separation.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1639,3 +1676,4 @@ if __name__ == "__main__":
     make_soft_mask()
     make_blend_modes()
     make_shading()
+    make_separation()
