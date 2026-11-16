@@ -66,6 +66,10 @@ pub fn decode(data: &[u8], params: &Params, limit: usize) -> Result<Vec<u8>> {
     }
     let mut out: Vec<u8> = Vec::new();
     let mut row: Vec<u8> = vec![0; stride];
+    // Lines are decoded as per-pixel colours and packed afterwards, so that
+    // `/BlackIs1` decides what a bit means only when the bits are written out.
+    let columns = usize::try_from(params.columns).unwrap_or(0);
+    let mut line: Vec<bool> = vec![false; columns];
     let mut lines = 0u32;
     loop {
         if params.rows > 0 && lines >= params.rows {
@@ -83,12 +87,19 @@ pub fn decode(data: &[u8], params: &Params, limit: usize) -> Result<Vec<u8>> {
             }
         }
         if params.k != 0 {
+            // Two-dimensional lines are not decoded yet. An attempt produced
+            // plausible-but-wrong lines — a box border with its text missing —
+            // which is worse than a refusal, so the next round re-implements it
+            // against the changing-element model in T.4 §4.2.1.2 with its own
+            // tests rather than inheriting a half-checked one.
             return Err(Error::Unsupported {
                 what: "two-dimensional CCITT fax lines (only /K 0 is decoded)",
             });
         }
         row.iter_mut().for_each(|byte| *byte = 0);
-        decode_line(&mut reader, &mut row, params)?;
+        line.iter_mut().for_each(|pixel| *pixel = false);
+        decode_line(&mut reader, &mut line, params)?;
+        pack_line(&line, &mut row, params.black_is_1);
         out.extend_from_slice(&row);
         if out.len() > limit {
             return Err(Error::Limit {
@@ -111,7 +122,7 @@ pub fn decode(data: &[u8], params: &Params, limit: usize) -> Result<Vec<u8>> {
 }
 
 /// One one-dimensional line: alternating runs until `/Columns` is filled.
-fn decode_line(reader: &mut BitReader<'_>, row: &mut [u8], params: &Params) -> Result<()> {
+fn decode_line(reader: &mut BitReader<'_>, line: &mut [bool], params: &Params) -> Result<()> {
     let columns = params.columns;
     let mut position = 0u32;
     let mut black = false;
@@ -121,20 +132,36 @@ fn decode_line(reader: &mut BitReader<'_>, row: &mut [u8], params: &Params) -> R
             None => return Ok(()),
         };
         let run = run.min(columns - position);
-        for offset in 0..run {
-            let bit = !black;
-            // PDF writes 1 for white and 0 for black unless `/BlackIs1`.
-            let value = if params.black_is_1 { !bit } else { bit };
-            let index = usize::try_from((position + offset) / 8).unwrap_or(0);
-            let shift = 7 - (position + offset) % 8;
-            if value {
-                row[index] |= 1 << shift;
-            }
-        }
+        paint(line, i64::from(position), i64::from(position + run), black);
         position += run;
         black = !black;
     }
     Ok(())
+}
+
+/// The colour of `[from, to)` in `line`, for a black run when `black`.
+fn paint(line: &mut [bool], from: i64, to: i64, black: bool) {
+    let from = from.max(0);
+    let to = to.min(line.len() as i64);
+    for x in from..to {
+        if let Some(slot) = line.get_mut(usize::try_from(x).unwrap_or(0)) {
+            *slot = black;
+        }
+    }
+}
+
+/// Write one decoded line into packed bytes: 1 for white and 0 for black unless
+/// `/BlackIs1` says otherwise (7.4.6).
+fn pack_line(line: &[bool], row: &mut [u8], black_is_1: bool) {
+    for (index, black) in line.iter().enumerate() {
+        let bit = if black_is_1 { *black } else { !*black };
+        if bit {
+            let byte = index / 8;
+            if let Some(slot) = row.get_mut(byte) {
+                *slot |= 1 << (7 - index % 8);
+            }
+        }
+    }
 }
 
 /// A run length: one or more make-up codes followed by one terminating code.
