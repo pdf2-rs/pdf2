@@ -100,8 +100,29 @@ Three things follow, and they change the plan:
    blend-modes) are at or near zero distance, so the new features match the
    engines rather than merely drawing something.
 
-Rank 10g still owns the AA itself; this section now owns the yardstick it will be
-judged by.
+**Anti-aliasing landed on 2026-11-16 and the same measurement says what it
+bought** — four sub-scanlines per row with exact horizontal coverage, blended once
+per pixel:
+
+| Case | 1×1 before | 1×1 after | spread |
+| --- | --- | --- | --- |
+| `book#1` over / mean | 0.0381 / 3.68 | **0.0274 / 2.58** | 0.0422 / 5.02 |
+| `calibration#2` over / mean | 0.0009 / 0.089 | **0.0001 / 0.048** | 0.0046 / 0.96 |
+| `annotations#1` | 0.0625 / 10.63 | 0.0625 / 10.63 | 0.0625 / 10.63 |
+| everything else | 0 | 0 | 0 |
+
+At the gate's 4×4, `book#1` went from 0.0081 / 1.81 to **0.0005 / 1.01**.
+
+The unchanging `annotations#1` row is the evidence for finding 2: an
+anti-aliasing change does nothing to it, so its distance is something else —
+still most likely the default annotation border.
+
+**The 1×1 comparison is now a gate, not a report** (`corpus/aa-ceilings.tsv`):
+per-case mean ceilings sit between the two measurements, so `book#1` at 3.2 passes
+with AA (2.58) and fails without it (3.68). The CI `oracle` job runs that step
+after the 4×4 comparison. Only the cases where curves and glyph edges decide the
+image are listed; the flat fixtures are already at zero, and `annotations#1` is
+excluded for the reason above rather than to make the gate green.
 
 ## Speed: two hot spots, one of them unexpected
 

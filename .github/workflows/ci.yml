@@ -250,6 +250,16 @@ jobs:
             --tolerances corpus/tolerances.tsv \
             --budget corpus/render-budget.tsv
 
+      # The 4x4 comparison above cannot see anti-aliasing; at 1x1 it can, and
+      # the ceilings in corpus/aa-ceilings.tsv are what make its absence a
+      # failure rather than a note (docs/RENDERING-QUALITY.md).
+      - name: Anti-aliasing, at full resolution
+        run: |
+          ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt \
+            --blocks 1 --tolerances corpus/tolerances.tsv \
+            --aa-ceilings corpus/aa-ceilings.tsv \
+            --budget corpus/render-budget.tsv
+
   deny:
     name: Licences and advisories
     runs-on: ubuntu-latest
