@@ -136,7 +136,21 @@ struct LoadedFont {
     font: Option<Font>,
     widths: Option<SimpleWidths>,
     cid: Option<CidFont>,
+    type3: Option<Type3Font>,
     note: Option<&'static str>,
+}
+
+/// A Type 3 font: each glyph is a content stream, not an outline (9.6.5).
+#[derive(Debug, Clone)]
+struct Type3Font {
+    /// `/CharProcs`: glyph name → content stream.
+    char_procs: pdf2::Dictionary,
+    /// Code → glyph name, from `/Encoding`'s `/Differences` (12.5.5, 9.6.6.1).
+    names: Vec<Option<Vec<u8>>>,
+    /// `/FontMatrix`: glyph space to text space, default `0.001` scale.
+    font_matrix: Matrix,
+    /// The font's own `/Resources`, which its char procedures paint with.
+    resources: Option<pdf2::Dictionary>,
 }
 
 /// A composite (Type 0) font: two-byte codes, CIDs mapped to glyph ids through
@@ -278,6 +292,7 @@ struct State {
     miter_limit: f64,
     widths: Option<SimpleWidths>,
     cid: Option<CidFont>,
+    type3: Option<Type3Font>,
     char_spacing: f64,
     word_spacing: f64,
     horizontal_scale: f64,
@@ -310,6 +325,7 @@ impl State {
             miter_limit: 10.0,
             widths: None,
             cid: None,
+            type3: None,
             char_spacing: 0.0,
             word_spacing: 0.0,
             horizontal_scale: 1.0,
@@ -525,6 +541,11 @@ impl Walker<'_> {
                     number(operands, 3),
                 );
             }
+            // `d0`/`d1` declare a Type 3 glyph's width (and, for `d1`, its bbox)
+            // in glyph space, which is what a Type 1 charstring's `setcachedevice`
+            // does. The width a page advances by comes from `/Widths`, so these
+            // are read and not acted on (9.6.5.2).
+            b"d0" | b"d1" => {}
             b"BT" => {
                 self.state.text_matrix = Matrix::IDENTITY;
                 self.state.line_matrix = Matrix::IDENTITY;
@@ -536,10 +557,11 @@ impl Walker<'_> {
                     _ => return Err(crate::Error::malformed("/Tf needs a font name")),
                 };
                 self.state.font_size = number(operands, 1);
-                let (font, widths, cid) = self.load_font(&name);
+                let (font, widths, cid, type3) = self.load_font(&name);
                 self.state.font = font;
                 self.state.widths = widths;
                 self.state.cid = cid;
+                self.state.type3 = type3;
             }
             b"Td" | b"TD" => {
                 let tx = number(operands, 0);
@@ -749,6 +771,22 @@ impl Walker<'_> {
                     self.place_glyph(&glyph);
                 }
                 let advance = cid.advance(code) * self.state.font_size + self.state.char_spacing;
+                self.advance_text(advance * self.state.horizontal_scale);
+            }
+            return Ok(());
+        }
+        if let Some(type3) = self.state.type3.clone() {
+            for &code in bytes {
+                self.run_type3_glyph(&type3, code)?;
+                let em = self
+                    .state
+                    .widths
+                    .as_ref()
+                    .map_or(0.0, |widths| widths.advance(code));
+                let mut advance = em * self.state.font_size + self.state.char_spacing;
+                if code == b' ' {
+                    advance += self.state.word_spacing;
+                }
                 self.advance_text(advance * self.state.horizontal_scale);
             }
             return Ok(());
@@ -1375,14 +1413,23 @@ impl Walker<'_> {
         }
     }
 
-    fn load_font(&mut self, name: &[u8]) -> (Option<Font>, Option<SimpleWidths>, Option<CidFont>) {
+    #[allow(clippy::type_complexity)]
+    fn load_font(
+        &mut self,
+        name: &[u8],
+    ) -> (
+        Option<Font>,
+        Option<SimpleWidths>,
+        Option<CidFont>,
+        Option<Type3Font>,
+    ) {
         let Some(loaded) = self.font_entry(name) else {
-            return (None, None, None);
+            return (None, None, None, None);
         };
         if let Some(note) = loaded.note {
             self.report.note(note.as_bytes());
         }
-        (loaded.font, loaded.widths, loaded.cid)
+        (loaded.font, loaded.widths, loaded.cid, loaded.type3)
     }
 
     /// Everything the walker needs from a font resource, with a note when the
@@ -1404,12 +1451,7 @@ impl Walker<'_> {
         };
         match subtype.as_slice() {
             b"Type0" => return Some(self.cid_entry(&font)),
-            b"Type3" => {
-                return Some(LoadedFont {
-                    note: Some("font:Type3"),
-                    ..LoadedFont::default()
-                })
-            }
+            b"Type3" => return Some(self.type3_entry(&font)),
             _ => {}
         }
         let encoding = self.encoding_for(&font);
@@ -1434,6 +1476,7 @@ impl Walker<'_> {
                                 font: Some(font),
                                 widths,
                                 cid: None,
+                                type3: None,
                                 note: None,
                             });
                         }
@@ -1448,6 +1491,7 @@ impl Walker<'_> {
                             font: Some(Font::builtin(encoding)),
                             widths,
                             cid: None,
+                            type3: None,
                             note: Some(kind),
                         });
                     }
@@ -1471,6 +1515,7 @@ impl Walker<'_> {
                                 font: Some(font),
                                 widths,
                                 cid: None,
+                                type3: None,
                                 note,
                             });
                         }
@@ -1482,12 +1527,167 @@ impl Walker<'_> {
             font: Some(Font::builtin(encoding)),
             widths,
             cid: None,
+            type3: None,
             note: None,
         })
     }
 
     /// A Type 0 font: a descendant CIDFontType2 with an embedded program and an
     /// identity CMap is drawable; anything else is reported by reason.
+    /// A Type 3 font: a `/CharProcs` dictionary of content streams, selected by
+    /// the glyph names its `/Encoding` declares (9.6.5).
+    ///
+    /// Without `/Differences` there are no names to select by, and the note says
+    /// so rather than drawing nothing.
+    fn type3_entry(&mut self, font: &Dictionary) -> LoadedFont {
+        let char_procs = match resolve(self.document, font.get(b"CharProcs")) {
+            Ok(Object::Dictionary(procs)) => procs,
+            _ => {
+                return LoadedFont {
+                    note: Some("font:Type3"),
+                    ..LoadedFont::default()
+                }
+            }
+        };
+        let Some(names) = self.type3_names(font) else {
+            return LoadedFont {
+                note: Some("font:Type3"),
+                ..LoadedFont::default()
+            };
+        };
+        let font_matrix = font
+            .get(b"FontMatrix")
+            .and_then(Object::as_array)
+            .and_then(matrix_operand)
+            .unwrap_or(Matrix::new(0.001, 0.0, 0.0, 0.001, 0.0, 0.0));
+        let resources = match resolve(self.document, font.get(b"Resources")) {
+            Ok(Object::Dictionary(resources)) => Some(resources),
+            _ => self.resources.clone(),
+        };
+        let widths = self.widths_for(font);
+        LoadedFont {
+            type3: Some(Type3Font {
+                char_procs,
+                names,
+                font_matrix,
+                resources,
+            }),
+            widths,
+            ..LoadedFont::default()
+        }
+    }
+
+    /// Code → glyph name from `/Encoding`'s `/Differences`, 256 entries.
+    fn type3_names(&mut self, font: &Dictionary) -> Option<Vec<Option<Vec<u8>>>> {
+        let Ok(encoding) = resolve(self.document, font.get(b"Encoding")) else {
+            return None;
+        };
+        let Object::Dictionary(encoding) = encoding else {
+            // A named base encoding alone gives no glyph names this renderer has.
+            return None;
+        };
+        let Ok(Object::Array(differences)) = resolve(self.document, encoding.get(b"Differences"))
+        else {
+            return None;
+        };
+        let mut names = vec![None; 256];
+        let mut code: Option<usize> = None;
+        for entry in &differences {
+            match entry {
+                Object::Integer(value) => {
+                    code = usize::try_from(*value).ok().filter(|value| *value < 256);
+                }
+                Object::Name(name) => {
+                    if let Some(slot) = code.and_then(|at| names.get_mut(at)) {
+                        *slot = Some(name.clone());
+                    }
+                    code = code.and_then(|at| at.checked_add(1)).filter(|at| *at < 256);
+                }
+                _ => {}
+            }
+        }
+        Some(names)
+    }
+
+    /// Run one Type 3 glyph's content stream in glyph space (9.6.5).
+    ///
+    /// The char procedure paints in glyph space, so it is placed by
+    /// `/FontMatrix`, then the text rendering matrix — which is why the font
+    /// matrix is the *first* factor. The glyph's own state is isolated: colour,
+    /// width and clip a char procedure sets belong to that glyph.
+    fn run_type3_glyph(&mut self, type3: &Type3Font, code: u8) -> crate::Result<()> {
+        let Some(name) = type3.names.get(usize::from(code)).and_then(Option::as_ref) else {
+            return Ok(());
+        };
+        // A char procedure with no glyph name in `/CharProcs` draws nothing.
+        let Some(entry) = type3.char_procs.get(name).cloned() else {
+            return Ok(());
+        };
+        let Object::Reference(id) = entry else {
+            return Ok(());
+        };
+        let Ok(stream) = self.document.get_object(id) else {
+            return Ok(());
+        };
+        let Object::Stream(stream) = stream else {
+            return Ok(());
+        };
+        let content = match self.document.decode_stream(&stream) {
+            Ok(content) => content,
+            Err(_) => {
+                self.report.note(b"Tj");
+                return Ok(());
+            }
+        };
+        if self.form_depth >= MAX_FORM_DEPTH {
+            // `ContentStreamCycleType3insideType3.pdf` is exactly this: a glyph
+            // whose procedure shows more text in the same font.
+            self.report.note(b"Tj");
+            return Ok(());
+        }
+        // Text rendering mode 3 and 7 paint nothing (9.3).
+        if matches!(self.state.text_mode, 3 | 7) {
+            return Ok(());
+        }
+
+        let scale = Matrix::new(
+            self.state.font_size * self.state.horizontal_scale,
+            0.0,
+            0.0,
+            self.state.font_size,
+            0.0,
+            self.state.rise,
+        );
+        let glyph_ctm = type3
+            .font_matrix
+            .multiply(scale)
+            .multiply(self.state.text_matrix)
+            .multiply(self.state.ctm);
+
+        let saved_state = self.state.clone();
+        let saved_mask = self.mask.clone();
+        let saved_resources = self.resources.clone();
+        let saved_path = core::mem::replace(&mut self.path, Path::new());
+
+        self.state.ctm = glyph_ctm;
+        // The procedure's own text runs in *its* scope, not in this font's:
+        // `d0`/`d1` and any `Tf` inside belong to the glyph.
+        self.state.font = None;
+        self.state.type3 = None;
+        self.state.cid = None;
+        self.state.widths = None;
+        self.resources = type3.resources.clone();
+        self.form_depth += 1;
+        let result = self.run(&content);
+        self.form_depth -= 1;
+
+        self.state = saved_state;
+        self.mask = saved_mask;
+        self.resources = saved_resources;
+        self.path = saved_path;
+        result
+    }
+
     fn cid_entry(&mut self, font: &Dictionary) -> LoadedFont {
         let identity = matches!(
             resolve(self.document, font.get(b"Encoding")).ok(),
@@ -1579,6 +1779,7 @@ impl Walker<'_> {
                 to_gid,
                 widths: self.cid_widths(&descendant),
             }),
+            type3: None,
             note: None,
         }
     }

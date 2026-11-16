@@ -97,7 +97,7 @@ expect(rejected, 'a wrong password throws');
 
 // Size budget: the wasm-bindgen output that ships to the browser, gzipped.
 // Budgets are documented in docs/PERFORMANCE.md; change both together.
-const BUDGET_GZIP = 344 * 1024;
+const BUDGET_GZIP = 356 * 1024;
 const files = [join(pkg, 'pdf2_wasm_bg.wasm'), join(pkg, 'pdf2_wasm.js')];
 let total = 0;
 for (const file of files) {

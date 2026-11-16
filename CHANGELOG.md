@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Type 3 fonts draw** (`9.6.5`): a Type 3 glyph is a content stream, and each
+  now runs in glyph space — `/FontMatrix` first, then the text rendering matrix —
+  with the font's own `/Resources`; codes reach glyph names through `/Encoding`'s
+  `/Differences`, `d0`/`d1` are read, and the advance comes from `/Widths`. A
+  glyph that shows text in its own font stops at the form depth cap instead of
+  recursing. `Type3WordSpacing.pdf` and `ContentStreamCycleType3insideType3.pdf`
+  draw and report every operator supported.
 - **Simple-font CFF programs draw** (`9.9`, `/FontFile3` with `/Subtype /Type1C`):
   a bare CFF has no `cmap`, so its charset's glyph **names** are the route — the
   Top DICT's ROS says whether the charset holds CIDs or names, and a name comes
