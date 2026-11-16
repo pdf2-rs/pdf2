@@ -699,8 +699,16 @@ async function main() {
     clearTimeout(watchdog);
     cdp.close();
     chrome.kill('SIGKILL');
+    // Chrome's child processes outlive the parent for a moment and keep writing
+    // into the profile directory, so removing it straight away fails with
+    // ENOTEMPTY on a busy runner — which used to mark a passing run as failed.
+    await new Promise((done) => {
+      if (chrome.exitCode !== null) return done();
+      chrome.once('exit', done);
+      setTimeout(done, 2000);
+    });
     server?.close();
-    await rm(profile, { recursive: true, force: true });
+    await removeProfile(profile);
   }
 
   if (failures.length > 0) {
@@ -712,6 +720,22 @@ async function main() {
   } else {
     console.log('\ndemo: all interaction checks passed');
   }
+}
+
+/// Remove the throwaway browser profile, tolerating a directory a child process
+/// is still emptying. A temp directory left behind is the operating system's
+/// problem, not the run's: the checks are what the exit code reports.
+async function removeProfile(profile) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      await rm(profile, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!['ENOTEMPTY', 'EBUSY', 'ENOENT'].includes(error.code)) throw error;
+      await new Promise((done) => setTimeout(done, 100 * (attempt + 1)));
+    }
+  }
+  console.warn(`warning: could not remove ${profile}; leaving it to the system`);
 }
 
 main().catch((error) => {
