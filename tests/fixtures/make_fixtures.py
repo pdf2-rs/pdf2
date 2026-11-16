@@ -1250,6 +1250,37 @@ def make_annotations():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("annotations.pdf", bytes(writer.out))
 
+
+
+def make_alpha():
+    """`/ExtGState` constant alpha, with known arithmetic.
+
+    50 % red over white is (255, 128, 128) — the canvas blends
+    `source·alpha + destination·(1-alpha)`, so the number is checkable rather than
+    "looks pinker". Three states: fill alpha, stroke alpha, and one that only
+    sets a dash and a line width.
+    """
+    content = (
+        b"q /GSFill gs 1 0 0 rg 20 20 60 60 re f Q\n"
+        b"q 1 0 0 rg 120 20 60 60 re f Q\n"
+        b"q /GSStroke gs 0 0 1 RG 4 w 20 120 m 180 120 l S Q\n"
+        b"q /GSDash gs 0 0 0 RG 6 w 20 160 m 180 160 l S Q\n"
+    )
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /ExtGState << /GSFill 5 0 R /GSStroke 6 0 R /GSDash 7 0 R >> >> >>",
+    )
+    writer.stream(4, b"", content)
+    writer.obj(5, b"<< /Type /ExtGState /ca 0.5 /CA 1 /BM /Normal >>")
+    writer.obj(6, b"<< /Type /ExtGState /ca 1 /CA 0.5 >>")
+    writer.obj(7, b"<< /Type /ExtGState /LW 6 /LC 0 /LJ 1 /ML 4 /D [[12 12] 0] >>")
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("alpha.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1472,3 +1503,4 @@ if __name__ == "__main__":
     make_forms()
     make_form_cycle()
     make_annotations()
+    make_alpha()

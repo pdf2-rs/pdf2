@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Constant alpha and the line state come from `/ExtGState`** (`8.4.5`):
+  `/ca` and `/CA` now reach fills, strokes, text and images (the canvas already
+  blended with an alpha, so this was wiring plus the state plumbing), `/BM
+  /Normal` is accepted, and `/LW`, `/LC`, `/LJ`, `/ML` and `/D` are read from the
+  dictionary. All of it travels with `q`/`Q`. A state that carries a `/SMask` or
+  a non-normal `/BM` keeps its `gs` note — half-applying a soft mask would look
+  correct and not be.
 - **Annotation appearance streams draw** (`12.5.5`): a page whose `/Contents` is
   empty and whose visible content is `/Annots → /AP → /N` now renders — the
   appearance is placed by mapping its transformed `/BBox` onto the annotation's
