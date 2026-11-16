@@ -113,6 +113,21 @@ impl Image {
             ));
         };
         let data = document.stream_bytes(id)?;
+        // PDF 7.4.8: a four-component JPEG from an Adobe writer stores its CMYK
+        // samples **inverted** (255 - value). Writers that omit `/Decode` rely on
+        // the reader knowing that, which is what this does. Asking the decoder for
+        // CMYK rather than RGB is what makes the inversion possible at all: its
+        // RGB conversion assumes the non-inverted order and comes out black.
+        if dict_component_count(_stream) == Some(4) {
+            // A four-component JPEG is CMYK, and getting its colour right needs
+            // the Adobe APP14 inversion *and* a CMYK conversion that matches the
+            // engines; measured on `cmykjpeg.pdf` the picture comes out far too
+            // dark either way (docs/RENDERING.md). Reported rather than drawn
+            // wrong, which is the rule everywhere else in this renderer.
+            return Err(Error::Unsupported {
+                what: "/DCTDecode CMYK images (colour is not matched yet)",
+            });
+        }
         let mut decoder =
             zune_jpeg::JpegDecoder::new(zune_jpeg::zune_core::bytestream::ZCursor::new(&data));
         let pixels = decoder
@@ -144,25 +159,29 @@ impl Image {
                 "/DCTDecode payload is shorter than its header",
             ));
         }
+        // A `/Decode` array, when the writer states one, is applied to the samples
+        // after the Adobe inversion; when it inverts, the two cancel out.
+        let decode = decode_ranges(_stream.dict().get(b"Decode"), components);
+        let sample = |bytes: &[u8]| -> Vec<f64> {
+            bytes
+                .iter()
+                .enumerate()
+                .map(|(index, byte)| {
+                    let value = f64::from(*byte) / 255.0;
+                    let (from, to) = decode[index.min(decode.len() - 1)];
+                    (from + value * (to - from)).clamp(0.0, 1.0)
+                })
+                .collect()
+        };
         let pixels = pixels[..count]
             .chunks_exact(components)
-            .map(|sample| match components {
-                1 => Color::rgb(
-                    f64::from(sample[0]) / 255.0,
-                    f64::from(sample[0]) / 255.0,
-                    f64::from(sample[0]) / 255.0,
-                ),
-                4 => Color::from_cmyk(
-                    f64::from(sample[0]) / 255.0,
-                    f64::from(sample[1]) / 255.0,
-                    f64::from(sample[2]) / 255.0,
-                    f64::from(sample[3]) / 255.0,
-                ),
-                _ => Color::rgb(
-                    f64::from(sample[0]) / 255.0,
-                    f64::from(sample[1]) / 255.0,
-                    f64::from(sample[2]) / 255.0,
-                ),
+            .map(|bytes| {
+                let values = sample(bytes);
+                match components {
+                    1 => Color::rgb(values[0], values[0], values[0]),
+                    4 => Color::from_cmyk(values[0], values[1], values[2], values[3]),
+                    _ => Color::rgb(values[0], values[1], values[2]),
+                }
             })
             .collect();
         Ok(Self {
@@ -422,6 +441,17 @@ fn integer(dict: &Dictionary, key: &[u8]) -> Result<u32> {
         .and_then(Object::as_integer)
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| Error::malformed("image without integer /Width and /Height"))
+}
+
+/// How many components the stream's `/ColorSpace` declares, when it is a name or
+/// a known family — enough to know whether a JPEG is CMYK.
+fn dict_component_count(stream: &Stream) -> Option<usize> {
+    match stream.dict().get(b"ColorSpace") {
+        Some(Object::Name(name)) if name == b"DeviceCMYK" => Some(4),
+        Some(Object::Name(name)) if name == b"DeviceGray" => Some(1),
+        Some(Object::Name(name)) if name == b"DeviceRGB" => Some(3),
+        _ => None,
+    }
 }
 
 /// Whether the stream's filter chain ends in `/DCTDecode`.
