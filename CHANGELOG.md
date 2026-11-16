@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Decoded streams are bounded** (`7.4`, `7.6.1`): every stream decodes under a
+  256 MiB budget (`filter::DEFAULT_DECODE_LIMIT`), settable per document with
+  `Document::set_decoded_limit`, and a stream that would pass it fails with the
+  new `Error::Limit` instead of allocating. Flate is capped *while* inflating, so
+  the refusal costs no more memory than the budget itself. Measured before the
+  change: a 1 043 364-byte file expanded to 1 073 741 824 bytes in 0.43 s — a
+  decompression bomb that a browser tab or a server parsing uploads cannot
+  survive. The default matches mupdf's `FZ_STORE_DEFAULT` (256 MiB); the budget
+  is a new behaviour, which is why this is a patch release and not a silent fix.
+
 Renderer work from [`docs/RENDERING-QUALITY.md`](docs/RENDERING-QUALITY.md), the
 first three items of a measured plan:
 

@@ -45,6 +45,17 @@ pub enum Error {
         text: String,
     },
 
+    /// A decoded stream grew past the document's decoded-bytes budget.
+    ///
+    /// `what` names the stage that hit it (`"a Flate stream"`, `"the
+    /// unfiltered stream"`) and `limit` is the budget in bytes.
+    Limit {
+        /// The filter stage that exceeded the budget.
+        what: &'static str,
+        /// The budget, in bytes.
+        limit: usize,
+    },
+
     /// The input is structurally wrong in a way particular to `what`.
     ///
     /// `offset` is where the problem was noticed, if it is known.
@@ -103,6 +114,10 @@ impl fmt::Display for Error {
                 offset: Some(offset),
             } => write!(f, "malformed {what} at offset {offset}"),
             Self::Malformed { what, offset: None } => write!(f, "malformed {what}"),
+            Self::Limit { what, limit } => write!(
+                f,
+                "{what} would decode past the {limit}-byte decoded-stream budget"
+            ),
             Self::Unsupported { what } => write!(f, "unsupported: {what}"),
             Self::Io { message } => write!(f, "i/o error: {message}"),
         }

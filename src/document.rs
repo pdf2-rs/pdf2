@@ -65,6 +65,8 @@ pub struct Document {
     /// The number of the `/Encrypt` dictionary, which is never decrypted.
     encrypt_number: Option<u32>,
     depth: Cell<usize>,
+    /// The decoded-bytes budget every stream is held to.
+    decode_limit: Cell<usize>,
 }
 
 impl Document {
@@ -105,6 +107,7 @@ impl Document {
             encryption: None,
             encrypt_number: None,
             depth: Cell::new(0),
+            decode_limit: Cell::new(filter::DEFAULT_DECODE_LIMIT),
         };
         if let Some(encrypt) = document.trailer.get(b"Encrypt").cloned() {
             // The `/Encrypt` dictionary is plain even in an encrypted file, so
@@ -268,6 +271,25 @@ impl Document {
         }
     }
 
+    /// The decoded-bytes budget: the most any one stream may decode to.
+    ///
+    /// Defaults to [`filter::DEFAULT_DECODE_LIMIT`] (256 MiB). A stream that
+    /// would decode past it fails with [`crate::Error::Limit`] instead of
+    /// allocating: without the cap a 1 MiB file can expand to a gigabyte, which
+    /// is a denial of service rather than a rendering failure.
+    pub fn decoded_limit(&self) -> usize {
+        self.decode_limit.get()
+    }
+
+    /// Set the decoded-bytes budget, in bytes; `usize::MAX` lifts it.
+    ///
+    /// Lower it when the caller knows its own ceiling (a browser tab, a
+    /// server-side preview), or raise it for a document whose images legitimately
+    /// decode to more than the default.
+    pub fn set_decoded_limit(&self, bytes: usize) {
+        self.decode_limit.set(bytes);
+    }
+
     /// Decode a stream's payload through its filter chain.
     ///
     /// Indirect `/Filter` and `/DecodeParms` entries are resolved through the
@@ -288,7 +310,7 @@ impl Document {
             Some(encryption) => encryption.decrypt_stream(stream)?,
             None => stream.data().to_vec(),
         };
-        filter::decode_chain(&data, &chain)
+        filter::decode_chain_with_limit(&data, &chain, self.decode_limit.get())
     }
 
     /// Fetch a stream by id and decode its payload in one step.
