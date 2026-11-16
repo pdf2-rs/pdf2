@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+### Rendering
+
+- **CMYK JPEG images draw** (`7.4.8`): a four-component `/DCTDecode` image is
+  decoded as CMYK (its RGB path assumes uninverted samples and comes out black),
+  the Adobe APP14 inversion is undone — unless the writer stated it as `/Decode`,
+  which is the same statement and must not be applied twice — and the samples
+  become RGB by the multiplicative rule. `cmykjpeg.pdf`'s photograph draws instead
+  of being reported, and `tests/fixtures/cmyk-jpeg.pdf` pins four ink quadrants
+  (white, cyan, red, black) to ±8 of the arithmetic. Against an independent
+  decoder (Pillow) the page matches to **8 mean absolute units** on all three
+  channels.
+
 ### Documentation
 
 - **`docs/DEFERRED.md`**: one page for everything deliberately not done yet — the

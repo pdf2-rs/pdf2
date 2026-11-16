@@ -121,22 +121,19 @@ impl Image {
         };
         let data = document.stream_bytes(id)?;
         // PDF 7.4.8: a four-component JPEG from an Adobe writer stores its CMYK
-        // samples **inverted** (255 - value). Writers that omit `/Decode` rely on
-        // the reader knowing that, which is what this does. Asking the decoder for
-        // CMYK rather than RGB is what makes the inversion possible at all: its
-        // RGB conversion assumes the non-inverted order and comes out black.
-        if dict_component_count(_stream) == Some(4) {
-            // A four-component JPEG is CMYK, and getting its colour right needs
-            // the Adobe APP14 inversion *and* a CMYK conversion that matches the
-            // engines; measured on `cmykjpeg.pdf` the picture comes out far too
-            // dark either way (docs/RENDERING.md). Reported rather than drawn
-            // wrong, which is the rule everywhere else in this renderer.
-            return Err(Error::Unsupported {
-                what: "/DCTDecode CMYK images (colour is not matched yet)",
-            });
-        }
+        // samples **inverted** (255 - sample), and its `/Decode` array — when the
+        // writer states one — is the same statement in words. Asking the decoder
+        // for CMYK rather than RGB is what makes the inversion possible: its RGB
+        // conversion assumes the already-uninverted order and comes out black.
+        let cmyk = dict_component_count(_stream) == Some(4);
         let mut decoder =
             zune_jpeg::JpegDecoder::new(zune_jpeg::zune_core::bytestream::ZCursor::new(&data));
+        if cmyk {
+            decoder.set_options(
+                zune_jpeg::zune_core::options::DecoderOptions::default()
+                    .jpeg_set_out_colorspace(zune_jpeg::zune_core::colorspace::ColorSpace::CMYK),
+            );
+        }
         let pixels = decoder
             .decode()
             .map_err(|_| Error::malformed("/DCTDecode payload"))?;
@@ -166,6 +163,13 @@ impl Image {
                 "/DCTDecode payload is shorter than its header",
             ));
         }
+        // The Adobe inversion is applied here only when the writer did not state
+        // it as `/Decode`: the two are the same statement, and applying both
+        // would invert twice (which is what pdf.js does, and what
+        // `cmykjpeg.pdf` — an Adobe APP14 all-zero transform with no `/Decode` —
+        // needs).
+        let stated_decode = _stream.dict().get(b"Decode").is_some();
+        let invert = cmyk && !stated_decode && has_adobe_marker(&data);
         // A `/Decode` array, when the writer states one, is applied to the samples
         // after the Adobe inversion; when it inverts, the two cancel out.
         let decode = decode_ranges(_stream.dict().get(b"Decode"), components);
@@ -183,7 +187,12 @@ impl Image {
         let pixels = pixels[..count]
             .chunks_exact(components)
             .map(|bytes| {
-                let values = sample(bytes);
+                let bytes: Vec<u8> = if invert {
+                    bytes.iter().map(|byte| 255 - byte).collect()
+                } else {
+                    bytes.to_vec()
+                };
+                let values = sample(&bytes);
                 match components {
                     1 => Color::rgb(values[0], values[0], values[0]),
                     4 => Color::from_cmyk(values[0], values[1], values[2], values[3]),
@@ -489,6 +498,41 @@ fn widen_one_bit(data: &[u8], width: u32, height: u32, components: usize) -> Res
         }
     }
     Ok(out)
+}
+
+/// Whether a JPEG carries an Adobe APP14 marker, which is what makes its CMYK
+/// samples stored inverted (PDF 7.4.8).
+///
+/// The marker is `FFEE` then a two-byte length and the identifier `Adobe`; only
+/// the identifier matters here, because the transform byte says whether the
+/// samples are plain CMYK or YCCK, and both are stored inverted.
+fn has_adobe_marker(data: &[u8]) -> bool {
+    let mut index = 2; // past the `FF D8` start-of-image marker
+    while index + 4 <= data.len() {
+        if data[index] != 0xFF {
+            return false;
+        }
+        let marker = data[index + 1];
+        // Segments with no payload.
+        if matches!(marker, 0xD8 | 0x01 | 0xD0..=0xD7) {
+            index += 2;
+            continue;
+        }
+        let length = usize::from(u16::from_be_bytes([data[index + 2], data[index + 3]]));
+        if length < 2 {
+            return false;
+        }
+        if marker == 0xEE {
+            let payload = &data[index + 4..(index + 2 + length).min(data.len())];
+            return payload.starts_with(b"Adobe");
+        }
+        // Start of scan: no more header segments follow.
+        if marker == 0xDA {
+            return false;
+        }
+        index += 2 + length;
+    }
+    false
 }
 
 /// Whether the stream's filter chain ends in `/DCTDecode`.
