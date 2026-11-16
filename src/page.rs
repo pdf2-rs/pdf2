@@ -242,6 +242,12 @@ impl Document {
                 offset: None,
             });
         }
+        if pages.len() >= self.page_limit() {
+            return Err(Error::TooMany {
+                what: "the page tree",
+                limit: self.page_limit(),
+            });
+        }
         let (dict, id) = match node {
             Object::Reference(id) => {
                 if !visited.insert(*id) {

@@ -86,6 +86,18 @@ pub enum Error {
         /// The budget, in bytes.
         limit: usize,
     },
+
+    /// A document declared or produced more of something than its budget allows.
+    ///
+    /// `what` names the counted thing (`"objects"`, `"pages"`) and `limit` is
+    /// the ceiling; both are settable on [`crate::Document`]. Added last for the
+    /// same reason [`Error::Limit`] was.
+    TooMany {
+        /// What was counted.
+        what: &'static str,
+        /// The ceiling it exceeded.
+        limit: usize,
+    },
 }
 
 impl Error {
@@ -120,6 +132,9 @@ impl fmt::Display for Error {
                 f,
                 "{what} would decode past the {limit}-byte decoded-stream budget"
             ),
+            Self::TooMany { what, limit } => {
+                write!(f, "{what} exceeds the limit of {limit}")
+            }
             Self::Unsupported { what } => write!(f, "unsupported: {what}"),
             Self::Io { message } => write!(f, "i/o error: {message}"),
         }

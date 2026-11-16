@@ -189,6 +189,26 @@ without a C build, and the feature is optional: a size-sensitive caller builds
 `pdf2-render` with `default-features = false` and the dependency is not linked.
 | **total** | 572 387 B | **198 732 B** |
 
+### Rank 8's budget: 65 000 objects
+
+`crates/pdf2-bench` generates a one-page document with **65 000 objects** in its
+cross-reference (`corpus::document_with_objects`, written to the run's scratch
+directory, never committed — a four-megabyte table in `tests/fixtures` would be
+read by every other measurement, which is the same reason the decompression bomb
+is built at test time). It is measured like any group, so the baseline states what
+parsing one costs:
+
+| Metric | Value |
+| --- | --- |
+| `objects-65000.read_mb_s` | 346 MB/s (3.76 MB file) |
+| `objects-65000.pages_s` | 93 (≈ 10.7 ms per open and page walk) |
+| `objects-65000.allocations` | 86 763 |
+| `objects-65000.alloc_bytes` | 9 153 927 |
+
+That is the budget the release claims: opening the file and walking its page tree
+stays inside ~11 ms and 9 MB on an `aarch64` machine, and `Document::set_object_limit`
+bounds what may be held if a caller wants less.
+
 Budget: **260 KiB gzip** for the pair, ~30% above the measured size, so a
 normal change fits and a deliberate jump has to update both the budget here and
 the constant in `check.mjs`.

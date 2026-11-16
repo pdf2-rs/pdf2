@@ -1,0 +1,113 @@
+%PDF-1.4
+%‰ˆ≈ƒ
+1 0 obj
+<<
+/Type /Catalog
+/OpenAction [3 0 R /Fit]
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Count 1
+/Kids [3 0 R]
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/Contents 5 0 R
+/MediaBox [0 0 595.2756 841.8898]
+/Resources 4 0 R
+>>
+endobj
+
+4 0 obj
+<<
+  /XObject << /Im1 6 0 R /Im2 7 0 R /Im3 8 0 R /Im4 9 0 R /Im5 10 0 R /Im6 11 0 R >>
+>>
+endobj
+
+5 0 obj
+<< /Length 283 >>
+stream
+0.4 0.6 1 rg
+10 10 575 822 re f
+q
+  324 0 0 104 50 700 cm
+  /Im1 Do
+Q
+q
+  324 0 0 104 50 585 cm
+  /Im2 Do
+%PDF-1.7
+%‚„œ”
+
+1 0 obj
+<< /Type      /Catflog
+   /Pages     2 0 R
+>>
+endobj
+
+2 0 obj
+<< /Type    /Pages
+   /Kids    [ 3 0 R ]
+   /Count   1
+>>
+endobj
+
+3 0 obj
+<< /Type        /Page
+   /Parent      2 0 R
+   /MediaBox    [ 0 0 300 80 ]
+   /Contents    4 0 R
+   /Resources   << 
+      /Font << /FTyp3 5 0 R >> 
+   >>
+>>
+endobj
+
+4 0 obj
+<< 
+  /Length 715
+>>
+stream
+  0 0 1 rg          % Blue non-stroking (fill)
+  1 0 0 RG          % Red stroking
+
+  BT
+    /FTyp3 10 Tf    % Select Type 3 font
+    0 Tr            % Text render mode: 0=fill, 1=stroke, 2=fill then stroke 
+
+ 0 obj
+<< 
+  /Length 316
+>>
+stream
+1000 0 0 0 750 750 d1   % NO explicit colour
+20 w         40 Tw           % Adjust this to: 0, 50, etc
+    ( ab ba abba) Tj
+
+    T*
+    30 Tw        †  % Adjust this to: 0, 50, etc
+    ( ab ba abba) Tj
+
+    T*
+    20 Tw           % Adjust this to: 0, 50, etc
+ription = "a"
+8 0 obj
+<<
+  /Length 273
+>>
+stream
+1000 0 0 0 750 750 d1   % NO explicit colour 
+50 w                    % Explicitly set line width as depend on it for stroking
+[ 150 150 ] 0 d         % Explicitly set dashing as depeviceGray
+/F
+
+2940
+%%EOF

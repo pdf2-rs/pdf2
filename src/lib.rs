@@ -25,7 +25,7 @@ pub mod parser;
 pub mod writer;
 
 pub use crypto::Encryption;
-pub use document::Document;
+pub use document::{Document, DEFAULT_OBJECT_LIMIT, DEFAULT_PAGE_LIMIT};
 pub use encoding::Encoding;
 pub use error::{Error, Result};
 pub use filter::{Filter, FilterSpec, Predictor};

@@ -31,6 +31,15 @@ const HEADER_SEARCH_LIMIT: usize = 1024;
 /// How many `/Prev` sections are followed before giving up on a loop.
 const MAX_XREF_SECTIONS: usize = 128;
 
+/// How many objects a document may hold before reading one is refused: a
+/// crafted cross-reference can name tens of millions, and every one that is read
+/// costs a parse and a cache slot.
+pub const DEFAULT_OBJECT_LIMIT: usize = 1 << 20;
+
+/// How many pages a page tree may list before it is refused, so a crafted
+/// `/Pages` cannot make every `pages()` call walk a million leaves.
+pub const DEFAULT_PAGE_LIMIT: usize = 1 << 17;
+
 /// How deep an object may be resolved while parsing another one, which bounds
 /// `/Length` and `/Filter` chains that point at each other.
 const MAX_RESOLVE_DEPTH: usize = 32;
@@ -67,6 +76,10 @@ pub struct Document {
     depth: Cell<usize>,
     /// The decoded-bytes budget every stream is held to.
     decode_limit: Cell<usize>,
+    /// How many objects may be read before `get_object` refuses.
+    object_limit: Cell<usize>,
+    /// How many pages a page tree may list.
+    page_limit: Cell<usize>,
 }
 
 impl Document {
@@ -108,6 +121,8 @@ impl Document {
             encrypt_number: None,
             depth: Cell::new(0),
             decode_limit: Cell::new(filter::DEFAULT_DECODE_LIMIT),
+            object_limit: Cell::new(DEFAULT_OBJECT_LIMIT),
+            page_limit: Cell::new(DEFAULT_PAGE_LIMIT),
         };
         if let Some(encrypt) = document.trailer.get(b"Encrypt").cloned() {
             // The `/Encrypt` dictionary is plain even in an encrypted file, so
@@ -230,7 +245,19 @@ impl Document {
             }
             _ => object,
         };
-        self.cache.borrow_mut().insert(id, object.clone());
+        {
+            // The cache is what grows with what has been read, so it is what the
+            // object budget counts. Read before the insert: the limit is a
+            // ceiling on the number *held*, not on the number seen.
+            let mut cache = self.cache.borrow_mut();
+            if cache.len() >= self.object_limit.get() {
+                return Err(Error::TooMany {
+                    what: "the number of objects read",
+                    limit: self.object_limit.get(),
+                });
+            }
+            cache.insert(id, object.clone());
+        }
         Ok(object)
     }
 
@@ -288,6 +315,38 @@ impl Document {
     /// decode to more than the default.
     pub fn set_decoded_limit(&self, bytes: usize) {
         self.decode_limit.set(bytes);
+    }
+
+    /// How many objects may be read before one is refused.
+    ///
+    /// Defaults to [`DEFAULT_OBJECT_LIMIT`]. The count is of objects *held*
+    /// after being read, so a document that lists millions in its
+    /// cross-reference is still opened — the ceiling is on parsing them, which is
+    /// the part that costs memory.
+    pub fn object_limit(&self) -> usize {
+        self.object_limit.get()
+    }
+
+    /// Set the object ceiling; `usize::MAX` lifts it.
+    pub fn set_object_limit(&self, objects: usize) {
+        self.object_limit.set(objects);
+    }
+
+    /// How many pages a page tree may list.
+    ///
+    /// Defaults to [`DEFAULT_PAGE_LIMIT`]. Every [`pages`](crate::Document::pages)
+    /// call walks the tree, so this bounds the work a crafted `/Pages` can ask
+    /// for.
+    pub fn page_limit(&self) -> usize {
+        self.page_limit.get()
+    }
+
+    /// Set the page ceiling; `usize::MAX` lifts it.
+    ///
+    /// A document that legitimately has more pages than the default raises it,
+    /// and a caller rendering one page at a time can lower it.
+    pub fn set_page_limit(&self, pages: usize) {
+        self.page_limit.set(pages);
     }
 
     /// Decode a stream's payload through its filter chain.
