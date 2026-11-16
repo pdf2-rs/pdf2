@@ -1326,6 +1326,45 @@ def make_soft_mask():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("soft-mask.pdf", bytes(writer.out))
 
+
+
+def make_blend_modes():
+    """Sixteen cells, one per `/BM` mode, over a 50 % grey backdrop.
+
+    The source colour is `(0.8, 0.2, 0.4)`, so several results follow by
+    arithmetic: Multiply gives `(0.4, 0.1, 0.2)`, Screen `(0.9, 0.6, 0.7)`,
+    Difference `(0.3, 0.3, 0.1)`, Darken and Lighten the per-channel extremes.
+    """
+    modes = [
+        "Normal", "Multiply", "Screen", "Overlay",
+        "Darken", "Lighten", "ColorDodge", "ColorBurn",
+        "HardLight", "SoftLight", "Difference", "Exclusion",
+        "Hue", "Saturation", "Color", "Luminosity",
+    ]
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    resources = b" /Resources << /ExtGState << "
+    for index, mode in enumerate(modes):
+        resources += b"/GS%d %d 0 R " % (index, 5 + index)
+    resources += b">> >>"
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R" + resources + b" >>",
+    )
+    content = b"0.5 g 0 0 200 200 re f\n"
+    for index, _ in enumerate(modes):
+        column = index % 4
+        row = index // 4
+        x = 10 + column * 45
+        y = 200 - (10 + row * 45) - 40
+        content += b"q /GS%d gs 0.8 0.2 0.4 rg %d %d 40 40 re f Q\n" % (index, x, y)
+    writer.stream(4, b"", content)
+    for index, mode in enumerate(modes):
+        writer.obj(5 + index, b"<< /Type /ExtGState /BM /%s >>" % mode.encode())
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("blend-modes.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1550,3 +1589,4 @@ if __name__ == "__main__":
     make_annotations()
     make_alpha()
     make_soft_mask()
+    make_blend_modes()

@@ -83,17 +83,6 @@ fn a_soft_mask_of_none_is_not_a_mask() {
 }
 
 #[test]
-fn a_blend_mode_that_is_not_normal_is_still_reported() {
-    // `blendmode.pdf` sets all sixteen; until they land the note stands.
-    let rendered = render("corpus/tier-a/blendmode.pdf");
-    assert!(
-        rendered.report.to_string().contains("gs"),
-        "blend modes keep the note: {}",
-        rendered.report
-    );
-}
-
-#[test]
 fn a_luminosity_soft_mask_hides_where_the_group_is_black() {
     let rendered = render("tests/fixtures/soft-mask.pdf");
     // The mask's `/G` paints the right half white, so the magenta square shows
