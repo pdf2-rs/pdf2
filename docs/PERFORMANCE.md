@@ -169,13 +169,16 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 335 032) — a gradient is a function evaluated per pixel, and the calculator's
 operators are the bulk of it.
 
-**The npm bundle budget moved from 336 KiB to 344 KiB on 2026-11-16, for the
-simple-font CFF**: reading a bare CFF's charset *names* and matching them against
-the encoding's characters costs **+2 156 gzip bytes** (344 064 → 346 220 measured;
-the budget is the next 8 KiB step). It is what turns an embedded `/Type1C` font
-from the fallback bitmap alphabet into the document's own text — the glyph-name
-table it reuses was already in the library, so the growth is the loop and the
-lookup, not a new table.
+**The npm bundle budget moved from 336 KiB to 356 KiB on 2026-11-16, for the
+simple-font CFF and Type 3 fonts**: reading a bare CFF's charset *names* and
+matching them against the encoding's characters costs **+2 156 gzip bytes**
+locally (344 064 → 346 220), and Type 3 glyph procedures — a nested content walk
+with its own resources and state — **+7 179** on top (CI measured 353 399). The
+two measurements differ by toolchain: a local `wasm32-unknown-unknown` build
+produced 346 220 where the release workflow's produced 353 399, so **the budget is
+set from CI's number**, with the next 8 KiB step of headroom. The library cost is
+what turns an embedded `/Type1C` or Type 3 font from the fallback bitmap alphabet
+into the document's own glyphs; no dependency was added for either.
 
 **The npm bundle budget moved from 260 KiB to 320 KiB on 2026-11-16,
 deliberately**: `/DCTDecode` support (`zune-jpeg`) costs **+66 759 gzip bytes** on

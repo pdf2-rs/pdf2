@@ -108,6 +108,7 @@ real bugs:
 | A TrueType program with no `cmap` table | **not drawn**, reported: `font:TrueType-without-cmap`. The codes cannot be decoded without a map, and guessing glyph ids draws wrong glyphs (`docs/RENDERING-QUALITY.md`) |
 | A page that paints and produces an empty raster | reported: `drew-nothing`, so a blank page that should have had content is visible instead of silent |
 | simple-font `/FontFile3` CFF programs | **drawn**: a bare CFF has no `cmap`, so the charset's glyph **names** are the route — each name is read back to a character and a code finds its glyph through the encoding. `ShowText-ShadingPattern.pdf` stopped reporting `font:FontFile3` and set its text in the embedded Arial subset |
+| Type 3 fonts (`9.6.5`): `/CharProcs`, `/Encoding` `/Differences`, `/FontMatrix` | **drawn**: each glyph's content stream runs in glyph space — the font matrix first, then the text rendering matrix — with the font's own `/Resources`, `d0`/`d1` read for the width the `/Widths` array supplies, and the recursion limited by the same depth cap as a form. `Type3WordSpacing.pdf` and `ContentStreamCycleType3insideType3.pdf` draw, both reporting every operator supported |
 | `/FontFile` (Type 1) programs | **not parsed**: the bitmap fallback is drawn and `font:FontFile` is reported |
 | Text render modes other than fill (`Tr`), vertical writing | not implemented |
 

@@ -113,6 +113,7 @@ Checked 2026-11-15 — `cargo test -p pdf2-render` (font unit tests, pages 9–1
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
+| Type 3 fonts | shipped | Each glyph in `/CharProcs` is a content stream run in glyph space (`/FontMatrix` × the text rendering matrix) with the font's own `/Resources`; codes reach glyph names through `/Encoding`'s `/Differences` (a named base encoding alone does not provide names this renderer has, and is reported). `d0`/`d1` are read, the advance comes from `/Widths`, and a glyph that shows text in its own font stops at `MAX_FORM_DEPTH`. `Type3WordSpacing.pdf` and `ContentStreamCycleType3insideType3.pdf` draw and report every operator supported (`crates/pdf2-render/tests/type3.rs`). Owner: item 4 (2026-11-16) |
 | Simple fonts: Type 1, TrueType with `/FontFile2`, encodings and `/Differences` | shipped | `crates/pdf2-render/src/font.rs`, page 9 of `calibration.pdf` |
 | Base-14 without a program: built-in 5×7 fallback with composed Latin-1 accents | shipped | `crates/pdf2-render/src/font.rs` |
 | Composite fonts (Type 0/CID) **rendering** with Identity-H and `/CIDToGIDMap` | shipped | pages 10–11, `cid_cff.pdf` renders |
