@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **An image is measured before it is decoded** (`8.9.5`): `/Width × /Height ×
+  components` is compared with the document's budget *before* the stream is
+  touched, so a page claiming 10 000 × 10 000 pixels over ten bytes of payload
+  fails with `Error::Limit` rather than allocating what it claims. Verified by
+  decoding order in `crates/pdf2-render/tests/bounds.rs`: the same stream is
+  invalid Flate, and the error is about the budget, not the payload.
 - **Decoded streams are bounded** (`7.4`, `7.6.1`): every stream decodes under a
   256 MiB budget (`filter::DEFAULT_DECODE_LIMIT`), settable per document with
   `Document::set_decoded_limit`, and a stream that would pass it fails with the

@@ -24,7 +24,9 @@ Working today:
   ASCIIHexDecode, ASCII85Decode and RunLengthDecode, including `/Filter` and
   `/DecodeParms` arrays and indirect `/Length`. Every stream decodes under a
   **256 MiB budget** (`Document::set_decoded_limit` moves it), so a
-  decompression bomb is refused instead of allocated.
+  decompression bomb is refused instead of allocated, and an image is measured
+  from its `/Width`, `/Height` and colour space before its stream is touched, so
+  a lying `/Width` allocates nothing.
 - Every base object type, parsed and re-serialized byte-for-byte.
 - The document model: catalog, page tree with inherited `/MediaBox`,
   `/CropBox`, `/Rotate` and `/Resources`, page content streams, and XMP

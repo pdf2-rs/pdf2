@@ -39,13 +39,25 @@ impl Image {
         }
         let interpolate = matches!(dict.get(b"Interpolate"), Some(Object::Boolean(true)));
         let space = resolve(document, dict.get(b"ColorSpace"))?;
-        let data = document.decode_stream(stream)?;
+        // The colour space is dictionary metadata, so the size the image claims
+        // is known before its stream is touched — and that is the order that
+        // keeps a lying /Width from being paid for. Every component is one byte
+        // here (8 bits per component is the only depth drawn), so the decoded
+        // size is width × height × components.
         let colours = ColourSpace::from_object(document, space)?;
         let per_pixel = colours.components();
         let count = (width as usize)
             .checked_mul(height as usize)
             .and_then(|pixels| pixels.checked_mul(per_pixel))
             .ok_or_else(|| Error::malformed("image dimensions overflow"))?;
+        let limit = document.decoded_limit();
+        if count > limit {
+            return Err(Error::Limit {
+                what: "an image of the /Width and /Height it declares",
+                limit,
+            });
+        }
+        let data = document.decode_stream(stream)?;
         if data.len() < count {
             return Err(Error::Malformed {
                 what: "image data is shorter than width × height × components",
