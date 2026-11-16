@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **`/Function` objects are read** (`7.10`): the renderer parses and evaluates
+  types 0 (sampled, with bit unpacking and multilinear interpolation), 2
+  (exponential), 3 (stitching, choosing by `/Bounds` and mapping through
+  `/Encode`) and 4 (the PostScript calculator — Table 42's operators including
+  `if`/`ifelse`, bounded to 4096 steps and 128 stack entries because a function is
+  data from an untrusted file). Type 1 is refused by name. Every `/Function` in
+  the five corpus shading pages parses and evaluates; nothing paints with them
+  yet, since `sh` is the next step.
 - **One-dimensional CCITT fax images decode** (`7.4.6`): `src/fax.rs` reads the
   bit stream, honours the whole `/DecodeParms` set (`/K`, `/Columns`, `/Rows`,
   `/EndOfLine`, `/EncodedByteAlign`, `/EndOfBlock`, `/BlackIs1`) and decodes the

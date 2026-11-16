@@ -19,6 +19,7 @@
 
 mod canvas;
 mod font;
+mod function;
 mod geom;
 mod image;
 mod path;
