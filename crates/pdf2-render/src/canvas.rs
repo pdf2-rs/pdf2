@@ -126,6 +126,15 @@ impl Canvas {
 
     /// Paint one pixel with `color` at `alpha`, source-over.
     pub fn blend(&mut self, x: u32, y: u32, color: Color, alpha: f64) {
+        self.blend_with(x, y, color, alpha, BlendMode::Normal);
+    }
+
+    /// Paint one pixel through a blend mode (11.3.5).
+    ///
+    /// The destination is opaque — this rasteriser has no alpha channel — so the
+    /// compositing formula collapses to `(1-a)·Cb + a·B(Cb, Cs)`, which is what a
+    /// reader sees when painting onto a page.
+    pub fn blend_with(&mut self, x: u32, y: u32, color: Color, alpha: f64, mode: BlendMode) {
         if x >= self.width || y >= self.height || alpha <= 0.0 {
             return;
         }
@@ -133,17 +142,223 @@ impl Canvas {
         let [r, g, b] = color.to_bytes();
         let index = ((y as usize) * (self.width as usize) + (x as usize)) * 4;
         let target = &mut self.pixels[index..index + 4];
-        let mix = |source: u8, destination: u8| -> u8 {
-            let source = f64::from(source);
-            let destination = f64::from(destination);
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let value = (source * alpha + destination * (1.0 - alpha)).round() as u8;
-            value
+        let backdrop = [
+            f64::from(target[0]) / 255.0,
+            f64::from(target[1]) / 255.0,
+            f64::from(target[2]) / 255.0,
+        ];
+        let source = [
+            f64::from(r) / 255.0,
+            f64::from(g) / 255.0,
+            f64::from(b) / 255.0,
+        ];
+        let blended = if mode == BlendMode::Normal {
+            source
+        } else if mode.is_non_separable() {
+            non_separable(mode, backdrop, source)
+        } else {
+            [
+                separable(mode, backdrop[0], source[0]),
+                separable(mode, backdrop[1], source[1]),
+                separable(mode, backdrop[2], source[2]),
+            ]
         };
-        target[0] = mix(r, target[0]);
-        target[1] = mix(g, target[1]);
-        target[2] = mix(b, target[2]);
+        for (slot, (backdrop, blended)) in target.iter_mut().zip(backdrop.iter().zip(blended)) {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let value = ((blended * alpha + backdrop * (1.0 - alpha)).clamp(0.0, 1.0) * 255.0)
+                .round() as u8;
+            *slot = value;
+        }
         target[3] = 255;
+    }
+}
+
+/// A `/BM` blend mode (11.3.5, Table 136), following the CSS compositing
+/// formulae the standard refers to — separable ones per channel, the four
+/// non-separable ones over the colour triplet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BlendMode {
+    /// `/Normal`: source over destination.
+    #[default]
+    Normal,
+    /// `/Multiply`.
+    Multiply,
+    /// `/Screen`.
+    Screen,
+    /// `/Overlay`.
+    Overlay,
+    /// `/Darken`.
+    Darken,
+    /// `/Lighten`.
+    Lighten,
+    /// `/ColorDodge`.
+    ColorDodge,
+    /// `/ColorBurn`.
+    ColorBurn,
+    /// `/HardLight`.
+    HardLight,
+    /// `/SoftLight`.
+    SoftLight,
+    /// `/Difference`.
+    Difference,
+    /// `/Exclusion`.
+    Exclusion,
+    /// `/Hue`.
+    Hue,
+    /// `/Saturation`.
+    Saturation,
+    /// `/Color`.
+    Color,
+    /// `/Luminosity`.
+    Luminosity,
+}
+
+impl BlendMode {
+    /// The mode a `/BM` name stands for, when it is one of the sixteen.
+    pub fn from_name(name: &[u8]) -> Option<Self> {
+        Some(match name {
+            b"Normal" | b"Compatible" => Self::Normal,
+            b"Multiply" => Self::Multiply,
+            b"Screen" => Self::Screen,
+            b"Overlay" => Self::Overlay,
+            b"Darken" => Self::Darken,
+            b"Lighten" => Self::Lighten,
+            b"ColorDodge" => Self::ColorDodge,
+            b"ColorBurn" => Self::ColorBurn,
+            b"HardLight" => Self::HardLight,
+            b"SoftLight" => Self::SoftLight,
+            b"Difference" => Self::Difference,
+            b"Exclusion" => Self::Exclusion,
+            b"Hue" => Self::Hue,
+            b"Saturation" => Self::Saturation,
+            b"Color" => Self::Color,
+            b"Luminosity" => Self::Luminosity,
+            _ => return None,
+        })
+    }
+
+    /// Whether the mode is one of the four that work on the triplet as a whole.
+    fn is_non_separable(self) -> bool {
+        matches!(
+            self,
+            Self::Hue | Self::Saturation | Self::Color | Self::Luminosity
+        )
+    }
+}
+
+/// `B(Cb, Cs)` for one channel of a separable mode.
+fn separable(mode: BlendMode, backdrop: f64, source: f64) -> f64 {
+    match mode {
+        BlendMode::Multiply => backdrop * source,
+        BlendMode::Screen => backdrop + source - backdrop * source,
+        BlendMode::Overlay => separable(BlendMode::HardLight, source, backdrop),
+        BlendMode::Darken => backdrop.min(source),
+        BlendMode::Lighten => backdrop.max(source),
+        BlendMode::ColorDodge => {
+            if backdrop <= 0.0 {
+                0.0
+            } else if source >= 1.0 {
+                1.0
+            } else {
+                (backdrop / (1.0 - source)).min(1.0)
+            }
+        }
+        BlendMode::ColorBurn => {
+            if backdrop >= 1.0 {
+                1.0
+            } else if source <= 0.0 {
+                0.0
+            } else {
+                1.0 - ((1.0 - backdrop) / source).min(1.0)
+            }
+        }
+        BlendMode::HardLight => {
+            if source <= 0.5 {
+                separable(BlendMode::Multiply, backdrop, 2.0 * source)
+            } else {
+                separable(BlendMode::Screen, backdrop, 2.0 * source - 1.0)
+            }
+        }
+        BlendMode::SoftLight => {
+            if source <= 0.5 {
+                backdrop - (1.0 - 2.0 * source) * backdrop * (1.0 - backdrop)
+            } else {
+                let d = if backdrop <= 0.25 {
+                    ((16.0 * backdrop - 12.0) * backdrop + 4.0) * backdrop
+                } else {
+                    backdrop.sqrt()
+                };
+                backdrop + (2.0 * source - 1.0) * (d - backdrop)
+            }
+        }
+        BlendMode::Difference => (backdrop - source).abs(),
+        BlendMode::Exclusion => backdrop + source - 2.0 * backdrop * source,
+        // Normal and the non-separable modes never reach this function.
+        _ => source,
+    }
+}
+
+/// CSS luminance, the weight the non-separable modes use.
+fn luminance(colour: [f64; 3]) -> f64 {
+    0.3 * colour[0] + 0.59 * colour[1] + 0.11 * colour[2]
+}
+
+fn clip_colour(colour: [f64; 3]) -> [f64; 3] {
+    let l = luminance(colour);
+    let low = colour.iter().copied().fold(f64::MAX, f64::min);
+    let high = colour.iter().copied().fold(f64::MIN, f64::max);
+    if low < 0.0 {
+        let scale = l / (l - low);
+        colour.map(|value| l + (value - l) * scale)
+    } else if high > 1.0 {
+        let scale = (1.0 - l) / (high - l);
+        colour.map(|value| l + (value - l) * scale)
+    } else {
+        colour
+    }
+}
+
+fn set_luminance(colour: [f64; 3], l: f64) -> [f64; 3] {
+    let delta = l - luminance(colour);
+    clip_colour(colour.map(|value| value + delta))
+}
+
+fn saturation(colour: [f64; 3]) -> f64 {
+    let low = colour.iter().copied().fold(f64::MAX, f64::min);
+    let high = colour.iter().copied().fold(f64::MIN, f64::max);
+    high - low
+}
+
+fn set_saturation(colour: [f64; 3], s: f64) -> [f64; 3] {
+    let mut order = [0_usize, 1, 2];
+    order.sort_by(|left, right| {
+        colour[*left]
+            .partial_cmp(&colour[*right])
+            .unwrap_or(core::cmp::Ordering::Equal)
+    });
+    let (min, mid, max) = (order[0], order[1], order[2]);
+    let mut result = [0.0; 3];
+    if colour[max] > colour[min] {
+        result[mid] = (colour[mid] - colour[min]) * s / (colour[max] - colour[min]);
+        result[max] = s;
+    }
+    result[min] = 0.0;
+    result
+}
+
+/// `B(Cb, Cs)` for the four non-separable modes.
+fn non_separable(mode: BlendMode, backdrop: [f64; 3], source: [f64; 3]) -> [f64; 3] {
+    match mode {
+        BlendMode::Hue => set_luminance(
+            set_saturation(source, saturation(backdrop)),
+            luminance(backdrop),
+        ),
+        BlendMode::Saturation => set_luminance(
+            set_saturation(backdrop, saturation(source)),
+            luminance(backdrop),
+        ),
+        BlendMode::Color => set_luminance(source, luminance(backdrop)),
+        _ => set_luminance(backdrop, luminance(source)),
     }
 }
 

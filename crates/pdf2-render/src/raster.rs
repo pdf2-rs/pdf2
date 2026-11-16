@@ -1,7 +1,7 @@
 //! Scanline rasterisation: filling polygons into the canvas through a clip mask,
 //! and turning polygons into a clip mask.
 
-use crate::canvas::{Canvas, ClipMask, Color};
+use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
 use crate::geom::Point;
 
 /// One polygon edge, with the winding direction it contributes.
@@ -114,6 +114,7 @@ pub fn fill_polygons(
     color: Color,
     even_odd: bool,
     alpha: f64,
+    mode: BlendMode,
 ) {
     if polygons.is_empty() {
         return;
@@ -150,7 +151,7 @@ pub fn fill_polygons(
                 let x = x as u32;
                 let coverage = mask.alpha(x, y);
                 if coverage > 0.0 {
-                    canvas.blend(x, y, color, alpha * coverage);
+                    canvas.blend_with(x, y, color, alpha * coverage, mode);
                 }
             }
         }
@@ -179,7 +180,7 @@ pub fn clip_mask(width: u32, height: u32, polygons: &[Vec<Point>], even_odd: boo
 #[cfg(test)]
 mod tests {
     use super::{clip_mask, edges_of, fill_polygons, spans};
-    use crate::canvas::{Canvas, ClipMask, Color};
+    use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
     use crate::geom::Point;
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> Vec<Point> {
@@ -202,6 +203,7 @@ mod tests {
             Color::BLACK,
             false,
             1.0,
+            BlendMode::Normal,
         );
         assert_eq!(canvas.pixel(3, 4), Some([0, 0, 0, 255]));
         assert_eq!(canvas.pixel(1, 4), Some([255, 255, 255, 255]));
@@ -220,6 +222,7 @@ mod tests {
             Color::BLACK,
             false,
             1.0,
+            BlendMode::Normal,
         );
         assert_eq!(nonzero.pixel(3, 3), Some([0, 0, 0, 255]));
 
@@ -231,6 +234,7 @@ mod tests {
             Color::BLACK,
             true,
             1.0,
+            BlendMode::Normal,
         );
         assert_eq!(even_odd.pixel(3, 3), Some([255, 255, 255, 255]));
         assert_eq!(even_odd.pixel(1, 1), Some([0, 0, 0, 255]));
@@ -250,6 +254,7 @@ mod tests {
             Color::BLACK,
             false,
             1.0,
+            BlendMode::Normal,
         );
         assert_eq!(canvas.pixel(0, 0), Some([255, 255, 255, 255]));
         assert_eq!(canvas.pixel(6, 0), Some([0, 0, 0, 255]));

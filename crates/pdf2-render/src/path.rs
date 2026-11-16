@@ -570,6 +570,7 @@ mod tests {
             crate::canvas::Color::BLACK,
             false,
             1.0,
+            crate::canvas::BlendMode::Normal,
         );
         canvas.pixel(x, y) == Some([0, 0, 0, 255])
     }

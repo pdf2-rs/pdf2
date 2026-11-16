@@ -2,7 +2,7 @@
 
 use pdf2::{Dictionary, Document, Object, Stream};
 
-use crate::canvas::{Canvas, ClipMask, Color};
+use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
 use crate::geom::{Matrix, Point};
 use crate::{Error, Result};
 
@@ -124,7 +124,14 @@ impl Image {
     }
 
     /// Paint into the canvas through `ctm`, restricted to `mask`.
-    pub fn paint(&self, canvas: &mut Canvas, mask: &ClipMask, ctm: Matrix, alpha: f64) {
+    pub fn paint(
+        &self,
+        canvas: &mut Canvas,
+        mask: &ClipMask,
+        ctm: Matrix,
+        alpha: f64,
+        mode: BlendMode,
+    ) {
         let Some(inverse) = ctm.invert() else {
             return;
         };
@@ -168,7 +175,7 @@ impl Image {
                 // Image space has its origin at the bottom-left, but the first
                 // sample row is the top one.
                 let colour = self.sample(user.x, 1.0 - user.y);
-                canvas.blend(x, y, colour, alpha * coverage);
+                canvas.blend_with(x, y, colour, alpha * coverage, mode);
             }
         }
     }
@@ -329,7 +336,7 @@ pub(crate) fn resolve(document: &Document, object: Option<&Object>) -> Result<Ob
 #[cfg(test)]
 mod tests {
     use super::Image;
-    use crate::canvas::{Canvas, ClipMask, Color};
+    use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
     use crate::geom::Matrix;
 
     fn image(width: u32, height: u32, interpolate: bool) -> Image {
@@ -373,7 +380,7 @@ mod tests {
         let mask = ClipMask::all(4, 4);
         // Unit square scaled to 4×4 with y flipped like the page transform.
         let ctm = Matrix::new(4.0, 0.0, 0.0, -4.0, 0.0, 4.0);
-        image.paint(&mut canvas, &mask, ctm, 1.0);
+        image.paint(&mut canvas, &mask, ctm, 1.0, BlendMode::Normal);
         assert_eq!(canvas.pixel(0, 0), Some([0, 0, 0, 255]));
         assert_eq!(canvas.pixel(3, 0), Some([255, 255, 255, 255]));
         assert_eq!(canvas.pixel(0, 3), Some([255, 255, 255, 255]));

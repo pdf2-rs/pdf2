@@ -12,7 +12,7 @@ use std::fmt;
 use pdf2::lexer::{is_delimiter, is_whitespace};
 use pdf2::{Dictionary, Document, Encoding, Object, Page, Parser, Token};
 
-use crate::canvas::{Canvas, ClipMask, Color};
+use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
 use crate::font::{Font, Glyph};
 use crate::geom::{Matrix, Point};
 use crate::image::{resolve, Image};
@@ -267,6 +267,8 @@ struct State {
     fill_alpha: f64,
     /// `/CA`: constant alpha for strokes.
     stroke_alpha: f64,
+    /// `/BM`: how a painted colour combines with what is already there.
+    blend: BlendMode,
     font: Option<Font>,
     font_size: f64,
     miter_limit: f64,
@@ -296,6 +298,7 @@ impl State {
             stroke: Color::BLACK,
             fill_alpha: 1.0,
             stroke_alpha: 1.0,
+            blend: BlendMode::Normal,
             font: None,
             font_size: 0.0,
             miter_limit: 10.0,
@@ -646,6 +649,7 @@ impl Walker<'_> {
                 self.state.fill,
                 even_odd,
                 self.state.fill_alpha,
+                self.state.blend,
             );
         }
         if matches!(what, Paint::Stroke | Paint::Both) {
@@ -668,6 +672,7 @@ impl Walker<'_> {
                     self.state.stroke,
                     false,
                     self.state.stroke_alpha,
+                    self.state.blend,
                 );
             }
         }
@@ -756,6 +761,7 @@ impl Walker<'_> {
                 self.state.fill,
                 false,
                 self.state.fill_alpha,
+                self.state.blend,
             );
         }
         if matches!(mode, 1 | 2 | 5 | 6) {
@@ -782,6 +788,7 @@ impl Walker<'_> {
                     self.state.stroke,
                     false,
                     self.state.stroke_alpha,
+                    self.state.blend,
                 );
             }
         }
@@ -832,6 +839,7 @@ impl Walker<'_> {
                     &self.mask,
                     self.state.ctm,
                     self.state.fill_alpha,
+                    self.state.blend,
                 );
             }
             // An image we cannot decode is reported, not fatal: the rest of the
@@ -970,17 +978,18 @@ impl Walker<'_> {
             }
         }
         if let Some(blend) = dict.get(b"BM") {
-            let normal = match blend {
-                Object::Name(name) => name == b"Normal",
-                Object::Array(items) => items
-                    .first()
-                    .and_then(Object::as_name)
-                    .is_some_and(|name| name == b"Normal"),
-                _ => false,
+            // `/BM` may be a name or an array whose first entry is used.
+            let name = match blend {
+                Object::Name(name) => Some(name.clone()),
+                Object::Array(items) => items.first().and_then(Object::as_name).map(<[u8]>::to_vec),
+                _ => None,
             };
-            if !normal {
-                self.report.note(b"gs");
-                return Ok(());
+            match name.as_deref().and_then(BlendMode::from_name) {
+                Some(mode) => self.state.blend = mode,
+                None => {
+                    self.report.note(b"gs");
+                    return Ok(());
+                }
             }
         }
         if let Some(alpha) = dict.get(b"ca") {

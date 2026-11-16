@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **The sixteen `/BM` blend modes are applied** (`11.3.5`): every mode in Table
+  136 — the twelve separable ones per channel and the four non-separable ones
+  over the colour triplet — uses the CSS formulae the standard refers to, composed
+  as `(1-a)·Cb + a·B(Cb, Cs)` over an opaque backdrop. `blendmode.pdf`, which
+  sets all sixteen, now reports nothing unsupported.
 - **Luminosity soft masks are applied** (`11.6.5.2`): an `/ExtGState` `/SMask`
   with `/S /Luminosity` renders its `/G` form onto black and multiplies the
   result into the page's coverage mask, so a masked logo fades by its mask
