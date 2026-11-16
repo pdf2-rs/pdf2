@@ -1119,6 +1119,76 @@ def make_blank_page():
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("blank-page.pdf", bytes(writer.out))
 
+
+
+def make_forms():
+    """Four form XObjects, each proving one rule of 8.10.
+
+    - `/F1` carries a `/Matrix` that scales by two and translates to (20, 20), so
+      its red square lands where the matrix says and nowhere else.
+    - `/F2` has a 40 × 40 `/BBox` but paints 120 × 120, so the overflow must be
+      clipped by the box rather than by the canvas.
+    - `/F3` has **no** `/Resources` of its own and draws `/Inner`, which lives in
+      the page's XObject dictionary: resource inheritance, proved by ink.
+    - `/F4` draws `/Deep`, which is a form drawing a form.
+    """
+    page_content = b"/F1 Do\nq 1 0 0 1 0 0 cm /F2 Do Q\n/F3 Do\n/F4 Do\n"
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /XObject << /F1 5 0 R /F2 6 0 R /F3 7 0 R /F4 8 0 R "
+        b"/Inner 9 0 R /Deep 10 0 R >> >> >>",
+    )
+    writer.stream(4, b"", page_content)
+    writer.stream(
+        5,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 50 50] /Matrix [2 0 0 2 20 20]",
+        b"1 0 0 rg 0 0 25 25 re f",
+    )
+    writer.stream(
+        6,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 40 40]",
+        b"0 1 0 rg 0 0 120 120 re f",
+    )
+    # No /Resources entry: the page's dictionary has to be inherited.
+    writer.stream(7, b"/Type /XObject /Subtype /Form /BBox [0 0 200 200]", b"/Inner Do")
+    writer.stream(8, b"/Type /XObject /Subtype /Form /BBox [0 0 200 200]", b"/Deep Do")
+    writer.stream(
+        9,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 20 20] /Matrix [1 0 0 1 150 150]",
+        b"1 0 1 rg 0 0 20 20 re f",
+    )
+    writer.stream(
+        10,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 20 20] /Matrix [1 0 0 1 100 20]",
+        b"0 0 1 rg 0 0 20 20 re f",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("forms.pdf", bytes(writer.out))
+
+
+def make_form_cycle():
+    """A form that draws itself: the depth cap must report it, not follow it."""
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R "
+        b"/Resources << /XObject << /Loop 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", b"/Loop Do")
+    writer.stream(
+        5,
+        b"/Type /XObject /Subtype /Form /BBox [0 0 100 100]",
+        b"0 0 1 rg 0 0 10 10 re f /Loop Do",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("form-cycle.pdf", bytes(writer.out))
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1338,3 +1408,5 @@ if __name__ == "__main__":
     make_text_mode()
     make_invisible_ink()
     make_blank_page()
+    make_forms()
+    make_form_cycle()

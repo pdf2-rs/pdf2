@@ -19,6 +19,16 @@ use crate::image::{resolve, Image};
 use crate::path::{dash_polyline, stroke_outline, Cap, Dash, Join, Path};
 use crate::raster::{clip_mask, fill_polygons};
 
+/// How deep form XObjects may nest before a further `/Do` is reported instead of
+/// followed.
+///
+/// PDF lets a form draw another form (8.10), and nothing in the format forbids a
+/// cycle. Eight levels is far past what real files use — a form inside a form
+/// inside a form is already unusual — and mirrors [`pdf2::Document`]'s
+/// `MAX_RESOLVE_DEPTH`: a named constant, a report, and a test that proves it
+/// fires rather than a stack overflow.
+const MAX_FORM_DEPTH: usize = 8;
+
 /// What a page render should look like.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderOptions {
@@ -226,6 +236,7 @@ pub fn render_page(
         path: Path::new(),
         pending_clip: None,
         mask: ClipMask::all(width, height),
+        form_depth: 0,
     };
     walker.run(&content)?;
     // A page that ran painting operators and produced an empty raster is not
@@ -302,6 +313,8 @@ struct Walker<'a> {
     path: Path,
     pending_clip: Option<bool>,
     mask: ClipMask,
+    /// Form XObjects currently being drawn, for [`MAX_FORM_DEPTH`].
+    form_depth: usize,
 }
 
 impl Walker<'_> {
@@ -788,9 +801,13 @@ impl Walker<'_> {
             self.report.note(b"Do");
             return Ok(());
         };
-        if !matches!(stream.dict().get(b"Subtype"), Some(Object::Name(name)) if name == b"Image") {
-            self.report.note(b"Do");
-            return Ok(());
+        match stream.dict().get(b"Subtype").and_then(Object::as_name) {
+            Some(b"Image") => {}
+            Some(b"Form") => return self.run_form(&stream),
+            _ => {
+                self.report.note(b"Do");
+                return Ok(());
+            }
         }
         match Image::from_stream(self.document, &stream) {
             Ok(image) => {
@@ -801,6 +818,79 @@ impl Walker<'_> {
             Err(_) => self.report.note(b"Do"),
         }
         Ok(())
+    }
+
+    /// Run a `/Subtype /Form` XObject as a nested content stream (8.10).
+    ///
+    /// The form's `/Matrix` maps its space into the current one, its `/BBox`
+    /// clips what it draws, and its `/Resources` replace the ones in force —
+    /// falling back to them when the form has none, which is what the standard
+    /// says and what most writers rely on. Depth is capped by
+    /// [`MAX_FORM_DEPTH`] so a cycle is reported instead of followed.
+    fn run_form(&mut self, stream: &pdf2::Stream) -> crate::Result<()> {
+        if self.form_depth >= MAX_FORM_DEPTH {
+            self.report.note(b"Do");
+            return Ok(());
+        }
+        let dict = stream.dict();
+        let bbox = match dict.get(b"BBox").and_then(rect_of) {
+            Some(bbox) => bbox,
+            None => {
+                // `/BBox` is required; without it there is nothing to clip to.
+                self.report.note(b"Do");
+                return Ok(());
+            }
+        };
+        let matrix = dict
+            .get(b"Matrix")
+            .and_then(Object::as_array)
+            .and_then(matrix_operand)
+            .unwrap_or(Matrix::IDENTITY);
+        let resources = match dict.get(b"Resources") {
+            Some(value) => match resolve(self.document, Some(value))? {
+                Object::Dictionary(dict) => Some(dict),
+                _ => self.resources.clone(),
+            },
+            None => self.resources.clone(),
+        };
+        let content = match self.document.decode_stream(stream) {
+            Ok(content) => content,
+            Err(_) => {
+                // A form we cannot decode is reported like any other undrawn `Do`.
+                self.report.note(b"Do");
+                return Ok(());
+            }
+        };
+
+        let saved_state = self.state.clone();
+        let saved_mask = self.mask.clone();
+        let saved_resources = self.resources.clone();
+        let saved_path = core::mem::replace(&mut self.path, Path::new());
+
+        self.state.ctm = matrix.multiply(self.state.ctm);
+        let corners = [
+            Point::new(bbox.x0, bbox.y0),
+            Point::new(bbox.x1, bbox.y0),
+            Point::new(bbox.x1, bbox.y1),
+            Point::new(bbox.x0, bbox.y1),
+        ]
+        .map(|point| self.state.ctm.apply(point));
+        self.mask.intersect(&clip_mask(
+            self.canvas.width(),
+            self.canvas.height(),
+            &[corners.to_vec()],
+            false,
+        ));
+        self.resources = resources;
+        self.form_depth += 1;
+        let result = self.run(&content);
+        self.form_depth -= 1;
+
+        self.state = saved_state;
+        self.mask = saved_mask;
+        self.resources = saved_resources;
+        self.path = saved_path;
+        result
     }
 
     fn load_font(&mut self, name: &[u8]) -> (Option<Font>, Option<SimpleWidths>, Option<CidFont>) {
@@ -1117,6 +1207,22 @@ fn number_of(document: &Document, object: Option<&Object>) -> Option<f64> {
     resolve(document, object)
         .ok()
         .and_then(|object| object.as_real())
+}
+
+/// A `/BBox` (or any four-number rectangle) as a [`pdf2::Rect`].
+fn rect_of(object: &Object) -> Option<pdf2::Rect> {
+    let items = object.as_array()?;
+    if items.len() < 4 {
+        return None;
+    }
+    let value = |index: usize| items.get(index).and_then(|item| item.as_real());
+    let (x0, y0, x1, y1) = (value(0)?, value(1)?, value(2)?, value(3)?);
+    Some(pdf2::Rect::new(
+        x0.min(x1),
+        y0.min(y1),
+        x0.max(x1),
+        y0.max(y1),
+    ))
 }
 
 fn matrix_operand(operands: &[Object]) -> Option<Matrix> {

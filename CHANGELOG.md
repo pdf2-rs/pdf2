@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Form XObjects draw** (`8.10`): `Do` on a `/Subtype /Form` stream now runs it
+  as a nested content stream — the form's `/Matrix` concatenated into the CTM,
+  its `/BBox` clipping what it paints, its `/Resources` replacing the current
+  dictionary (and inherited when the form declares none), and nesting capped at
+  `MAX_FORM_DEPTH` so a form that draws itself is reported once instead of
+  followed. This is the measured coverage gap: **39.4 %** of the pages in a
+  302-page sample report `Do` without it (`docs/RENDERING-QUALITY.md`).
+
 - **An image is measured before it is decoded** (`8.9.5`): `/Width × /Height ×
   components` is compared with the document's budget *before* the stream is
   touched, so a page claiming 10 000 × 10 000 pixels over ten bytes of payload
