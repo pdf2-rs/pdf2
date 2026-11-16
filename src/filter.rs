@@ -28,8 +28,6 @@ pub enum Filter {
     Ascii85Decode,
     /// `/RunLengthDecode` — literal and repeat runs.
     RunLengthDecode,
-    /// `/CCITTFaxDecode` — Group 3 or 4 fax, one bit per sample.
-    CcittFaxDecode,
 }
 
 impl Filter {
@@ -43,8 +41,7 @@ impl Filter {
             b"RunLengthDecode" | b"RL" => Ok(Self::RunLengthDecode),
             other => Err(Error::Malformed {
                 what: match other {
-                    b"CCITTFaxDecode" | b"CCF" => return Ok(Filter::CcittFaxDecode),
-                    b"DCTDecode" | b"JPXDecode" | b"JBIG2Decode" => {
+                    b"CCITTFaxDecode" | b"DCTDecode" | b"JPXDecode" | b"JBIG2Decode" => {
                         "image filters are out of scope"
                     }
                     b"Crypt" => "the /Crypt filter is Q9's job",
@@ -63,7 +60,6 @@ impl Filter {
             Self::AsciiHexDecode => "ASCIIHexDecode",
             Self::Ascii85Decode => "ASCII85Decode",
             Self::RunLengthDecode => "RunLengthDecode",
-            Self::CcittFaxDecode => "CCITTFaxDecode",
         }
     }
 }
@@ -200,7 +196,6 @@ pub fn decode_filter_with_limit(
         Filter::AsciiHexDecode => ascii_hex_decode(data)?,
         Filter::Ascii85Decode => ascii85_decode(data)?,
         Filter::RunLengthDecode => run_length_decode(data)?,
-        Filter::CcittFaxDecode => return fax_decode(data, parms, limit),
     };
     if decoded.len() > limit {
         return Err(Error::Limit {
@@ -225,7 +220,7 @@ pub fn decode_filter_with_limit(
 }
 
 /// `/CCITTFaxDecode`: the parameters live in `/DecodeParms` (7.4.6).
-fn fax_decode(data: &[u8], parms: Option<&Dictionary>, limit: usize) -> Result<Vec<u8>> {
+pub(crate) fn fax_decode(data: &[u8], parms: Option<&Dictionary>, limit: usize) -> Result<Vec<u8>> {
     let mut params = crate::fax::Params::default();
     if let Some(dict) = parms {
         if let Some(k) = dict.get(b"K").and_then(Object::as_integer) {

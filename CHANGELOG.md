@@ -4,17 +4,15 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] — in progress
-
-**A minor release, not a patch**: `Filter` gained a `CcittFaxDecode` variant, which
-is a new public enum variant and therefore breaking for an exhaustive match
-elsewhere — `cargo semver-checks` is right to refuse it as `1.2.1`. The rest of the
-section is fixes and coverage.
+## [1.2.1] — in progress
 
 - **One-dimensional CCITT fax images decode** (`7.4.6`): `src/fax.rs` reads the
   bit stream, honours the whole `/DecodeParms` set (`/K`, `/Columns`, `/Rows`,
   `/EndOfLine`, `/EncodedByteAlign`, `/EndOfBlock`, `/BlackIs1`) and decodes the
   T.4 run-length lines into one-bit rows, which the image path widens to samples.
+  The public `Filter` enum is deliberately unchanged — a fax stream is a bitmap
+  decoder rather than a byte filter, so `Document::decode_stream` dispatches it
+  after decryption, and `cargo semver-checks` stays quiet.
   `ccitt_EndOfBlock_false.pdf` draws its two `/K 0` images — legible text, which is
   the proof the tables are right — and reports the four two-dimensional ones
   rather than half-decoding them.
