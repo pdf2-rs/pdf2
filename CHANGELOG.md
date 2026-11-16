@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.2.1] — in progress
 
+- **Simple-font CFF programs draw** (`9.9`, `/FontFile3` with `/Subtype /Type1C`):
+  a bare CFF has no `cmap`, so its charset's glyph **names** are the route — the
+  Top DICT's ROS says whether the charset holds CIDs or names, and a name comes
+  back to a character. `ShowText-ShadingPattern.pdf` sets its text in the
+  embedded Arial subset and no longer reports `font:FontFile3`. Type 1
+  (`/FontFile`, `eexec`) is still reported.
 - **`cs`/`scn` select colour spaces, and a shading pattern paints** (`8.6.8`,
   `8.7.3.3`): the content stream's colour operators now choose a tint space
   (`/Separation`, `/DeviceN`) or a `/Pattern` space, and an `scn` naming a

@@ -169,6 +169,14 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 335 032) — a gradient is a function evaluated per pixel, and the calculator's
 operators are the bulk of it.
 
+**The npm bundle budget moved from 336 KiB to 344 KiB on 2026-11-16, for the
+simple-font CFF**: reading a bare CFF's charset *names* and matching them against
+the encoding's characters costs **+2 156 gzip bytes** (344 064 → 346 220 measured;
+the budget is the next 8 KiB step). It is what turns an embedded `/Type1C` font
+from the fallback bitmap alphabet into the document's own text — the glyph-name
+table it reuses was already in the library, so the growth is the loop and the
+lookup, not a new table.
+
 **The npm bundle budget moved from 260 KiB to 320 KiB on 2026-11-16,
 deliberately**: `/DCTDecode` support (`zune-jpeg`) costs **+66 759 gzip bytes** on
 the module — 241 174 → 307 582 — because a JPEG decoder reads tables, does

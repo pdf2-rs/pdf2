@@ -1417,6 +1417,28 @@ impl Walker<'_> {
         if let Some(descriptor) = font.get(b"FontDescriptor") {
             let descriptor = resolve(self.document, Some(descriptor)).ok()?;
             if let Object::Dictionary(descriptor) = descriptor {
+                // A simple CFF font (`/FontFile3`, `/Subtype /Type1C`) carries no
+                // `cmap`: its codes reach glyphs through the charset's names, so
+                // it draws once the name map is read. Other `/FontFile3`
+                // subtypes (OpenType-wrapped CFF is handled too) and Type 1
+                // programs (`/FontFile`, `eexec`) are still the fallback font.
+                if let Some(Object::Reference(id)) = descriptor.get(b"FontFile3") {
+                    if let Some(font) = self
+                        .document
+                        .stream_data(*id)
+                        .ok()
+                        .and_then(|data| Font::cff(encoding.clone(), data))
+                    {
+                        if font.has_glyph_names() {
+                            return Some(LoadedFont {
+                                font: Some(font),
+                                widths,
+                                cid: None,
+                                note: None,
+                            });
+                        }
+                    }
+                }
                 for (key, kind) in [
                     (&b"FontFile3"[..], "font:FontFile3"),
                     (&b"FontFile"[..], "font:FontFile"),

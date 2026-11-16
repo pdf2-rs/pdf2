@@ -7,6 +7,16 @@ smoothness and speed**, and each of those has a number.
 
 Measured 2026-11-15 with `pdf2 1.2.0`, `pdf2-render 1.2.0`.
 
+## Standard-14 text is the fidelity floor
+
+A page set in a standard-14 font embeds no program, and this renderer draws the code
+with its built-in bitmap alphabet — a different typeface family from the one the
+oracles draw. `ShowText-ShadingPattern.pdf` measures it: our mean distance to the
+oracles is **21.271 px** against their **1.400**, entirely because rows 1 and 3 are
+Helvetica while rows 2 and 4 are an embedded Arial subset that we now draw correctly.
+So a page is only comparable when its text is embedded, and a standard-14 page is
+proven by its report and its ink, not by a pixel comparison.
+
 ## Fidelity: we are inside the engines' own disagreement
 
 The oracle job compares each case with poppler, mupdf and Ghostscript. Our
