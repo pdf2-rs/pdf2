@@ -929,6 +929,47 @@ def make_generation_edge():
 
 
 
+def make_icc_paint():
+    """A *paint* colour space that is `/ICCBased`, and one that cannot be resolved.
+
+    Page 1 is a white fill and a black bar in `[/ICCBased 5 0 R]` with `/N 3`, which
+    is the shape the CV's page uses: the array has no alternate and no function, so a
+    resolver that assumed the `/Separation` layout reported "a colour space array
+    without an alternate" and left the fill at its initial black. Page 2 states an
+    `/ICCBased` array whose profile has no `/N` but an `/Alternate`, and page 3 a
+    family nothing can name — which must be **reported** (`cs:Cs3`) rather than
+    silently painting the previous colour.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R 6 0 R 9 0 R] /Count 3 >>")
+    # A profile is opaque to this renderer: `/N` is all it reads.
+    writer.stream(5, b"/N 3 /Alternate /DeviceRGB", b"\x00\x00\x00\x00")
+    writer.stream(8, b"/Alternate /DeviceRGB", b"\x00\x00\x00\x00")
+    for page, (space, content) in enumerate(
+        [
+            (b"[ /ICCBased 5 0 R ]", b"/Cs1 cs 1 1 1 sc 0 0 100 100 re f 0 0 0 sc 10 40 80 20 re f"),
+            (b"[ /ICCBased 8 0 R ]", b"/Cs2 cs 0 0 0 sc 0 0 100 100 re f"),
+            (b"[ /Lab ]", b"/Cs3 cs 1 1 1 sc 0 0 100 100 re f"),
+        ]
+    ):
+        page_object = 3 + page * 3
+        content_object = page_object + 1
+        writer.obj(
+            page_object,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents "
+            + str(content_object).encode()
+            + b" 0 R /Resources << /ColorSpace << /Cs"
+            + str(page + 1).encode()
+            + b" "
+            + space
+            + b" >> >> >>",
+        )
+        writer.stream(content_object, b"", content)
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("icc-paint.pdf", bytes(writer.out))
+
+
 def make_reading_order():
     """Three lines painted bottom, top, middle — reading order is by position.
 
@@ -2077,6 +2118,7 @@ if __name__ == "__main__":
     make_book()
     make_cropbox()
     make_generation_edge()
+    make_icc_paint()
     make_reading_order()
     make_tounicode()
     make_startxref_hint()

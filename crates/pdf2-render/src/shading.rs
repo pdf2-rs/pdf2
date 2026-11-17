@@ -279,6 +279,20 @@ pub(crate) fn parse_space(document: &Document, object: &Object) -> Result<Space>
                 .and_then(Object::as_name)
                 .unwrap_or(b"")
                 .to_vec();
+            // The family decides the shape of the array, so it is read *before*
+            // any of the entries are interpreted: `[/ICCBased stream]` has no
+            // alternate and no function at all, and treating every array as a
+            // tint space is what made a page whose fill space is ICCBased paint
+            // black — `9721 (10.9.5)`'s array sub-forms do not share a layout.
+            match family.as_slice() {
+                b"ICCBased" => return icc_based(document, &items),
+                b"Separation" | b"DeviceN" => {}
+                _ => {
+                    return Err(Error::Unsupported {
+                        what: "an array colour space other than ICCBased, Separation or DeviceN",
+                    });
+                }
+            }
             // `[/Separation /Spot /DeviceCMYK fn]` and
             // `[/DeviceN [/A /B] /DeviceCMYK fn]`: the alternate space is the
             // third entry in both, and the function is the last.
@@ -297,7 +311,7 @@ pub(crate) fn parse_space(document: &Document, object: &Object) -> Result<Space>
                 b"Separation" => Ok(Space::Separation { alternate, tint }),
                 b"DeviceN" => Ok(Space::DeviceN { alternate, tint }),
                 _ => Err(Error::Unsupported {
-                    what: "an array colour space other than Separation or DeviceN",
+                    what: "an array colour space other than ICCBased, Separation or DeviceN",
                 }),
             }
         }
@@ -305,6 +319,36 @@ pub(crate) fn parse_space(document: &Document, object: &Object) -> Result<Space>
             "a colour space that is neither a name nor an array",
         )),
     }
+}
+
+/// How many components an `/ICCBased` profile declares, and the space that means.
+///
+/// `/N` is the authority for the sample count (`8.6.5.5`), and the profile's own
+/// numbers are what a reader without colour management can honour: 1, 3 and 4 map
+/// onto Gray, RGB and CMYK. When `/N` is something else the array's `/Alternate`
+/// is the writer's fallback, and it is used instead of guessing.
+pub(crate) fn icc_components(document: &Document, items: &[Object]) -> Result<Space> {
+    let Some(Object::Reference(id)) = items.get(1) else {
+        return Err(Error::malformed("an /ICCBased space without a stream"));
+    };
+    // The profile is a *stream*: its `/N` lives in the stream's dictionary, which
+    // `Object::as_dict` does not expose.
+    let profile = document.stream(*id)?;
+    match profile.dict().get(b"N").and_then(Object::as_integer) {
+        Some(1) => Ok(Space::Gray),
+        Some(3) => Ok(Space::Rgb),
+        Some(4) => Ok(Space::Cmyk),
+        _ => match profile.dict().get(b"Alternate") {
+            Some(alternate) => parse_space(document, alternate),
+            None => Err(Error::Unsupported {
+                what: "an /ICCBased colour space of a component count it cannot name",
+            }),
+        },
+    }
+}
+
+fn icc_based(document: &Document, items: &[Object]) -> Result<Space> {
+    icc_components(document, items)
 }
 
 /// A colour in `space` from `values` (tints for `/Separation` and `/DeviceN`).
