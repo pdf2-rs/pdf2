@@ -1426,6 +1426,49 @@ def colour_key_pixels():
     return bytes([255, 0, 0, 0, 0, 255, 0, 255, 255, 0, 0, 0])
 
 
+def make_tr_clip():
+    """The clipping half of `Tr` modes 4–7 (9.3.6).
+
+    Four pages, each a rectangle painted *after* text at 96 pt, so the rectangle is
+    clipped to the glyph only when the mode asks for it. The glyph is Helvetica's
+    fallback "A" — a 5x7 block alphabet with a counter — which is enough to tell a
+    fill, a clip and neither apart at known pixels.
+
+    - page 1, `7 Tr`: blue rectangle clipped to the "A"; the glyph itself paints
+      nothing, so the page is a blue "A" on white.
+    - page 2, `4 Tr`: the glyph is filled black *and* clips a blue rectangle over
+      `x < 50`, so the left third of the "A" is blue and the rest stays the glyph's
+      own black — the page that tells a fill from a clip.
+    - page 3, `0 Tr`: no clip at all, so the rectangle covers the page.
+    - page 4, `7 Tr` inside `q … Q`: the clip is restored with the state, so the
+      rectangle covers the page here too.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R 6 0 R 9 0 R 12 0 R] /Count 4 >>")
+    font = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+    pages = [
+        (b"BT /F1 96 Tf 7 Tr 20 120 Td (A) Tj ET", b"0 0 1 rg 0 0 200 200 re f"),
+        (b"BT /F1 96 Tf 4 Tr 20 120 Td (A) Tj ET", b"0 0 1 rg 0 0 50 200 re f"),
+        (b"BT /F1 96 Tf 0 Tr 20 120 Td (A) Tj ET", b"0 0 1 rg 0 0 200 200 re f"),
+        (
+            b"q BT /F1 96 Tf 7 Tr 20 120 Td (A) Tj ET Q",
+            b"0 0 1 rg 0 0 200 200 re f",
+        ),
+    ]
+    for index, (text, rect) in enumerate(pages):
+        page = 3 + index * 3
+        writer.obj(
+            page,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents %d 0 R "
+            b"/Resources << /Font << /F1 %d 0 R >> >> >>" % (page + 1, page + 2),
+        )
+        writer.stream(page + 1, b"", text + b" " + rect)
+        writer.obj(page + 2, font)
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("tr-clip.pdf", bytes(writer.out))
+
+
 def make_colour_key():
     """Colour-key masking (8.9.6.4): a keyed sample is not painted.
 
@@ -1976,5 +2019,6 @@ if __name__ == "__main__":
     make_separation()
     make_tiling()
     make_colour_key()
+    make_tr_clip()
     make_cmyk_jpeg()
     make_type1_font()

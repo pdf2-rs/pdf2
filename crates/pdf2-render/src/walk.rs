@@ -871,10 +871,11 @@ impl Walker<'_> {
         if glyph.contours.is_empty() {
             return;
         }
-        // `Tr` 3 and 7 draw nothing; 1, 5 stroke only; 2, 6 fill and stroke.
+        // `Tr` (9.3.6, Table 104): 0 fill, 1 stroke, 2 both, 3 nothing, 4 fill+clip,
+        // 5 stroke+clip, 6 both+clip, 7 clip only. Mode 3 paints nothing *and* clips
+        // nothing, so it returns before the polygons are built.
         let mode = self.state.text_mode;
-        let invisible = matches!(mode, 3 | 7);
-        if invisible {
+        if mode == 3 {
             return;
         }
         let scale = Matrix::new(
@@ -898,6 +899,17 @@ impl Walker<'_> {
                     .collect()
             })
             .collect();
+        // Modes 4–7 add the outlines to the *current* clip, as if they were a path
+        // filled by the non-zero winding rule (8.5.3.3). The clip accumulates and
+        // belongs to the graphics state, so `q`/`Q` already restores it.
+        if matches!(mode, 4..=7) {
+            let outline = clip_mask(self.canvas.width(), self.canvas.height(), &polygons, false);
+            self.mask.intersect(&outline);
+        }
+        // Mode 7 clipped; it paints nothing.
+        if mode == 7 {
+            return;
+        }
         let filled = matches!(mode, 0 | 2 | 4 | 6);
         if filled {
             fill_polygons(
