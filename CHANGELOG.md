@@ -4,7 +4,16 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] — in progress
+## [1.4.0] — 2026-11-17
+
+**The renderer finishes the painting vocabulary it started in 1.3.** Three of the plans
+`docs/DEFERRED.md` had written down land as code: patterns now tile a fill instead of being
+ignored, an image's `/Mask` colour key hides the samples it names, and `Tr` modes 4–7 clip to
+the glyph outlines. Each is proved by a committed fixture with pixel arithmetic, and the corpus
+page that needs two of them at once — `colorkeymask.pdf` — paints its cell *and* passes the
+oracle comparison, so the work is measured against the engines rather than asserted. The MSRV
+work of the previous rounds lands in the same release (below), because the toolchain that
+unblocks the decoders belongs with the painting the release is about.
 
 ### Rendering
 
@@ -25,6 +34,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   current clip under the non-zero winding rule and `q`/`Q` restores it. Mode 7 used to
   share mode 3's early return, so it neither painted nor clipped. A Type 3 glyph has no
   outline, so modes 4–7 report `text-clip` rather than clipping to an empty mask.
+
+### Demo
+
+- The wasm demo gains four samples for these features — the tiling cell
+  (`colorkeymask.pdf`, whose key hides its own red band), the colour key, clipped text
+  under `Tr` 4–7, and the Type 3 page that reports `text-clip` — each driven by a check in
+  `demo-test.mjs` rather than left to look right. `pdf2-wasm` is **1.3.0** on both
+  crates.io and npm; its bundle is 365 277 gzip against the 364 KiB budget.
 
 ### Compatibility
 
