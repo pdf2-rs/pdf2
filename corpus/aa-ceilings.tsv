@@ -19,3 +19,9 @@ calibration#2	0.06
 # ceiling there would gate nothing. Its tolerance and its 60 ms budget are the
 # gates it has; the 1x1 run reports it `ok` at 0.0002 with the oracles agreeing
 # with each other exactly.
+# The two JBIG2 pages joined 2026-11-17 with the row-stride fix. Their 1x1 mean is
+# 0.521491 against an inter-oracle spread of 0.528947 (CI, the run that added them),
+# so the ceiling sits ~34 % above what we measure: the scan's edges are where the
+# engines' own anti-aliasing differs, and an AA-less renderer moves them further.
+bitmap-composite-and-xnor#1	0.7
+bitmap-p32-eof#1	0.7

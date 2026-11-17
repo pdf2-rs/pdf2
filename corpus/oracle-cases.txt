@@ -58,11 +58,14 @@ corpus/tier-a/colorkeymask.pdf 1
 # mupdf and Ghostscript alone.
 corpus/tier-a/bug_jpx.pdf 1
 
-# The two pdf.js JBIG2 pages are **not** gated, and the numbers say why: our
-# decoder and the engines disagree by 31.261 mean (0.0100 budget) with 13.53 % of
-# pixels over the threshold, identically for `bitmap-composite-and-xnor.pdf` and
-# `bitmap-p32-eof.pdf` — so the difference is in the decoder, not in the container
-# or in `/JBIG2Globals`, and adding the pair would gate our own bug as if it were
-# the engines' opinion. Tracked as the open item in docs/RENDERING-QUALITY.md; the
-# pair is still proved by crates/pdf2-render/tests/jbig2.rs (both rasters equal,
-# ink on white).
+# The two pdf.js JBIG2 pages joined 2026-11-17, once our own row-stride bug was
+# found and fixed: `Rows` packed pixels as a continuous bit stream where a 1-bit PDF
+# image is row-aligned to a byte, so a 399-wide page drifted one bit per row and the
+# pair sat 31.261 mean from the engines. Decoded straight through `hayro-jbig2` the
+# stream matched pdfium's reference raster exactly, and with the sink fixed ours does
+# too (`crates/pdf2-render/tests/jbig2.rs` compares against
+# `corpus/reference/bitmap-composite-and-xnor.pbm`). The two pages are one image
+# encoded two ways — inline segments and a `/JBIG2Globals` stream — and agree with
+# each other pixel for pixel.
+corpus/tier-a/bitmap-composite-and-xnor.pdf 1
+corpus/tier-a/bitmap-p32-eof.pdf 1
