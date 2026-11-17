@@ -7,6 +7,7 @@
 //! newest entry for an object number wins.
 
 use pdf2::{Document, Error, Object, ObjectId};
+use std::assert_matches;
 
 const FIXTURE: &[u8] = include_bytes!("fixtures/classic-xref.pdf");
 
@@ -170,10 +171,7 @@ fn a_hand_built_file_opens_too() {
 #[test]
 fn unsupported_features_are_reported_not_misread() {
     let encrypted = pdf_with_trailer(&["<< /Type /Catalog >>"], "/Root 1 0 R /Encrypt 1 0 R");
-    assert!(matches!(
-        Document::open(encrypted),
-        Err(Error::Malformed { .. })
-    ));
+    assert_matches!(Document::open(encrypted), Err(Error::Malformed { .. }));
 
     // A startxref that points at an indirect object is read as a
     // cross-reference stream; one that is not a stream is an error, not a guess.

@@ -232,7 +232,7 @@ pub fn dash_polyline(polyline: &[Point], dash: &Dash, ctm_scale: f64) -> Vec<Vec
     if on {
         current_run.push(polyline[0]);
     }
-    for window in polyline.windows(2) {
+    for window in polyline.array_windows::<2>() {
         let mut start = window[0];
         let end = window[1];
         let dx = end.x - start.x;
@@ -293,7 +293,7 @@ pub fn stroke_outline(
             continue;
         }
         let last_index = polyline.len() - 2;
-        for (index, window) in polyline.windows(2).enumerate() {
+        for (index, window) in polyline.array_windows::<2>().enumerate() {
             let start = window[0];
             let end = window[1];
             let first = index == 0;

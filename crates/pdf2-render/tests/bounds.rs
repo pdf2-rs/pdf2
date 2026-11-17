@@ -8,6 +8,7 @@
 
 use pdf2::{Document, Error};
 use pdf2_render::Image;
+use std::assert_matches;
 
 /// A document with one image XObject (object 4) whose stream is `data`.
 fn pdf_with_image(width: u32, height: u32, data: &[u8], filter: Option<&str>) -> Vec<u8> {
@@ -74,10 +75,7 @@ fn a_lying_width_is_refused_before_the_stream_is_decoded() {
     let stream = image_stream(&document);
     let error = Image::from_stream(&document, &stream, Some(pdf2::ObjectId::new(4, 0)))
         .expect_err("past the budget");
-    assert!(
-        matches!(error, Error::Limit { limit, .. } if limit == 256 << 20),
-        "{error}"
-    );
+    assert_matches!(error, Error::Limit { limit, .. } if limit == 256 << 20, "{error}");
     assert!(error.to_string().contains("268435456"), "{error}");
     assert!(
         !error.to_string().contains("Flate"),
@@ -95,10 +93,10 @@ fn the_budget_bounds_a_real_image_too_and_the_setter_moves_it() {
     let stream = image_stream(&document);
 
     document.set_decoded_limit(256 << 10);
-    assert!(matches!(
+    assert_matches!(
         Image::from_stream(&document, &stream, Some(pdf2::ObjectId::new(4, 0))),
         Err(Error::Limit { limit, .. }) if limit == 256 << 10
-    ));
+    );
 
     document.set_decoded_limit(1 << 20);
     let image = Image::from_stream(&document, &stream, Some(pdf2::ObjectId::new(4, 0)))

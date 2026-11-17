@@ -18,6 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manifest and would otherwise veto the 1.88-era APIs this release starts using.
   The library still builds with `--no-default-features --features alloc` for
   `thumbv7em-none-eabihf`, verified on 1.100.
+- **The 1.88–1.100 sweep is recorded and adopted where it pays**
+  ([`docs/MSRV.md`](docs/MSRV.md)): one line per release with a verdict. Used:
+  `as_chunks` (ten sites), let-chains (thirteen), `array_windows` (the path stroker
+  and the CFF ROS test), `assert_matches!` (twelve assertions in five test files).
+  Refused with the reason: `strict_*` arithmetic (it panics where this crate must
+  return an error), `if let` guards (every candidate is "do nothing when the operand
+  is absent", so a guard needs a second arm that says nothing), the allocator API
+  (a `#![forbid(unsafe_code)]` library cannot offer it).
 - **`resolver = "3"`**, the Rust-version-aware resolver that edition 2024 makes
   the default: it prefers dependency versions whose own `rust-version` fits ours, so
   a cold `Cargo.lock` cannot pick a crate that needs a newer compiler than 1.100.

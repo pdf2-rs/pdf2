@@ -6,6 +6,7 @@
 //! to be right for the round-trip to pass.
 
 use pdf2::{Document, DocumentBuilder, Object, ObjectId, Rect};
+use std::assert_matches;
 
 /// Compare two objects, ignoring the `/Length` the writer adds to streams.
 fn same_object(left: &Object, right: &Object) -> bool {
@@ -174,10 +175,7 @@ fn a_written_file_carries_xmp_metadata_and_no_info_dictionary() {
     let text = String::from_utf8_lossy(&metadata);
     assert!(text.contains("x:xmpmeta"), "{text}");
     assert!(!document.trailer().contains_key(b"Info"), "no /Info");
-    assert!(matches!(
-        document.catalog().expect("catalog"),
-        Object::Dictionary(_)
-    ));
+    assert_matches!(document.catalog().expect("catalog"), Object::Dictionary(_));
 }
 
 #[test]

@@ -29,6 +29,9 @@ paths and 1.0's layout depend on them.
 - **`no_std` keeps building.** `cargo +stable build -p pdf2
   --no-default-features --features alloc` must pass for
   `thumbv7em-none-eabihf`; `alloc`/`core` only, no new `std` dependency.
+- **The MSRV catalogue is [`docs/MSRV.md`](docs/MSRV.md)**: one line per release in
+  the range, used / not applicable / refused, so a bump starts from what we already
+  decided. Add to it in the change that raises the floor.
 - **Edition 2024, MSRV 1.100.** Let-chains are available (they need both); the
   `#[unsafe(...)]` attribute form is required for `no_mangle`/`export_name`/
   `link_section`; rustfmt's 2024 style edition is what `cargo fmt --all` produces,
