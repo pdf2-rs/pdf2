@@ -56,6 +56,51 @@ the transcription is a courtesy. `hayro-ccitt` itself is **not** a dependency: i
 
 [hayro]: https://crates.io/crates/hayro-ccitt/0.5.0
 
+## PDFium's expected JBIG2 rasters (BSD-3-Clause)
+
+`corpus/reference/bitmap-composite-and-xnor.pbm` is a PBM conversion of
+`third_party/jbig2/bitmap-composite-and-xnor_expected.pdf.0.png` from
+[`pdfium_tests`][pdfium_tests] at commit `2bcc4fdc9abe4c4c115c82c486ac4c46f1d474c5`
+(fetched 2026-11-17), and the same raster stands for `bitmap-p32-eof` because
+pdfium's two expected PNGs are byte-identical. It is a reference raster, not code:
+`crates/pdf2-render/tests/jbig2.rs` compares our decode against it, and the file
+ships nowhere — `corpus/` is excluded from the published crate.
+
+The same BSD-3-Clause terms as Adobe's CMaps above cover it; the PDFium project's
+notice is:
+
+```text
+Copyright 2014 PDFium Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+[pdfium_tests]: https://pdfium.googlesource.com/pdfium_tests
+
 ## pdf.js `src/core/ccitt.js` (Apache-2.0) — structure reference
 
 `src/fax.rs`'s two-dimensional decoder follows the *structure* of
