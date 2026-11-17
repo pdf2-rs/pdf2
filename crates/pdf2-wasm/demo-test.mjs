@@ -455,6 +455,40 @@ async function main() {
       `scrollLeft ${moved.scrollLeft}, scrollTop ${moved.scrollTop}`,
     );
 
+    // "Page" fits the whole page, and it must stay fitted: the wrap's height is
+    // content, so a scale measured from it fed the page's own size back into
+    // itself, and a ResizeObserver re-rendering on every resize turned that into a
+    // loop — the page shrank a few pixels per frame until it hit the floor. Two
+    // clicks and a settle must leave the same size both times.
+    const pageSize = async () => {
+      await evaluate(`document.querySelector('#fitPage').click();`);
+      await new Promise((done) => setTimeout(done, 600));
+      return evaluate(`
+        const canvas = document.querySelector('#canvas');
+        const wrap = document.querySelector('#canvasWrap');
+        return {
+          canvas: Math.round(canvas.getBoundingClientRect().height),
+          wrap: Math.round(wrap.getBoundingClientRect().height),
+          zoom: document.querySelector('#zoomInfo').textContent,
+        };
+      `);
+    };
+    const firstFit = await pageSize();
+    const secondFit = await pageSize();
+    check(
+      firstFit.canvas > 200 && secondFit.canvas === firstFit.canvas,
+      `"Page" fits once and stays fitted: ${firstFit.canvas}px then ${secondFit.canvas}px`,
+    );
+    check(
+      secondFit.wrap >= secondFit.canvas - 2,
+      `the wrap is not clamped under the page: wrap ${secondFit.wrap}px, page ${secondFit.canvas}px`,
+    );
+    // And it really does fit: the whole page is inside the wrap's height cap.
+    check(
+      secondFit.canvas <= secondFit.wrap + 2,
+      `the page fits inside the wrap: ${secondFit.canvas}px of ${secondFit.wrap}px`,
+    );
+
     // Fit gives the page back its container, and hides the minimap.
     await evaluate(`document.querySelector('#fit').click();`);
     await waitFor(

@@ -152,9 +152,17 @@ function scaleFor(pageWidth, pageHeight) {
   }
   const wrap = elements.canvasWrap;
   const availableWidth = Math.max(wrap.clientWidth - 4, 120);
-  const availableHeight = Math.max(wrap.clientHeight - 4, 120);
   const byWidth = availableWidth / pageWidth;
   if (state.zoom === 'page') {
+    // The wrap's **height** is content: it grows with the canvas up to its CSS
+    // cap, so measuring `clientHeight` feeds the page's own size back into the
+    // scale — and with a ResizeObserver re-rendering on every wrap resize that
+    // feeds itself: choosing "Page" shrank the page a few pixels per frame, all
+    // the way to the floor. The cap is the honest number, and it does not depend
+    // on what is currently drawn.
+    const cap = Number.parseFloat(getComputedStyle(wrap).maxHeight);
+    const height = Number.isFinite(cap) ? cap : (globalThis.innerHeight || 0) * 0.78;
+    const availableHeight = Math.max(height - 8, 120);
     return Math.min(byWidth, availableHeight / pageHeight);
   }
   return byWidth;
@@ -520,11 +528,25 @@ window.addEventListener('drop', (event) => {
 });
 
 let resizeTimer = null;
-new ResizeObserver(() => {
+let wrapWidth = elements.canvasWrap.clientWidth;
+new ResizeObserver((entries) => {
+  const box = entries[entries.length - 1].contentRect;
+  const widthChanged = Math.abs(box.width - wrapWidth) > 0.5;
+  if (widthChanged) {
+    wrapWidth = box.width;
+  }
   if (!state.document) {
     return;
   }
   if (typeof state.zoom === 'number') {
+    updateViewport();
+    return;
+  }
+  // Rendering changes the wrap's *height* in the fit modes, so a render that
+  // re-renders on every resize chases its own output. Only a width change — the
+  // window, the layout — needs a new page; a height change just moves the
+  // minimap's rectangle.
+  if (!widthChanged) {
     updateViewport();
     return;
   }
