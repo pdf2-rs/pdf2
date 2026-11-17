@@ -174,8 +174,23 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 
 | File | Raw | Gzip |
 | --- | --- | --- |
-| `pdf2_wasm_bg.wasm` | 883 830 B | 307 582 B |
-| `pdf2_wasm.js` (glue) | 19 047 B | 4 833 B |
+| `pdf2_wasm_bg.wasm` | 1 042 710 B | 360 895 B |
+| `pdf2_wasm.js` (glue) | 19 006 B | 4 810 B |
+
+**JPEG 2000 and JBIG2 are features, and the npm bundle did not move for them**
+(2026-11-17, [ADR 0007](adr/0007-decoder-features.md)): `/JPXDecode` costs
+**+76 705** gzip and `/JBIG2Decode` **+62 685** (both **+138 481**) when they are
+compiled in, against **365 705** with neither — measured on the 1.4.0 tree by the
+commands above, with `--features jpx,jbig2` on the `cargo build` and gzip level 9.
+The default keeps its 364 KiB budget, so the npm package decodes neither; the demo
+site loads a second, decoder-enabled artefact with its own budget line, and
+`crates/pdf2-oracle` enables both unconditionally because it is evidence rather than
+a shipped artefact.
+
+The measurement has a trap worth recording: a build that links the decoders only far
+enough to read a codestream header measures **+23 410** for both, because the decode
+path is unreachable and link-time dead-code elimination removes it. A decoder costs
+what its pixels drag in, so the number has to come from a build that decodes.
 
 **The bundle moved from 320 KiB to 336 KiB on the same day, for shadings**:
 `sh` plus the `/Function` evaluator cost **+7 465 gzip bytes** (327 567 →
