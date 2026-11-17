@@ -279,37 +279,80 @@ impl Image {
         })
     }
 
-    /// A `/JPXDecode` image with the feature reads its codestream header.
-    ///
-    /// The header is where the size is decided, and reading it here keeps
-    /// `hayro-jpeg2000` linked and reachable — which is what makes the wasm
-    /// bundle measurement in `docs/PERFORMANCE.md` a real number rather than a
-    /// stripped dependency. Painting the pixels is the next round's work.
+    /// A `/JPXDecode` image with the feature: the codestream decides the size,
+    /// the colour space and the depth (7.4.9), so all three come from its header
+    /// and the budget is checked before a pixel is decoded.
     #[cfg(feature = "jpx")]
-    fn from_jpx(document: &Document, _stream: &Stream, id: Option<pdf2::ObjectId>) -> Result<Self> {
+    fn from_jpx(document: &Document, stream: &Stream, id: Option<pdf2::ObjectId>) -> Result<Self> {
         let Some(id) = id else {
             return Err(Error::malformed(
                 "a /JPXDecode image without an object number",
             ));
         };
+        let interpolate = matches!(
+            stream.dict().get(b"Interpolate"),
+            Some(Object::Boolean(true))
+        );
         let data = document.stream_bytes(id)?;
         let image = hayro_jpeg2000::Image::new(&data, &hayro_jpeg2000::DecodeSettings::default())
             .map_err(|_| Error::malformed("/JPXDecode codestream"))?;
-        let _ = (
-            image.width(),
-            image.height(),
-            image.color_space(),
-            image.has_alpha(),
-        );
-        // Decoding here and throwing the result away is deliberate for one
-        // round: the wasm cost of a decoder is what its *pixels* drag in, so a
-        // header-only link would measure a number that no shipped build has.
-        // The round that paints them replaces this call with the paint.
+        // An alpha channel and an ICC or unknown colour space are refused by
+        // name rather than guessed at: the first needs a soft mask this renderer
+        // does not carry, and the other two need colour management it does not do.
+        if image.has_alpha() {
+            return Err(Error::Unsupported {
+                what: "a /JPXDecode image with an alpha channel",
+            });
+        }
+        let components = jpx_components(image.color_space())?;
+        let width = image.width();
+        let height = image.height();
+        let count = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(components))
+            .ok_or_else(|| Error::malformed("/JPXDecode image dimensions overflow"))?;
+        let limit = document.decoded_limit();
+        if count > limit {
+            return Err(Error::Limit {
+                what: "a /JPXDecode image of the size its codestream declares",
+                limit,
+            });
+        }
+        // `/Decode` is not part of the JPX model — the codestream carries its own
+        // sample range — so the samples are used as they come.
         let mut context = hayro_jpeg2000::DecoderContext::default();
-        let decoded = image.decode(&mut context);
-        let _ = decoded.map(|decoded| decoded.data_u8().len());
-        Err(Error::Unsupported {
-            what: "a /JPXDecode image",
+        let decoded = image
+            .decode(&mut context)
+            .map_err(|_| Error::malformed("/JPXDecode payload"))?;
+        let samples = decoded.data_u8();
+        if samples.len() < count {
+            return Err(Error::malformed(
+                "/JPXDecode payload is shorter than its header",
+            ));
+        }
+        let sample = |byte: u8| f64::from(byte) / 255.0;
+        let pixels = samples[..count]
+            .chunks_exact(components)
+            .map(|bytes| match components {
+                1 => {
+                    let grey = sample(bytes[0]);
+                    Color::rgb(grey, grey, grey)
+                }
+                4 => Color::from_cmyk(
+                    sample(bytes[0]),
+                    sample(bytes[1]),
+                    sample(bytes[2]),
+                    sample(bytes[3]),
+                ),
+                _ => Color::rgb(sample(bytes[0]), sample(bytes[1]), sample(bytes[2])),
+            })
+            .collect();
+        Ok(Self {
+            width,
+            height,
+            pixels,
+            interpolate,
+            masked: None,
         })
     }
 
@@ -781,11 +824,78 @@ pub(crate) fn resolve(document: &Document, object: Option<&Object>) -> Result<Ob
     }
 }
 
+/// How many components a JPX colour space needs, or why it is refused.
+///
+/// `/JPXDecode` takes its colour space from the codestream (7.4.9), and this
+/// renderer can paint grey, RGB and CMYK. An ICC or unnamed space would need
+/// colour management, so it is reported by name instead of mapped by component
+/// count — the failure mode that guesses is the one that draws a wrong colour
+/// with full confidence.
+#[cfg(feature = "jpx")]
+fn jpx_components(space: &hayro_jpeg2000::ColorSpace) -> Result<usize> {
+    match space {
+        hayro_jpeg2000::ColorSpace::Gray => Ok(1),
+        hayro_jpeg2000::ColorSpace::RGB => Ok(3),
+        hayro_jpeg2000::ColorSpace::CMYK => Ok(4),
+        hayro_jpeg2000::ColorSpace::Icc { .. } => Err(Error::Unsupported {
+            what: "a /JPXDecode image in an ICC colour space",
+        }),
+        hayro_jpeg2000::ColorSpace::Unknown { .. } => Err(Error::Unsupported {
+            what: "a /JPXDecode image in a colour space it cannot name",
+        }),
+    }
+}
+
+/// A JBIG2 sink that counts pixels instead of storing them.
+///
+/// It exists so the decoder's decode path is linked (see `from_jbig2`); the round
+/// that paints JBIG2 images replaces it with the real 1-bit row writer.
+#[cfg(feature = "jbig2")]
+#[derive(Default)]
+struct Sink {
+    pixels: usize,
+}
+
+#[cfg(feature = "jbig2")]
+impl hayro_jbig2::Decoder for Sink {
+    fn push_pixel(&mut self, _black: bool) {
+        self.pixels += 1;
+    }
+
+    fn push_pixel_chunk(&mut self, _black: bool, chunk_count: u32) {
+        self.pixels += 8 * chunk_count as usize;
+    }
+
+    fn next_line(&mut self) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::Image;
     use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
     use crate::geom::Matrix;
+
+    /// A JPX colour space this renderer cannot honour is refused by name, not
+    /// mapped by component count: the guess is what draws a confident wrong
+    /// colour.
+    #[cfg(feature = "jpx")]
+    #[test]
+    fn jpx_refuses_the_colour_spaces_it_cannot_paint() {
+        use hayro_jpeg2000::ColorSpace;
+
+        assert_eq!(super::jpx_components(&ColorSpace::Gray).unwrap(), 1);
+        assert_eq!(super::jpx_components(&ColorSpace::RGB).unwrap(), 3);
+        assert_eq!(super::jpx_components(&ColorSpace::CMYK).unwrap(), 4);
+        let icc = super::jpx_components(&ColorSpace::Icc {
+            profile: Vec::new(),
+            num_channels: 3,
+        })
+        .expect_err("an ICC space needs colour management");
+        assert!(icc.to_string().contains("ICC"), "{icc}");
+        let unknown = super::jpx_components(&ColorSpace::Unknown { num_channels: 2 })
+            .expect_err("an unnamed space is refused");
+        assert!(unknown.to_string().contains("cannot name"), "{unknown}");
+    }
 
     fn image(width: u32, height: u32, interpolate: bool) -> Image {
         let mut pixels = Vec::new();
@@ -835,27 +945,4 @@ mod tests {
         assert_eq!(canvas.pixel(0, 3), Some([255, 255, 255, 255]));
         assert_eq!(canvas.pixel(3, 3), Some([0, 0, 0, 255]));
     }
-}
-
-/// A JBIG2 sink that counts pixels instead of storing them.
-///
-/// It exists so the decoder's decode path is linked (see `from_jbig2`); the round
-/// that paints JBIG2 images replaces it with the real 1-bit row writer.
-#[cfg(feature = "jbig2")]
-#[derive(Default)]
-struct Sink {
-    pixels: usize,
-}
-
-#[cfg(feature = "jbig2")]
-impl hayro_jbig2::Decoder for Sink {
-    fn push_pixel(&mut self, _black: bool) {
-        self.pixels += 1;
-    }
-
-    fn push_pixel_chunk(&mut self, _black: bool, chunk_count: u32) {
-        self.pixels += 8 * chunk_count as usize;
-    }
-
-    fn next_line(&mut self) {}
 }
