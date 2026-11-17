@@ -149,7 +149,7 @@ deliberately still missing, with the reason and the unblock condition for each.
   embedded Arial subset and no longer reports `font:FontFile3`. Type 1
   (`/FontFile`, `eexec`) is still reported.
 - **`cs`/`scn` select colour spaces, and a shading pattern paints** (`8.6.8`,
-  `8.7.3.3`): the content stream's colour operators now choose a tint space
+  `8.7.4`): the content stream's colour operators now choose a tint space
   (`/Separation`, `/DeviceN`) or a `/Pattern` space, and an `scn` naming a
   `/PatternType 2` fills the path with that shading — `ShowText-ShadingPattern.pdf`
   draws its gradient swatch and reports only its simple-CFF font. Tiling patterns
