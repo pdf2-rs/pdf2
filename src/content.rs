@@ -21,7 +21,7 @@
 //! corpus paints 2, 1, 4, 3 and reads 1, 2, 3, 4. The decision and its limits are
 //! in `docs/adr/0002-text-extraction-shape.md`.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use alloc::collections::BTreeMap;
@@ -828,6 +828,27 @@ pub struct TextSpan {
     pub bounds: Rect,
 }
 
+/// One page's search hits: a needle found on a page, with where it was found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageHits {
+    /// The page, counting from zero as [`Document::page`] does.
+    pub page: usize,
+    /// The hits on that page, left to right and top to bottom.
+    pub hits: Vec<SearchHit>,
+}
+
+/// One occurrence of a search needle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchHit {
+    /// The matched text, as the page carries it — the needle's own case is not
+    /// substituted, so a caller can highlight what is really there.
+    pub text: String,
+    /// The line's box on the page. Per-character rectangles need per-glyph
+    /// advances, which extraction does not collect yet; a line box is honest about
+    /// that and is what a find box highlights.
+    pub bounds: Rect,
+}
+
 impl Line {
     /// The line's box in page space, or `None` when it cannot be placed.
     fn bounds(&self) -> Rect {
@@ -881,6 +902,50 @@ impl Document {
         self.spans_from(&content, page.resources.as_ref())
     }
 
+    /// Every occurrence of `needle` in the document's pages, case-insensitively.
+    ///
+    /// The search runs over the **spans**, so a phrase is found inside a line and
+    /// never across a line break: a reader searching "first line" wants the words,
+    /// and a reader searching for text that only matches if two lines are glued
+    /// together wants a different tool. An empty needle matches nothing rather than
+    /// everything.
+    pub fn search(&self, needle: &str) -> Result<Vec<PageHits>> {
+        let folded = needle.to_lowercase();
+        let mut found = Vec::new();
+        if folded.is_empty() {
+            return Ok(found);
+        }
+        for (index, page) in self.pages()?.iter().enumerate() {
+            let content = self.page_content(page)?;
+            let mut hits = Vec::new();
+            for span in self.spans_from(&content, page.resources.as_ref())? {
+                let haystack = span.text.to_lowercase();
+                let mut from = 0;
+                while let Some(at) = haystack[from..].find(&folded) {
+                    let start = from + at;
+                    let end = start + folded.len();
+                    // The matched slice of the *original* text, which keeps its case.
+                    let first = char_boundary(&span.text, start);
+                    let last = char_boundary(&span.text, end);
+                    let text = span
+                        .text
+                        .get(first..last)
+                        .unwrap_or(span.text.as_str())
+                        .to_string();
+                    hits.push(SearchHit {
+                        text,
+                        bounds: span.bounds,
+                    });
+                    from = end;
+                }
+            }
+            if !hits.is_empty() {
+                found.push(PageHits { page: index, hits });
+            }
+        }
+        Ok(found)
+    }
+
     /// Spans of a decoded content stream and its resource dictionary.
     pub fn spans_from(
         &self,
@@ -896,6 +961,19 @@ impl Document {
             })
             .collect())
     }
+}
+
+/// The nearest character boundary at or below a byte offset.
+///
+/// `str::to_lowercase` can change a string's length (`İ` becomes two bytes), so a
+/// match offset in the folded text is *not* necessarily a boundary in the original;
+/// the slice is widened to one rather than panicking on it.
+fn char_boundary(text: &str, offset: usize) -> usize {
+    let mut at = offset.min(text.len());
+    while at > 0 && !text.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
 }
 
 #[cfg(test)]
