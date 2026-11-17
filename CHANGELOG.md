@@ -18,6 +18,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manifest and would otherwise veto the 1.88-era APIs this release starts using.
   The library still builds with `--no-default-features --features alloc` for
   `thumbv7em-none-eabihf`, verified on 1.100.
+- **What the new floor unblocks is recorded, with a number**
+  ([ADR 0005](docs/adr/0005-msrv-1-100.md)): JPEG 2000 and JBIG2 need `rust-version =
+  "1.92"` and the floor is now 1.100, so nothing technical blocks them — measured by
+  linking them, `hayro-jpeg2000` costs **+76 052 gzip** and `hayro-jbig2` **+62 495**
+  (both **+137 502**) against a 356 KiB npm bundle, so rank 9 is now a budget
+  decision rather than a toolchain one. ICC colour management's dependency question
+  also closed: `moxcms` 0.9.2 needs 1.89, is `BSD-3-Clause OR Apache-2.0` and pure
+  Rust, so what remains there is the fidelity decision. The browser and WASI budgets
+  are unaffected by either, because those modules contain no renderer.
 - **The 1.88–1.100 sweep is recorded and adopted where it pays**
   ([`docs/MSRV.md`](docs/MSRV.md)): one line per release with a verdict. Used:
   `as_chunks` (ten sites), let-chains (thirteen), `array_windows` (the path stroker
