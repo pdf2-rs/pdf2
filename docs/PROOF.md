@@ -145,7 +145,7 @@ number promises. Both fail the job, and both print the number they failed on.
 
 - Committed: this strategy, the three tiers, the licences, the oracle set, the
   metric definitions and the calibration rule.
-- Committed (Q4): Tier A — 23 files, 827 249 bytes, hashed in
+- Committed (Q4): Tier A — 25 files, 830 053 bytes, hashed in
   `corpus/manifest.json`, with the Apache-2.0 text in `corpus/LICENSES/`, and
   `corpus/` excluded from the crate.
 - **First run stopped at the door**: all 23 files were rejected at the header

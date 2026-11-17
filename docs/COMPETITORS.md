@@ -150,5 +150,7 @@ Sources referenced in the tables:
 - [c2] `docs/CORPUS.md` — before the header gate opened, 23 of 23 real files were
   refused (`src/document.rs:486` required `2.`); after accepting `1.x` as well,
   21 of 23 parse and render and 14 are fully readable.
-- [f1] `src/filter.rs:41` — `/DCTDecode`, `/JPXDecode`, `/CCITTFaxDecode`,
-  `/JBIG2Decode` return "image filters are out of scope".
+- [f1] `src/filter.rs:41` — the library's own filter chain still answers "image
+  filters are out of scope" for `/DCTDecode`, `/JPXDecode`, `/CCITTFaxDecode` and
+  `/JBIG2Decode`; the renderer dispatches all four before it, with `dct` on by
+  default and `jpx`/`jbig2` behind features (ADR 0007).

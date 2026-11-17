@@ -1,7 +1,7 @@
 # The corpus run: what this library does with 23 real files
 
 First measurement of the proof strategy in [`docs/PROOF.md`](PROOF.md): Tier A,
-23 files from the pdf.js test suite, pinned and hashed in
+25 files from the pdf.js test suite, pinned and hashed in
 [`corpus/manifest.json`](../corpus/manifest.json), run on 2026-11-14 with
 `pdf2 1.0.0` and `pdf2-render 1.1.0`.
 
@@ -69,7 +69,9 @@ Every file was chosen to exercise a construct this repository cannot generate:
 | `ContentStreamCycleType3insideType3.pdf` | 2 440 | Type 3 inside Type 3 |
 | `Type3WordSpacing.pdf` | 2 693 | Type 3 metrics |
 | `issue18768_type3_wide_glyph.pdf` | 1 059 | Type 3 wide glyph |
-| `bug_jpx.pdf` | 5 451 | JPEG 2000 image |
+| `bug_jpx.pdf` | 5 451 | JPEG 2000 image (`/JPXDecode`, drawn behind the `jpx` feature) |
+| `bitmap-composite-and-xnor.pdf` | 1 314 | JBIG2 image, segments inline |
+| `bitmap-p32-eof.pdf` | 1 490 | JBIG2 image with `/DecodeParms /JBIG2Globals` |
 | `ccitt_EndOfBlock_false.pdf` | 3 256 | CCITT image |
 | `cmykjpeg.pdf` | 374 080 | CMYK JPEG |
 | `ShowText-ShadingPattern.pdf` | 4 671 | shading pattern fill |
@@ -83,7 +85,7 @@ Every file was chosen to exercise a construct this repository cannot generate:
 | `TrueType_without_cmap.pdf` | 3 989 | font without a cmap |
 | `encrypted-attachment.pdf` | 2 719 | encryption with an attachment |
 
-Total 827 249 bytes; the manifest records each SHA-256 and the pdf.js commit
+Total 830 053 bytes; the manifest records each SHA-256 and the pdf.js commit
 (`d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a`).
 
 ## What the measurement changed
@@ -97,10 +99,11 @@ Total 827 249 bytes; the manifest records each SHA-256 and the pdf.js commit
 - **A new gap surfaced**: `/Encrypt` revisions 2–4 (RC4 and AES-128) are 1.x-era
   and unimplemented; the library has AES-256 revision 6 only. It goes into
   `docs/GAPS.md` with this file as evidence.
-- **Images are not the blocker they were assumed to be**: `bug_jpx.pdf`,
-  `ccitt_EndOfBlock_false.pdf`, `cmykjpeg.pdf` and `colorkeymask.pdf` all parse
-  and render, because the renderer draws unsupported images as blanks and
-  reports them rather than failing the page.
+- **Images are not the blocker they were assumed to be**, and since 1.5 they are
+  not blank either: `bug_jpx.pdf` draws with the `jpx` feature and the two JBIG2
+  pages with `jbig2` (both off by default, ADR 0007), while
+  `ccitt_EndOfBlock_false.pdf`, `cmykjpeg.pdf` and `colorkeymask.pdf` draw on the
+  default build.
 - **Tier B is now worth fetching**: a batch run over 690 pdf.js files would
   measure the same classes at scale.
 
