@@ -319,7 +319,9 @@ denied, and packages the crate.
 `rust-toolchain.toml` pins stable (with `rustfmt` and `clippy`) for local work.
 The MSRV stays checkable with `cargo +1.100 test`, because an explicit
 `+toolchain` argument outranks that file — which is also how CI names every
-toolchain it uses.
+toolchain it uses. It is the current stable, so the MSRV job is also what stops an
+API that only exists in 1.101 from slipping in; [docs/MSRV.md](docs/MSRV.md) says
+what each release from 1.88 to 1.100 brought and whether this crate used it.
 
 Releases are published from `.github/workflows/publish.yml` on a `v*` tag using
 [crates.io trusted publishing](https://crates.io/docs/trusted-publishing/) —
