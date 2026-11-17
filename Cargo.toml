@@ -57,7 +57,12 @@ members = [
     "crates/pdf2-wasm",
     "crates/pdf2-wasm-smoke",
 ]
-resolver = "2"
+# The Rust-version-aware resolver (edition 2024's default). It prefers dependency
+# versions whose `rust-version` fits ours, so a fresh `Cargo.lock` cannot pick a
+# crate that needs a newer compiler than the MSRV declares. Recorded rather than
+# inferred: `Cargo.lock` is git-ignored, so the setting is the only thing that
+# tells the next person why resolution behaves this way.
+resolver = "3"
 
 # Lint policy for every crate, so it holds in `cargo build` and `cargo test`
 # too, not only when someone remembers the flags CI uses. Keep this equal to

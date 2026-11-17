@@ -18,6 +18,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manifest and would otherwise veto the 1.88-era APIs this release starts using.
   The library still builds with `--no-default-features --features alloc` for
   `thumbv7em-none-eabihf`, verified on 1.100.
+- **`resolver = "3"`**, the Rust-version-aware resolver that edition 2024 makes
+  the default: it prefers dependency versions whose own `rust-version` fits ours, so
+  a cold `Cargo.lock` cannot pick a crate that needs a newer compiler than 1.100.
+  Measured, not assumed: a lock rebuilt from nothing resolves **46 packages, the
+  same versions as before, with nothing added or removed** (`aes 0.8.4`,
+  `cbc 0.1.2`, `miniz_oxide 0.9.1`, `sha2 0.10.9` unchanged), and the benchmark
+  stays inside its 10 % gate, so no baseline was re-recorded.
 - **Edition 2024.** Every crate moves, and the migration found nothing to fix: both
   `cargo fix --edition` runs (root and each member) were no-ops, so the source was
   already 2024-compatible. What the edition *unlocks* is let-chains, and clippy's
