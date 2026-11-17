@@ -71,9 +71,12 @@ Where it lands, in the order the rounds build it:
    travels in the state and the tile's content paints with it; `/PaintType 1` ignores
    those operands.
 5. **`/TilingType` 1–3**: the clause's three values describe how spacing is adjusted to
-   avoid distortion at a device resolution. At this renderer's uniform scale the lattice
-   is identical for all three, so they are read and treated as a hint — recorded here so
-   nobody later "fixes" a difference that does not exist at 1×.
+   avoid distortion at a device resolution — 1 constant spacing with up to a pixel of
+   cell distortion, 2 no distortion but spacing may vary by a pixel, 3 constant spacing
+   with more distortion for speed. The lattice as implemented is uniform, which is the
+   behaviour of type 2 and the limit of 1 and 3; **snapping the steps to whole device
+   pixels is recorded as a separate decision**, because no fixture here measures
+   sub-pixel spacing and untested arithmetic is not worth landing.
 
 ## Acceptance
 

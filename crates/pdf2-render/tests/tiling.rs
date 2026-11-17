@@ -81,3 +81,52 @@ fn a_lattice_over_the_cell_budget_is_reported_not_attempted() {
         "and nothing is painted, rather than a slice of a million cells"
     );
 }
+
+#[test]
+fn an_uncoloured_cell_is_poured_with_the_colour_scn_gives_it() {
+    // Page 3: `/PaintType 2`, so the cell is a stencil (`0 0 5 10 re f`, no colour),
+    // and `1 0 0 /P3 scn` in `[/Pattern /DeviceRGB]` pours red through it (8.7.3.3).
+    let rendered = render(2);
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "the stencil paints: {}",
+        rendered.report
+    );
+    for y in [185_u32, 195] {
+        assert_eq!(
+            pixel(&rendered, 2, y),
+            [255, 0, 0, 255],
+            "poured red at y={y}"
+        );
+        assert_eq!(
+            pixel(&rendered, 7, y),
+            [255, 255, 255, 255],
+            "stencil gap at y={y}"
+        );
+        assert_eq!(
+            pixel(&rendered, 12, y),
+            [255, 0, 0, 255],
+            "second cell at y={y}"
+        );
+    }
+}
+
+#[test]
+fn a_cell_that_sets_its_own_colour_is_reported_not_obeyed() {
+    // Page 4 is the same stencil except that its cell runs `0 1 0 rg`, which the
+    // clause forbids ("shall not explicitly specify any colours", 8.7.3.3). The
+    // operator is reported and the poured colour stands, so the tile is red and
+    // the page says why.
+    let rendered = render(3);
+    let report = rendered.report.to_string();
+    assert!(
+        report.contains("rg"),
+        "the cell's colour operator is reported: {report}"
+    );
+    assert_eq!(
+        pixel(&rendered, 2, 190),
+        [255, 0, 0, 255],
+        "the poured colour stands, not the cell's green"
+    );
+}
