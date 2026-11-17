@@ -9,7 +9,7 @@ reports nothing.
 
 ## Clause
 
-**`9.3.6` Text Rendering Mode**, Table 106: mode 0 fill, 1 stroke, 2 fill+stroke, 3
+**`9.3.6` Text Rendering Mode**, Table 104: mode 0 fill, 1 stroke, 2 fill+stroke, 3
 invisible, **4 fill+clip, 5 stroke+clip, 6 fill+stroke+clip, 7 clip only**. When a mode
 has the clipping bit the glyph outlines are added to the *current clipping path* — "as if
 they were a path" — which means the non-zero winding rule of **`8.5.3.3` Filling** applies,
