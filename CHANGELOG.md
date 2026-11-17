@@ -4,6 +4,23 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — in progress
+
+### Compatibility
+
+- **The MSRV is now 1.100** (raised from 1.87). The reason is the one the previous
+  release could not act on: the three decoders `docs/adr/0004-image-decoders-and-the-msrv.md`
+  deferred — `hayro-jpeg2000` 0.5.0, `hayro-jbig2` 0.4.0 and `hayro-ccitt` 0.5.0 —
+  declare `rust-version = "1.92"`, and a tool that cannot read JPEG 2000 or JBIG2
+  is a tool that cannot open a scanned contract. `1.100` is the current stable, so
+  the MSRV job also becomes the guard against adopting an API that only exists in
+  1.101; `.clippy.toml`'s `msrv` moves with it, because that pin *overrides* the
+  manifest and would otherwise veto the 1.88-era APIs this release starts using.
+  The library still builds with `--no-default-features --features alloc` for
+  `thumbv7em-none-eabihf`, verified on 1.100.
+- Edition 2024 and the `1.88`–`1.100` API sweep follow in this same release; each
+  lands with its own note below.
+
 ## [1.3.0] — 2026-11-17
 
 **The renderer draws the page a writer meant, and says so when it cannot.** Twenty

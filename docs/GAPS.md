@@ -71,7 +71,7 @@ gap 4b, which the corpus surfaced.
 - The decoders' `no_std` readiness: `std` is an opt-out feature in each
   `Cargo.toml`, but none has been built for `thumbv7em-none-eabihf` inside our
   feature matrix yet.
-- `skrifa`/`read-fonts` with our MSRV (1.87) and targets; `libm` is the `no_std`
+- `skrifa`/`read-fonts` with our MSRV (1.100) and targets; `libm` is the `no_std`
   path.
 - Demand proxies measure other projects' users, not ours; the Q4 corpus run will
   measure failures on real files and should re-rank 1–3 if it disagrees.

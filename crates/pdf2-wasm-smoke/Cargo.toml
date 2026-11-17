@@ -2,7 +2,7 @@
 name = "pdf2-wasm-smoke"
 version = "1.0.0"
 edition = "2021"
-rust-version = "1.87"
+rust-version = "1.100"
 description = "Wasm smoke tests for the pdf2 crate; not published."
 license = "Unlicense OR MIT"
 repository = "https://github.com/pdf2-rs/pdf2"

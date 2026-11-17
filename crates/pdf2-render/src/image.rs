@@ -325,7 +325,7 @@ fn decode_ranges(decode: Option<&Object>, components: usize) -> Vec<(f64, f64)> 
     if items.len() < components * 2 {
         return ranges;
     }
-    for (slot, pair) in items.chunks_exact(2).enumerate().take(components) {
+    for (slot, pair) in items.as_chunks::<2>().0.iter().enumerate().take(components) {
         let (Some(from), Some(to)) = (pair[0].as_real(), pair[1].as_real()) else {
             continue;
         };

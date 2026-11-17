@@ -148,7 +148,7 @@ fn md5(data: &[u8]) -> [u8; 16] {
         message.push(0);
     }
     message.extend_from_slice(&bits.to_le_bytes());
-    for block in message.chunks_exact(64) {
+    for block in message.as_chunks::<64>().0 {
         let mut words = [0_u32; 16];
         for (index, word) in words.iter_mut().enumerate() {
             let at = index * 4;

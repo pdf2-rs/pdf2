@@ -1,4 +1,6 @@
 # Keep clippy's suggestions buildable on the declared MSRV (Cargo.toml
 # `rust-version`): without this, clippy on a newer toolchain suggests APIs such
-# as `slice::as_chunks`, and the 1.87 job then fails to compile them.
-msrv = "1.87"
+# as `slice::as_chunks`, and the MSRV job then fails to compile them. It also
+# *overrides* the manifest, so raising `rust-version` alone would keep clippy
+# pinned here and flag every 1.88+ API the code adopts.
+msrv = "1.100"

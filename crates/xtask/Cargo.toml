@@ -2,6 +2,7 @@
 name = "xtask"
 version = "0.0.0"
 edition = "2021"
+rust-version = "1.100"
 publish = false
 description = "Repository chores: the same gate CI runs, locally."
 license = "Unlicense OR MIT"

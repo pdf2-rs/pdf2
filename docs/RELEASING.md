@@ -179,10 +179,10 @@ publishes for real.
   declared.
 - `rust-toolchain.toml` pins stable for local work; every command in both
   workflows names its toolchain explicitly (`cargo +stable …`,
-  `cargo +1.87 …`), so that file cannot silently change what CI tests.
+  `cargo +1.100 …`), so that file cannot silently change what CI tests.
 - The crate is dual-licensed `Unlicense OR MIT`; both licence files ship in the
   package.
 - CI (`.github/workflows/ci.yml`) runs the same gate as the project plan:
   `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test`, `cargo doc` with warnings denied, plus a job on the declared
-  MSRV (1.87) and on beta, and a `cargo package` build.
+  MSRV (1.100) and on beta, and a `cargo package` build.

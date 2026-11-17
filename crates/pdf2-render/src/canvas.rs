@@ -121,7 +121,11 @@ impl Canvas {
     /// `drew-nothing` rather than as fully supported.
     pub fn is_blank(&self) -> bool {
         let background = self.background;
-        self.pixels.chunks_exact(4).all(|pixel| pixel == background)
+        self.pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|pixel| *pixel == background)
     }
 
     /// Paint one pixel with `color` at `alpha`, source-over.
