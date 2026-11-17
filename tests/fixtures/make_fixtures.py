@@ -1472,7 +1472,7 @@ def make_tiling():
     """
     writer = Writer()
     writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
-    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R 6 0 R 9 0 R 12 0 R] /Count 4 >>")
     writer.obj(
         3,
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
@@ -1497,6 +1497,36 @@ def make_tiling():
         b"/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1"
         b" /BBox [0 0 10 10] /XStep 0.01 /YStep 0.01",
         b"0 g 0 0 5 10 re f",
+    )
+    # Page 3: an uncoloured cell (`/PaintType 2`) is a stencil, poured with the
+    # colour `scn` gives it — `1 0 0 /P3 scn` makes the squares red.
+    writer.obj(
+        9,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 10 0 R "
+        b"/Resources << /Pattern << /P3 11 0 R >> "
+        b"/ColorSpace << /CsPattern [/Pattern /DeviceRGB] >> >> >>",
+    )
+    writer.stream(10, b"", b"/CsPattern cs 1 0 0 /P3 scn 0 0 20 20 re f")
+    writer.stream(
+        11,
+        b"/Type /Pattern /PatternType 1 /PaintType 2 /TilingType 1"
+        b" /BBox [0 0 10 10] /XStep 10 /YStep 10",
+        b"0 0 5 10 re f",
+    )
+    # Page 4: the same shape, but the cell sets its own colour — which the clause
+    # forbids, so it is reported and the poured colour stands.
+    writer.obj(
+        12,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 13 0 R "
+        b"/Resources << /Pattern << /P4 14 0 R >> "
+        b"/ColorSpace << /CsPattern [/Pattern /DeviceRGB] >> >> >>",
+    )
+    writer.stream(13, b"", b"/CsPattern cs 1 0 0 /P4 scn 0 0 20 20 re f")
+    writer.stream(
+        14,
+        b"/Type /Pattern /PatternType 1 /PaintType 2 /TilingType 1"
+        b" /BBox [0 0 10 10] /XStep 10 /YStep 10",
+        b"0 1 0 rg 0 0 5 10 re f",
     )
     classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
     write("tiling.pdf", bytes(writer.out))

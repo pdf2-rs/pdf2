@@ -166,8 +166,10 @@ struct Type3Font {
 enum PatternFill {
     /// `/PatternType 2`: a shading that fills the path.
     Shading(std::rc::Rc<crate::shading::Shading>),
-    /// `/PatternType 1`: a cell replicated over the path.
-    Tile(std::rc::Rc<crate::pattern::Tile>),
+    /// `/PatternType 1`: a cell replicated over the path, and — for an
+    /// uncoloured (`/PaintType 2`) pattern — the colour given at use time, which
+    /// the cell's stencil is poured with (`8.7.3.3`).
+    Tile(std::rc::Rc<crate::pattern::Tile>, Option<Color>),
 }
 
 /// A composite (Type 0) font: two-byte codes, CIDs mapped to glyph ids through
@@ -269,6 +271,7 @@ pub fn render_page(
         mask: ClipMask::all(width, height),
         form_depth: 0,
         stream_starts: Vec::new(),
+        uncoloured_cell: false,
     };
     walker.run(&content)?;
     // Annotation appearance streams are drawn after the page content (12.5.5),
@@ -303,6 +306,9 @@ struct State {
     blend: BlendMode,
     /// The colour space `cs`/`CS` selected, when it is one this renderer can tint.
     space: Option<crate::shading::Space>,
+    /// For a `/Pattern` colour space, the underlying space an uncoloured
+    /// pattern's colour is given in (`8.7.3.3`).
+    underlying: Option<crate::shading::Space>,
     /// What a `/Pattern` fill paints, when `scn` named one.
     pattern: Option<PatternFill>,
     font: Option<Font>,
@@ -337,6 +343,7 @@ impl State {
             stroke_alpha: 1.0,
             blend: BlendMode::Normal,
             space: None,
+            underlying: None,
             pattern: None,
             font: None,
             font_size: 0.0,
@@ -371,6 +378,9 @@ struct Walker<'a> {
     /// The state each enclosing content stream started with, innermost last: a
     /// pattern cell is painted with the parent stream's *initial* state (8.7.3.1).
     stream_starts: Vec<State>,
+    /// Whether the content being run is an uncoloured pattern's cell, whose
+    /// operators "shall not explicitly specify any colours" (8.7.3.3).
+    uncoloured_cell: bool,
 }
 
 impl Walker<'_> {
@@ -519,6 +529,15 @@ impl Walker<'_> {
             b"n" => {
                 self.apply_pending_clip();
                 self.path = Path::new();
+            }
+            // An uncoloured pattern's cell "shall not explicitly specify any
+            // colours" (8.7.3.3); the operator is reported and the stencil keeps the
+            // poured colour, so the page names the defect instead of losing the tile.
+            b"g" | b"G" | b"rg" | b"RG" | b"k" | b"K" | b"cs" | b"CS" | b"sc" | b"SC" | b"scn"
+            | b"SCN"
+                if self.uncoloured_cell =>
+            {
+                self.report.note(operator);
             }
             b"g" => {
                 self.state.fill = Color::rgb(
@@ -682,10 +701,14 @@ impl Walker<'_> {
             }
             b"sc" | b"SC" | b"scn" | b"SCN" => {
                 let stroke = operator == b"SC" || operator == b"SCN";
-                // `scn` may name a pattern instead of giving components.
-                if let Some(Object::Name(name)) = operands.first() {
-                    let name = name.clone();
-                    self.select_pattern(&name)?;
+                // `scn` names a pattern; for an uncoloured one the components come
+                // first and the name last (`0.30 0.75 0.21 /P2 scn`, 8.7.3.3).
+                if let Some(name) = operands.iter().find_map(|operand| match operand {
+                    Object::Name(name) => Some(name.clone()),
+                    _ => None,
+                }) {
+                    let values: Vec<f64> = operands.iter().filter_map(Object::as_real).collect();
+                    self.select_pattern(&name, &values)?;
                 } else if let Some(space) = self.state.space.clone() {
                     let values: Vec<f64> = operands.iter().filter_map(Object::as_real).collect();
                     let colour = crate::shading::color_in(&space, &values);
@@ -741,9 +764,9 @@ impl Walker<'_> {
                             self.state.blend,
                         );
                     }
-                    PatternFill::Tile(tile) => {
-                        let tile = tile.clone();
-                        self.paint_tile(&tile, &polylines, &mask, ctm)?;
+                    PatternFill::Tile(tile, colour) => {
+                        let (tile, colour) = (tile.clone(), *colour);
+                        self.paint_tile(&tile, colour, &polylines, &mask, ctm)?;
                     }
                 }
                 self.path = Path::new();
@@ -997,6 +1020,7 @@ impl Walker<'_> {
     fn paint_tile(
         &mut self,
         tile: &crate::pattern::Tile,
+        colour: Option<Color>,
         polylines: &[Vec<Point>],
         mask: &ClipMask,
         ctm: Matrix,
@@ -1081,7 +1105,7 @@ impl Walker<'_> {
                 if cell_mask.count() == 0 {
                     continue;
                 }
-                self.run_tile(tile, cell, cell_mask)?;
+                self.run_tile(tile, colour, cell, cell_mask)?;
             }
         }
         Ok(())
@@ -1096,6 +1120,7 @@ impl Walker<'_> {
     fn run_tile(
         &mut self,
         tile: &crate::pattern::Tile,
+        colour: Option<Color>,
         ctm: Matrix,
         mask: ClipMask,
     ) -> crate::Result<()> {
@@ -1114,10 +1139,18 @@ impl Walker<'_> {
             .cloned()
             .unwrap_or_else(|| self.state.clone());
         base.ctm = ctm;
+        // An uncoloured cell is a stencil: it is poured with the use-time colour,
+        // and its own colour operators are refused rather than obeyed (8.7.3.3).
+        if let Some(colour) = colour {
+            base.fill = colour;
+            base.stroke = colour;
+        }
         self.state = base;
         self.resources = tile.resources.clone();
         self.form_depth += 1;
+        self.uncoloured_cell = colour.is_some();
         let result = self.run(&tile.content);
+        self.uncoloured_cell = false;
         self.form_depth -= 1;
 
         self.state = saved_state;
@@ -1353,6 +1386,7 @@ impl Walker<'_> {
             mask: ClipMask::all(self.canvas.width(), self.canvas.height()),
             form_depth: self.form_depth,
             stream_starts: Vec::new(),
+            uncoloured_cell: false,
         };
         walker.run(&content)?;
         // A `Do` inside the mask group is the page's business too: merging the
@@ -1385,12 +1419,23 @@ impl Walker<'_> {
         let Some(value) = spaces.get(name).cloned() else {
             return Ok(());
         };
+        // A `/Pattern` colour space may be an array `[/Pattern /DeviceRGB]` whose
+        // second element is the underlying space an uncoloured pattern's colour is
+        // given in (8.7.3.3); anything else here is a tint space `scn` converts.
+        self.state.underlying = match &value {
+            Object::Array(items) => items
+                .get(1)
+                .and_then(|item| crate::shading::parse_space(self.document, item).ok()),
+            _ => None,
+        };
         self.state.space = crate::shading::parse_space(self.document, &value).ok();
         Ok(())
     }
 
-    /// `scn` naming a pattern: a `/PatternType 2` becomes the fill's paint.
-    fn select_pattern(&mut self, name: &[u8]) -> crate::Result<()> {
+    /// `scn` naming a pattern: a shading becomes the fill's paint, and a tiling
+    /// pattern becomes a cell — with the colour `values` pours through it when it
+    /// is uncoloured (`8.7.3.3`).
+    fn select_pattern(&mut self, name: &[u8], values: &[f64]) -> crate::Result<()> {
         let Some(resources) = self.resources.clone() else {
             return Ok(());
         };
@@ -1426,20 +1471,38 @@ impl Walker<'_> {
                     self.report.note(b"pattern");
                 }
             }
-            // A tiling pattern is read — Table 73's keys, and the cell's content
-            // decoded — but the lattice that replicates it is the next round's
-            // work, so the fill reports `pattern` instead of painting the
-            // previous colour and saying nothing (8.7.3).
+            // A tiling pattern (`8.7.3`): a coloured cell paints its own content,
+            // an uncoloured one is a stencil poured with the colour `scn` gave —
+            // "the entire pattern cell is painted with a separately specified
+            // colour each time the pattern is used" (8.7.3.1).
             Some(1) => match &object {
                 Object::Stream(stream) => {
                     match crate::pattern::Tile::from_stream(self.document, stream) {
                         Ok(tile) => {
-                            self.state.pattern = Some(PatternFill::Tile(std::rc::Rc::new(tile)))
+                            let colour = match tile.paint_type {
+                                crate::pattern::PaintType::Coloured => {
+                                    // "For other types of patterns, these operands shall
+                                    // not be specified" (8.6.8): extra ones are reported,
+                                    // not silently ignored.
+                                    if !values.is_empty() {
+                                        self.report.note(b"scn");
+                                    }
+                                    None
+                                }
+                                crate::pattern::PaintType::Uncoloured => {
+                                    let Some(space) = self.state.underlying.clone() else {
+                                        // Without `[/Pattern /Device]` there is no space
+                                        // to read the colour in.
+                                        self.report.note(b"pattern");
+                                        return Ok(());
+                                    };
+                                    Some(crate::shading::color_in(&space, values))
+                                }
+                            };
+                            self.state.pattern =
+                                Some(PatternFill::Tile(std::rc::Rc::new(tile), colour));
                         }
-                        Err(error) => {
-                            let _ = error;
-                            self.report.note(b"pattern");
-                        }
+                        Err(_) => self.report.note(b"pattern"),
                     }
                 }
                 _ => self.report.note(b"pattern"),
