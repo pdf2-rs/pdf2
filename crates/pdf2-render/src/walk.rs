@@ -1084,6 +1084,13 @@ impl Walker<'_> {
             self.report.note(b"pattern");
             return Ok(());
         }
+        // `/TilingType` 1 and 3 ask for constant spacing on the **device** grid, which
+        // is a whole-pixel lattice: type 1 may distort a cell by up to a pixel to keep
+        // it and type 3 allows more distortion for speed. Snapping each cell's device
+        // origin is that rule, and it is the difference a fractional `XStep` makes
+        // visible. Type 2's contract is the opposite — no distortion, spacing may
+        // drift by a pixel — so it keeps the exact pattern-space lattice.
+        let snap = matches!(tile.tiling_type, 1 | 3);
         // The cell's own box, in pattern space, as a device quad per cell.
         let cell_corners = [
             Point::new(tile.bbox[0], tile.bbox[1]),
@@ -1103,6 +1110,22 @@ impl Walker<'_> {
                     row as f64 * tile.y_step,
                 );
                 let cell = offset.multiply(to_device);
+                let cell = if snap {
+                    // `multiply` applies its argument first, so the shift lands in
+                    // device space, after the pattern transform.
+                    let origin = cell.apply(Point::new(0.0, 0.0));
+                    Matrix::new(
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        origin.x.round() - origin.x,
+                        origin.y.round() - origin.y,
+                    )
+                    .multiply(cell)
+                } else {
+                    cell
+                };
                 let quad: Vec<Point> = cell_corners
                     .iter()
                     .map(|point| cell.apply(*point))

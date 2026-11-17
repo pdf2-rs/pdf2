@@ -135,9 +135,9 @@ The renderer does not implement these, so no fixture can prove them and content
 using them is reported rather than silently guessed:
 
 - shadings (`sh`), mesh gradients and axial/radial gradient fills;
-- patterns: tiling (`/PatternType 1`) is drawn, but a **`/TilingType` 1 or 3**
-  device-pixel spacing snap is not implemented (recorded in
-  `docs/plans/tiling-patterns.md`);
+- patterns: tiling (`/PatternType 1`) is drawn, `/TilingType` 1 and 3 snap each cell
+  origin to a whole device pixel while type 2 keeps the exact pattern-space lattice
+  (`tests/fixtures/tiling-type.pdf`);
 - transparency groups, soft masks (`/SMask`), `/ca`/`/CA`, blend modes — the
   `gs` operator is counted as unsupported;
 - vertical writing, `/Mask` as a stencil image, and `TJ` kerning
