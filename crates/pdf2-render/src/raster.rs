@@ -78,10 +78,10 @@ fn spans_of(edges: &[Edge], row: f64, even_odd: bool) -> Vec<(f64, f64)> {
         match (was_inside, is_inside) {
             (false, true) => start_x = Some(x),
             (true, false) => {
-                if let Some(start) = start_x.take() {
-                    if x > start {
-                        result.push((start, x));
-                    }
+                if let Some(start) = start_x.take()
+                    && x > start
+                {
+                    result.push((start, x));
                 }
             }
             _ => {}

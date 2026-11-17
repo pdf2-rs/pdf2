@@ -239,12 +239,12 @@ impl Function {
             Some(1) => {
                 return Err(Error::Unsupported {
                     what: "type 1 (PDF 1.0 sampled) functions",
-                })
+                });
             }
             _ => {
                 return Err(Error::malformed(
                     "a /Function without a known /FunctionType",
-                ))
+                ));
             }
         };
         let domain = pairs(&dict, b"Domain")?;

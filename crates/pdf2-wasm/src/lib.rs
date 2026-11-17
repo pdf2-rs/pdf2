@@ -14,7 +14,7 @@ use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 use pdf2::Document as Pdf2Document;
-use pdf2_render::{render_page_number, RenderOptions};
+use pdf2_render::{RenderOptions, render_page_number};
 
 /// The renderer's report as a JSON object of `"reason": count`.
 fn report_json(report: &pdf2_render::Report) -> String {

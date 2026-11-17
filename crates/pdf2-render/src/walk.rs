@@ -15,8 +15,8 @@ use pdf2::{Dictionary, Document, Encoding, Object, Page, Parser, Token};
 use crate::canvas::{BlendMode, Canvas, ClipMask, Color};
 use crate::font::{Font, Glyph};
 use crate::geom::{Matrix, Point};
-use crate::image::{resolve, Image};
-use crate::path::{dash_polyline, stroke_outline, Cap, Dash, Join, Path};
+use crate::image::{Image, resolve};
+use crate::path::{Cap, Dash, Join, Path, dash_polyline, stroke_outline};
 use crate::raster::{clip_mask, fill_polygons};
 
 /// How deep form XObjects may nest before a further `/Do` is reported instead of
@@ -1094,10 +1094,10 @@ impl Walker<'_> {
         if let Some(alpha) = dict.get(b"CA") {
             self.state.stroke_alpha = alpha.as_real().unwrap_or(1.0).clamp(0.0, 1.0);
         }
-        if let Some(width) = dict.get(b"LW") {
-            if let Some(width) = width.as_real() {
-                self.state.line_width = width;
-            }
+        if let Some(width) = dict.get(b"LW")
+            && let Some(width) = width.as_real()
+        {
+            self.state.line_width = width;
         }
         if let Some(cap) = dict.get(b"LC").and_then(Object::as_integer) {
             self.state.cap = if cap == 1 {
@@ -1115,12 +1115,12 @@ impl Walker<'_> {
             self.state.miter_limit = limit;
         }
         // `/D` is `[dashArray dashPhase]` (table 58), not a flat list.
-        if let Some(Object::Array(items)) = dict.get(b"D") {
-            if let Some(Object::Array(pattern)) = items.first() {
-                let pattern: Vec<f64> = pattern.iter().filter_map(|item| item.as_real()).collect();
-                let phase = items.get(1).and_then(Object::as_real).unwrap_or(0.0);
-                self.state.dash = Dash { pattern, phase };
-            }
+        if let Some(Object::Array(items)) = dict.get(b"D")
+            && let Some(Object::Array(pattern)) = items.first()
+        {
+            let pattern: Vec<f64> = pattern.iter().filter_map(|item| item.as_real()).collect();
+            let phase = items.get(1).and_then(Object::as_real).unwrap_or(0.0);
+            self.state.dash = Dash { pattern, phase };
         }
         Ok(())
     }
@@ -1464,44 +1464,41 @@ impl Walker<'_> {
                 // it draws once the name map is read. Other `/FontFile3`
                 // subtypes (OpenType-wrapped CFF is handled too) and Type 1
                 // programs (`/FontFile`, `eexec`) are still the fallback font.
-                if let Some(Object::Reference(id)) = descriptor.get(b"FontFile3") {
-                    if let Some(font) = self
+                if let Some(Object::Reference(id)) = descriptor.get(b"FontFile3")
+                    && let Some(font) = self
                         .document
                         .stream_data(*id)
                         .ok()
                         .and_then(|data| Font::cff(encoding.clone(), data))
-                    {
-                        if font.has_glyph_names() {
-                            return Some(LoadedFont {
-                                font: Some(font),
-                                widths,
-                                cid: None,
-                                type3: None,
-                                note: None,
-                            });
-                        }
-                    }
+                    && font.has_glyph_names()
+                {
+                    return Some(LoadedFont {
+                        font: Some(font),
+                        widths,
+                        cid: None,
+                        type3: None,
+                        note: None,
+                    });
                 }
                 // A Type 1 program (`/FontFile`) is a PostScript program with
                 // charstrings, which `ttf-parser` cannot read: `crate::type1` does,
                 // and a simple font's code reaches its glyphs by the *names* the
                 // encoding declares.
-                if let Some(Object::Reference(id)) = descriptor.get(b"FontFile") {
-                    if let Some(font) = self
+                if let Some(Object::Reference(id)) = descriptor.get(b"FontFile")
+                    && let Some(font) = self
                         .document
                         .stream_data(*id)
                         .ok()
                         .and_then(|data| crate::type1::Program::parse(&data))
                         .and_then(|program| Font::type1(encoding.clone(), program))
-                    {
-                        return Some(LoadedFont {
-                            font: Some(font),
-                            widths,
-                            cid: None,
-                            type3: None,
-                            note: None,
-                        });
-                    }
+                {
+                    return Some(LoadedFont {
+                        font: Some(font),
+                        widths,
+                        cid: None,
+                        type3: None,
+                        note: None,
+                    });
                 }
                 for (key, kind) in [
                     (&b"FontFile3"[..], "font:FontFile3"),
@@ -1522,24 +1519,24 @@ impl Walker<'_> {
                         Object::Reference(id) => self.document.stream_data(*id).ok(),
                         _ => None,
                     };
-                    if let Some(data) = data {
-                        if let Some(font) = Font::true_type(encoding.clone(), data) {
-                            // A program with no `cmap` cannot be decoded from its
-                            // codes; say so here, where the font is loaded, so the
-                            // page reports it once rather than looking blank.
-                            let note = if font.has_character_map() {
-                                None
-                            } else {
-                                Some("font:TrueType-without-cmap")
-                            };
-                            return Some(LoadedFont {
-                                font: Some(font),
-                                widths,
-                                cid: None,
-                                type3: None,
-                                note,
-                            });
-                        }
+                    if let Some(data) = data
+                        && let Some(font) = Font::true_type(encoding.clone(), data)
+                    {
+                        // A program with no `cmap` cannot be decoded from its
+                        // codes; say so here, where the font is loaded, so the
+                        // page reports it once rather than looking blank.
+                        let note = if font.has_character_map() {
+                            None
+                        } else {
+                            Some("font:TrueType-without-cmap")
+                        };
+                        return Some(LoadedFont {
+                            font: Some(font),
+                            widths,
+                            cid: None,
+                            type3: None,
+                            note,
+                        });
                     }
                 }
             }
@@ -1567,7 +1564,7 @@ impl Walker<'_> {
                 return LoadedFont {
                     note: Some("font:Type3"),
                     ..LoadedFont::default()
-                }
+                };
             }
         };
         let Some(names) = self.type3_names(font) else {
@@ -1883,12 +1880,11 @@ impl Walker<'_> {
             return Encoding::standard();
         };
         let mut encoding = Encoding::from_object(Some(&encoding_object)).unwrap_or_default();
-        if let Object::Dictionary(dict) = &encoding_object {
-            if let Some(differences) = dict.get(b"Differences") {
-                if let Ok(Object::Array(items)) = resolve(self.document, Some(differences)) {
-                    let _ = encoding.apply_differences(&items);
-                }
-            }
+        if let Object::Dictionary(dict) = &encoding_object
+            && let Some(differences) = dict.get(b"Differences")
+            && let Ok(Object::Array(items)) = resolve(self.document, Some(differences))
+        {
+            let _ = encoding.apply_differences(&items);
         }
         encoding
     }
@@ -2037,7 +2033,7 @@ fn find_operator(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::{dash_operand, Report};
+    use super::{Report, dash_operand};
     use pdf2::Object;
 
     #[test]

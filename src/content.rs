@@ -490,10 +490,11 @@ impl<'a> TextInterpreter<'a> {
                 offset: None,
             });
         };
-        if let Some(Object::Name(subtype)) = dict.get(b"Subtype") {
-            if subtype == b"Type0" {
-                return self.composite_font(&dict);
-            }
+        // A let-chain (`1.88`, edition 2024): the two conditions are one test.
+        if let Some(Object::Name(subtype)) = dict.get(b"Subtype")
+            && subtype == b"Type0"
+        {
+            return self.composite_font(&dict);
         }
         Ok(Font::Simple {
             encoding: self.encoding_of(&dict)?,
@@ -513,7 +514,7 @@ impl<'a> TextInterpreter<'a> {
             Some(Object::Name(name)) if name == b"Identity-V" => {
                 return Err(Error::Unsupported {
                     what: "vertical composite (Type0) fonts",
-                })
+                });
             }
             Some(Object::Name(name)) => {
                 // A predefined CMap is data: when we ship it, the encoding is
@@ -531,12 +532,12 @@ impl<'a> TextInterpreter<'a> {
             Some(Object::Reference(_)) | Some(Object::Stream(_)) => {
                 return Err(Error::Unsupported {
                     what: "embedded CMap-encoded composite (Type0) fonts",
-                })
+                });
             }
             _ => {
                 return Err(Error::Unsupported {
                     what: "composite (Type0) fonts without an /Encoding",
-                })
+                });
             }
         }
         let Some(to_unicode) = dict.get(b"ToUnicode") else {
@@ -632,7 +633,7 @@ impl<'a> TextInterpreter<'a> {
                     return Err(Error::Malformed {
                         what: "/W entry is neither an array nor a range",
                         offset: None,
-                    })
+                    });
                 }
             }
         }
@@ -648,20 +649,20 @@ impl<'a> TextInterpreter<'a> {
             .resolve(Some(encoding_object))?
             .unwrap_or(Object::Null);
         let mut encoding = Encoding::from_object(Some(&encoding_object))?;
-        if let Object::Dictionary(differences) = &encoding_object {
-            if let Some(differences) = differences.get(b"Differences") {
-                let differences = self
-                    .document
-                    .resolve(Some(differences))?
-                    .unwrap_or(Object::Null);
-                let Object::Array(items) = differences else {
-                    return Err(Error::Malformed {
-                        what: "/Differences must be an array",
-                        offset: None,
-                    });
-                };
-                encoding.apply_differences(&items)?;
-            }
+        if let Object::Dictionary(differences) = &encoding_object
+            && let Some(differences) = differences.get(b"Differences")
+        {
+            let differences = self
+                .document
+                .resolve(Some(differences))?
+                .unwrap_or(Object::Null);
+            let Object::Array(items) = differences else {
+                return Err(Error::Malformed {
+                    what: "/Differences must be an array",
+                    offset: None,
+                });
+            };
+            encoding.apply_differences(&items)?;
         }
         Ok(encoding)
     }

@@ -470,7 +470,7 @@ fn signed_area(polygon: &[Point]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{dash_polyline, stroke_outline, Cap, Dash, Join, Path};
+    use super::{Cap, Dash, Join, Path, dash_polyline, stroke_outline};
     use crate::geom::{Matrix, Point};
 
     #[test]

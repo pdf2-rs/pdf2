@@ -1,7 +1,7 @@
 [package]
 name = "pdf2-oracle"
 version = "0.0.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.100"
 publish = false
 description = "Compare this renderer with independent engines (poppler, mupdf, Ghostscript) and gate on the measured tolerance."

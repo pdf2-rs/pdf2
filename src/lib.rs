@@ -25,12 +25,12 @@ pub mod parser;
 pub mod writer;
 
 pub use crypto::Encryption;
-pub use document::{Document, DEFAULT_OBJECT_LIMIT, DEFAULT_PAGE_LIMIT};
+pub use document::{DEFAULT_OBJECT_LIMIT, DEFAULT_PAGE_LIMIT, Document};
 pub use encoding::Encoding;
 pub use error::{Error, Result};
 pub use filter::{Filter, FilterSpec, Predictor};
 pub use lexer::{Lexer, Token};
 pub use object::{Dictionary, Object, ObjectId, PdfString, Stream, StringFormat};
 pub use page::{Page, Rect};
-pub use parser::{parse_indirect_object, parse_object, IndirectObject, Parser};
+pub use parser::{IndirectObject, Parser, parse_indirect_object, parse_object};
 pub use writer::DocumentBuilder;

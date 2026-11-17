@@ -34,7 +34,7 @@
 use std::path::{Path, PathBuf};
 
 use pdf2::Document;
-use pdf2_render::{encode_png, render_page_number, RenderOptions, RenderedPage};
+use pdf2_render::{RenderOptions, RenderedPage, encode_png, render_page_number};
 
 fn repo(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

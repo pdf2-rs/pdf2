@@ -363,7 +363,7 @@ impl<'a> Lexer<'a> {
                     return Err(Error::Malformed {
                         what: "name escape",
                         offset: Some(self.pos - 1),
-                    })
+                    });
                 }
             }
         }

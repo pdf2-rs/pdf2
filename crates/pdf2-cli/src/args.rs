@@ -179,7 +179,7 @@ fn value(args: &[String], index: usize) -> Result<&str, Failure> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, Command, Failure, Run, Selection};
+    use super::{Command, Failure, Run, Selection, parse};
     use std::path::PathBuf;
 
     fn args(values: &[&str]) -> Vec<String> {

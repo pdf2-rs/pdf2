@@ -599,11 +599,12 @@ fn top_dict_operator(dict: &[u8], operator: u8) -> Option<usize> {
                     index += 1;
                 }
                 if byte == operator {
-                    if let Some(value) = operands.last() {
-                        if value.is_finite() && *value >= 0.0 {
-                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                            return Some(*value as usize);
-                        }
+                    if let Some(value) = operands.last()
+                        && value.is_finite()
+                        && *value >= 0.0
+                    {
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        return Some(*value as usize);
                     }
                     return None;
                 }
@@ -1161,7 +1162,7 @@ mod tests {
 
 #[cfg(test)]
 mod cff_tests {
-    use super::{cff_layout, top_dict_operator, wrap_cff, Font};
+    use super::{Font, cff_layout, top_dict_operator, wrap_cff};
 
     /// A three-glyph bare CFF built by hand: header, one-entry Name INDEX, a Top
     /// DICT pointing at its CharStrings, empty String and Global Subr INDEXes,

@@ -776,7 +776,7 @@ const COMMON_MAKEUP: [(u16, u8, u16); 13] = [
 
 #[cfg(test)]
 mod tests {
-    use super::{decode, Params};
+    use super::{Params, decode};
     use crate::error::Error;
 
     /// Pack bits given as a string of '0' and '1'.

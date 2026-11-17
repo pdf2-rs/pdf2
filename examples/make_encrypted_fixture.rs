@@ -22,7 +22,7 @@
 
 use std::io::Write;
 
-use aes::cipher::{block_padding::NoPadding, BlockEncrypt, BlockEncryptMut, KeyInit, KeyIvInit};
+use aes::cipher::{BlockEncrypt, BlockEncryptMut, KeyInit, KeyIvInit, block_padding::NoPadding};
 use aes::{Aes128, Aes256};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 

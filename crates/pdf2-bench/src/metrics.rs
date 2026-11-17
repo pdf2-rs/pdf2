@@ -111,10 +111,10 @@ fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String>
                 document
                     .page_content(page)
                     .map_err(|error| error.to_string())?;
-                if let Err(error) = document.extract_text(page) {
-                    if !matches!(error, pdf2::Error::Unsupported { .. }) {
-                        return Err(error.to_string());
-                    }
+                if let Err(error) = document.extract_text(page)
+                    && !matches!(error, pdf2::Error::Unsupported { .. })
+                {
+                    return Err(error.to_string());
                 }
             }
             std::hint::black_box(&document);
@@ -140,10 +140,10 @@ fn measure_group(group: &Group, runs: usize) -> Result<GroupMeasurement, String>
                 .map_err(|error| error.to_string())?;
             let pages = document.pages().map_err(|error| error.to_string())?;
             for page in &pages {
-                if let Err(error) = document.extract_text(page) {
-                    if !matches!(error, pdf2::Error::Unsupported { .. }) {
-                        return Err(error.to_string());
-                    }
+                if let Err(error) = document.extract_text(page)
+                    && !matches!(error, pdf2::Error::Unsupported { .. })
+                {
+                    return Err(error.to_string());
                 }
             }
         }
@@ -173,10 +173,10 @@ fn allocation_pass(group: &Group) -> Result<(u64, u64, u64), String> {
             document
                 .page_content(page)
                 .map_err(|error| error.to_string())?;
-            if let Err(error) = document.extract_text(page) {
-                if !matches!(error, pdf2::Error::Unsupported { .. }) {
-                    return Err(error.to_string());
-                }
+            if let Err(error) = document.extract_text(page)
+                && !matches!(error, pdf2::Error::Unsupported { .. })
+            {
+                return Err(error.to_string());
             }
         }
     }

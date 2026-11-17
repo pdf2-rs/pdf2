@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::json::{self, Json};
-use crate::metrics::{lower_is_better, Metrics};
+use crate::metrics::{Metrics, lower_is_better};
 
 /// How much a metric may change before it counts as a regression.
 pub const DEFAULT_TOLERANCE: f64 = 0.10;
@@ -197,7 +197,7 @@ fn entry_from_json(value: &Json) -> Result<Entry, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Baseline, Entry, Report, DEFAULT_TOLERANCE};
+    use super::{Baseline, DEFAULT_TOLERANCE, Entry, Report};
     use crate::metrics::Metrics;
     use std::collections::BTreeMap;
 
@@ -239,12 +239,16 @@ mod tests {
     #[test]
     fn allocation_growth_is_a_regression() {
         let baseline = baseline(&[("g.allocations", 1000.0)]);
-        assert!(!baseline
-            .check(&metrics(&[("g.allocations", 1200.0)]), DEFAULT_TOLERANCE)
-            .is_ok());
-        assert!(baseline
-            .check(&metrics(&[("g.allocations", 1050.0)]), DEFAULT_TOLERANCE)
-            .is_ok());
+        assert!(
+            !baseline
+                .check(&metrics(&[("g.allocations", 1200.0)]), DEFAULT_TOLERANCE)
+                .is_ok()
+        );
+        assert!(
+            baseline
+                .check(&metrics(&[("g.allocations", 1050.0)]), DEFAULT_TOLERANCE)
+                .is_ok()
+        );
     }
 
     #[test]

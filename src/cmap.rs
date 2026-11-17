@@ -479,7 +479,7 @@ fn is_special(byte: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ToUnicode, MAX_CODESPACE_RANGES, MAX_MAPPINGS};
+    use super::{MAX_CODESPACE_RANGES, MAX_MAPPINGS, ToUnicode};
     use crate::document::Document;
     use crate::object::Object;
     use alloc::format;

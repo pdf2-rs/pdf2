@@ -174,9 +174,11 @@ fn inline_images_are_skipped() {
         (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
         (3, "<< /Type /Page /MediaBox [0 0 10 10] >>"),
     ]);
-    assert!(document
-        .extract_text_from(b"BI /W 1 ID \x00\x01", None)
-        .is_err());
+    assert!(
+        document
+            .extract_text_from(b"BI /W 1 ID \x00\x01", None)
+            .is_err()
+    );
 }
 
 #[test]
@@ -186,9 +188,11 @@ fn a_missing_font_resource_is_an_error() {
         (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
         (3, "<< /Type /Page /MediaBox [0 0 10 10] >>"),
     ]);
-    assert!(document
-        .extract_text_from(b"BT /F9 12 Tf 10 700 Td (x) Tj ET", None)
-        .is_err());
+    assert!(
+        document
+            .extract_text_from(b"BT /F9 12 Tf 10 700 Td (x) Tj ET", None)
+            .is_err()
+    );
 }
 
 #[test]
@@ -236,9 +240,11 @@ fn every_truncation_of_the_content_stream_is_handled() {
     for end in 0..content.len() {
         let _ = document.extract_text_from(&content[..end], resources.as_ref());
     }
-    assert!(document
-        .extract_text_from(&content, resources.as_ref())
-        .is_ok());
+    assert!(
+        document
+            .extract_text_from(&content, resources.as_ref())
+            .is_ok()
+    );
 }
 
 #[test]

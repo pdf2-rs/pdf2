@@ -18,7 +18,7 @@ use std::process::ExitCode;
 
 use baseline::{Baseline, DEFAULT_TOLERANCE};
 use json::{number, string};
-use metrics::{Metrics, DEFAULT_RUNS};
+use metrics::{DEFAULT_RUNS, Metrics};
 
 #[global_allocator]
 static GLOBAL: alloc::Counting = alloc::Counting;
