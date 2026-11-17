@@ -200,6 +200,13 @@ what its pixels drag in, so the number has to come from a build that decodes.
 335 032) — a gradient is a function evaluated per pixel, and the calculator's
 operators are the bulk of it.
 
+**The npm bundle budget moved from 364 KiB to 368 KiB on 2026-11-17, for positioned
+text**: the extractor learned `q`/`Q`/`cm` and the text matrix so `Document::spans`
+can return page-space line boxes (`ADR 0008`), which cost **+7 474 gzip bytes** —
+365 757 → 373 231 measured in CI (370 258 locally, the same ~3 KB toolchain gap the
+CFF move recorded). The budget is set from CI's number with the next few kilobytes of
+headroom, because CI's is the one the gate compares.
+
 **The npm bundle budget moved from 356 KiB to 364 KiB on 2026-11-17, for tiling
 patterns**: the lattice painter, the pattern-dictionary parser and the
 parent-stream state stack cost **+4 189 gzip bytes** (361 056 → 365 245, measured in
