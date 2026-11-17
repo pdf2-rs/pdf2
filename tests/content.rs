@@ -403,3 +403,57 @@ fn a_predefined_cmap_font_extracts_cjk() {
         "Hello ASCII\n\u{65E5}\u{672C}\u{8A9E}\u{30C6}\u{30B9}\u{30C8}"
     );
 }
+
+#[test]
+fn search_finds_a_phrase_inside_a_line_and_ignores_case() {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/reading-order.pdf"
+    ))
+    .expect("read reading-order.pdf");
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    let spans = document.spans(&page).expect("spans");
+
+    // "first line" is one span whose space came from a `TJ` adjustment, so it is a
+    // phrase over two *runs*: found, with the line's own box.
+    let found = document.search("first line").expect("search");
+    assert_eq!(found.len(), 1, "one page carries the phrase");
+    assert_eq!(found[0].page, 0);
+    assert_eq!(found[0].hits.len(), 1);
+    assert_eq!(found[0].hits[0].text, "first line");
+    assert_eq!(found[0].hits[0].bounds, spans[0].bounds);
+
+    // Case is a search convenience, not a rewrite: the hit keeps the page's text.
+    let upper = document.search("FIRST LINE").expect("search");
+    assert_eq!(upper[0].hits[0].text, "first line");
+
+    // Two occurrences on the page, left to right.
+    let lines = document.search("line").expect("search");
+    assert_eq!(lines[0].hits.len(), 4, "every line ends in 'line'");
+}
+
+#[test]
+fn search_does_not_match_across_a_line_break_and_an_empty_needle_matches_nothing() {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/reading-order.pdf"
+    ))
+    .expect("read reading-order.pdf");
+    let document = open(&bytes);
+
+    // "first line" and "second line" are adjacent lines; a reader searching for
+    // their junction should not be handed a hit that spans the break.
+    assert!(
+        document.search("line second").expect("search").is_empty(),
+        "a line break is not a space"
+    );
+    assert!(
+        document.search("").expect("search").is_empty(),
+        "an empty needle matches nothing"
+    );
+    assert!(
+        document.search("nothing here").expect("search").is_empty(),
+        "a missing phrase is not a hit"
+    );
+}
