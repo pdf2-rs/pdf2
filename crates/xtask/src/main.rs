@@ -327,6 +327,20 @@ fn wasm_package() -> Result<(), String> {
             "corpus/tier-a/90ms_rksj_h_sample.pdf",
             "crates/pdf2-wasm/demo/samples/cjk.pdf",
         ),
+        // The 1.3 samples: the painting family, which 1.3 is about. Each is one
+        // page a reader can look at and see the feature rather than read about it.
+        (
+            "tests/fixtures/shading.pdf",
+            "crates/pdf2-wasm/demo/samples/shading.pdf",
+        ),
+        (
+            "tests/fixtures/blend-modes.pdf",
+            "crates/pdf2-wasm/demo/samples/blend-modes.pdf",
+        ),
+        (
+            "tests/fixtures/type1.pdf",
+            "crates/pdf2-wasm/demo/samples/type1.pdf",
+        ),
     ] {
         copy(from, to)?;
     }

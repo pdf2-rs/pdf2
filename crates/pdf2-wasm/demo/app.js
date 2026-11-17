@@ -27,6 +27,10 @@ const SAMPLES = [
   { file: 'samples/encrypted-legacy.pdf', title: 'AES-128 encrypted, revision 4 (password: user)' },
   { file: 'samples/cropbox.pdf', title: '/CropBox and /UserUnit page' },
   { file: 'samples/cjk.pdf', title: 'CJK text from Shift-JIS (text panel)' },
+  // 1.3's own samples: the painting family the release is about.
+  { file: 'samples/shading.pdf', title: 'Gradients: axial, radial, function-based' },
+  { file: 'samples/blend-modes.pdf', title: 'The sixteen blend modes' },
+  { file: 'samples/type1.pdf', title: 'A Type 1 font program, drawn' },
 ];
 
 // Each entry names a sample (index into SAMPLES) and the page it starts on, so a
@@ -55,6 +59,11 @@ const FEATURES = [
   { label: 'Encrypted file, revision 4 (password: user)', sample: 7, page: 0 },
   { label: '/CropBox and /UserUnit decide the page', sample: 8, page: 0 },
   { label: 'CJK text through a predefined CMap', sample: 9, page: 0 },
+  // 1.3
+  { label: 'Shadings through /Function objects', sample: 10, page: 0 },
+  { label: 'A radial gradient with its own colour stops', sample: 10, page: 1 },
+  { label: 'All sixteen /BM blend modes', sample: 11, page: 0 },
+  { label: 'A Type 1 font program (`/FontFile`)', sample: 12, page: 0 },
 ];
 
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
