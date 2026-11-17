@@ -182,7 +182,7 @@ Checked 2026-11-15 — no shipped row in this table; the absences were re-confir
 | `12.4` Page-level navigation — link annotations and `/Dest` | scheduled 12 | Rides with `12.5`. Owner: item 12 |
 | `12.5` Annotations — read, render, appearance streams | scheduled 12 | Nothing in the tree today |
 | `12.6` Actions — `/GoTo`, `/URI`, JavaScript | unplanned | Actions are not modelled; JavaScript is refused (ADR non-goal 3) |
-| `12.7` Forms — read, render, **fill** | scheduled 12 | The ADR's non-goal 3 refuses *authoring*; filling is not authoring, and the ADR says so |
+| `12.7` Forms — read, render, **fill** | scheduled 12 | Filling **and authoring** are both scheduled since 2026-11-17 ([plan](plans/forms.md)); the ADR's non-goal 3 refuses JavaScript, not writing `/V`. The ADR says so |
 | `12.8` Digital signatures | refused | ADR non-goal 3; a signature implementation is a security product with its own review burden |
 | `12.9` Measurement properties (PDF 2.0) | unplanned | Not modelled |
 | `12.10` Geospatial features (PDF 2.0) | unplanned | Not modelled |
@@ -249,7 +249,7 @@ Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | `Document`, `Page` model, lazy objects, caching, `Result`-only errors | shipped | `src/` |
-| Editing API (mutate an opened document) | scheduled 11 | |
+| Editing API (mutate an opened document) | scheduled 11 | **Scheduled 2026-11-17** by the owner, not deferred: the mutation model is [ADR 0006](adr/0006-editing-mutation-model.md) (copy-on-write overlay, incremental saves, `/Prev` chain, `/ID` frozen) and the sequence is [plan](plans/editing.md). Owner: item 11 |
 | CLI: `info`, `pages`, `text`, `check`, `--json`, `--password` | shipped | `crates/pdf2-cli` |
 | CLI `render` subcommand | unplanned | The corpus run uses the renderer's golden binary; a batch render was not needed yet |
 | wasm: open, page count/size, text, metadata, render to pixels/canvas, render report | shipped | `crates/pdf2-wasm` |
@@ -259,7 +259,7 @@ Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|
 | Tier A corpus, oracle gate with calibrated tolerances | shipped | `corpus/` (25 files, hashed), `corpus/tolerances.tsv`, `crates/pdf2-oracle`, the `oracle` job; last run green 2026-11-15. Owner: item 1 (shipped). The tolerances are only comparable on the engines recorded in §Outside facts (poppler 26.01.0, mupdf 1.27.0, ghostscript 10.06.0) |
 | Tier B histogram as a gate | refused | It publishes a distribution and never fails a merge: a tree of other people's broken files is evidence, not a test suite (`docs/CORPUS.md` §Tier B). Owner: none — item 7 keeps it a measurement |
 | Fuzzing (five targets, nightly), deny, semver, bench gates | shipped | `fuzz/fuzz_targets` (5), `.github/workflows/{fuzz,ci}.yml`; last nightly fuzz run green 2026-11-15 |
-| Validation (PDF/A, PDF 2.0 conformance) | unplanned | Different buyer; `veraPDF` is the reference. Owner: none — roadmap item 13 keeps it unscheduled. Owner: none — roadmap item 13 keeps it unscheduled |
+| Validation (PDF/A, PDF 2.0 conformance) | scheduled 13 | **Scheduled 2026-11-17**: `check --strict` first (seven structural facts the parser already computes), then the profile clauses per part, with **veraPDF 1.30 as the CI oracle** over a subset of its CC BY 4.0 corpus — the relationship poppler has with the renderer. [plan](plans/validation.md). Owner: item 13 keeps it unscheduled. Owner: none — roadmap item 13 keeps it unscheduled |
 
 ## Decisions this ledger forces
 

@@ -13,6 +13,18 @@ column is the answer. An item belongs here when somebody has asked for it, or wi
 
 Recorded 2026-11-16, at `1.2.1`.
 
+## Reinstated on 2026-11-17
+
+Three items below used to sit in section 1. They are not deferred any more: the owner decided
+they are options this project does not drop, so each has a rank in
+[`docs/ROADMAP-NEXT.md`](ROADMAP-NEXT.md), an acceptance there, and a plan.
+
+| Item | Rank | Plan |
+| --- | --- | --- |
+| Editing an opened document — object mutation, incremental saves | 11 | [plan](plans/editing.md), [ADR 0006](adr/0006-editing-mutation-model.md) |
+| Forms *filling* and annotation *authoring* | 12 | [plan](plans/forms.md) |
+| Conformance validation — **PDF/A** and PDF 2.0 | 13 | [plan](plans/validation.md); veraPDF 1.30 is the CI oracle |
+
 ## 1. Out of scope for the current objective, with a reason
 
 These are the eight things the 2026-11-16 plan (`rounds/plan-20261116.md`, Q13)
@@ -21,9 +33,6 @@ oversight.
 
 | Item | Why not now | Evidence | What would unblock it | Planned in |
 | --- | --- | --- | --- | --- |
-| **Editing an opened document** (`11` in the ranked list) — object mutation, incremental saves | `src/writer.rs` only builds new files; `Document` is read-only by construction (its cache is `RefCell`, its data is borrowed through `Arc`-free slices) | Rank 11: `lopdf`'s 30.3M downloads is the demand; a release of its own | A mutation model (copy-on-write objects, a free-list, an `/Prev` chain) — i.e. a release, not a round | [plan](plans/editing.md) |
-| **Forms *filling* and annotation *authoring*** (rank `12`'s second half) | Reading and *rendering* annotation appearance streams shipped (`12b`); writing `/Annots` and `/AcroForm` values is editing again | `docs/FEATURES.md` `12.7`, `12.5` rows: appearance streams shipped, authoring unplanned | Rank 11, plus a form model and a `/NeedAppearances` decision | [plan](plans/forms.md) |
-| **Conformance validation** (PDF/A, PDF 2.0, rank `13`) | A validator is a different product: no rendering synergy, and the reference is `veraPDF` (Java) | Rank 13 in `docs/ROADMAP-NEXT.md` | A separate crate reading the same objects — a project, not a round | [verdict](plans/validation.md) |
 | ~~**JPX and JBIG2 decoding**~~ — **shipped 2026-11-17 behind features** | Both are cargo features, off by default ([ADR 0007](adr/0007-decoder-features.md)): `jpx` costs **+76 705 gzip** and `jbig2` **+62 685** on the wasm bundle, against a 364 KiB npm budget, so the npm package decodes neither and the demo site ships a second, decoder-enabled artefact (506 424 gzip). `/JBIG2Globals` is decoded before the page's own segments, and the JPX codestream header decides size, colour space and depth. `bug_jpx.pdf` is an oracle case; the two JBIG2 pages draw and are gated too (**0.243040 mean** against an engines' spread of 0.326558), after pdfium's reference raster exposed a **row-stride bug in this renderer's sink** that had put them 31.261 away | `docs/adr/0007-decoder-features.md`, `docs/RENDERING-QUALITY.md`, `corpus/manifest.json` | Nothing left to decide. The 31.261 JBIG2 gap is a decoder-fidelity question, not a scheduling one | [plan](plans/jpx-jbig2.md) |
 | **ICC colour management** (`10b`) | Still a fidelity decision, not a bug: the engines disagree with each other by **8 %** on the CMYK page, and ICCBased **images** already decode by component count. Measured 2026-11-16: `cmykjpeg.pdf` decodes correctly — 8 mean absolute units from an independent decoder — yet sits **8.455 mean** from the engines' 2.000 because they honour `/Intent /RelativeColorimetric`. **Since 2026-11-17 the dependency question is answered**: `moxcms` 0.9.2 needs 1.89 (below the floor), is `BSD-3-Clause OR Apache-2.0` (already allowed by `deny.toml`), and is pure Rust — so the blocker is now purely the fidelity decision and a size measurement like JPX's | `docs/RENDERING-QUALITY.md`; `docs/adr/0005-msrv-1-100.md` | Decide to be more precise than the inter-oracle spread, measure the profile paths before and after, and take the size verdict (`cargo xtask wasm-package` with the feature on) | [plan](plans/icc.md) |
 | **Tiling patterns** (`/PatternType 1`) | Painting a tile means flattening a content stream into a cell and repeating it; two corpus pages use one (`colorkeymask.pdf` is one of them) | `docs/RENDERING.md` says the operator is reported; `crates/pdf2-render/src/walk.rs` handles `/PatternType 2` only | A pattern-tile renderer — a canvas, a cell, and a repeat rule — which is a round of its own | [plan](plans/tiling-patterns.md) |
@@ -44,7 +53,7 @@ not gaps. They will not be scheduled.
 | Racing hayro's throughput | non-goal 1 | The differentiator is one model for render, extract and rewrite — not a benchmark | — |
 | A C or C++ core, `unsafe`, or a bundled wasm decoder | non-goal 2 | `#![forbid(unsafe_code)]`, `no_std` and the wasm size budgets are the shape of the crate | — |
 | JavaScript actions and scripting | non-goal 3 | A viewer's job, and a security surface | — |
-| PDF/A conversion, rewriting a document into a profile | non-goal 4 | Validation is item 13 above; conversion is editing | — |
+| PDF/A *conversion* — rewriting a document into a profile | non-goal 4 | **Validation** is scheduled (rank 13, [plan](plans/validation.md)); conversion is editing, rank 11 | — |
 | Rendering with system fonts for standard-14 text | measured, not decided | There is no font in the crate to draw with; `docs/RENDERING-QUALITY.md` records what that costs (the standard-14 page measures 21.271 mean against the oracles' 1.400) and it is why such a page is proven by its report and ink, not by a pixel comparison | [verdict](plans/standard-14-fonts.md) |
 
 ## 3. Reported, not drawn wrong

@@ -16,8 +16,16 @@ extent), **`7.7.3`** page tree (`/Kids`, `/Count`, `/Parent`), **`7.6`** encrypt
 
 ## Verdict
 
-**Structural checking: yes, in `pdf2-cli`'s `check` verb as a `--strict` mode. Profile
-conformance (PDF/A, PDF/UA, PDF 2.0): refused, with the reasons below.**
+**Structural checking, and profile conformance, both in `pdf2-cli`.** `check --strict`
+answers "is the file self-consistent"; `check --profile pdfa-2b` (later, per part) answers
+"does it conform to a profile". **This reverses the 2026-11-17 verdict**, which refused
+profile conformance as a different product: the owner decided PDF/A is not an option to
+drop, so the honest plan is the one below rather than a refusal with good reasons.
+
+The two are separable, and the split is what keeps the second from becoming a project this
+crate cannot carry: the structural checks are facts the parser already computes, and the
+profile rules are a **table of clauses with a reference implementation to check them
+against**.
 
 `check` today is a *functional* test — open, walk the pages, decode each content stream,
 extract text, report what fails (`crates/pdf2-cli/src/commands.rs:144`). It answers "can this
@@ -37,19 +45,18 @@ one is a fact, not a heuristic:
 | object streams | `/N` and `/First` agree with the entries the stream actually holds | `object_streams` in `src/document.rs` |
 | encryption dictionary | the handler is one this crate resolves, and `/ID` is present when the revision needs it | `src/crypto.rs` |
 
-**PDF/A is refused as a product, not as an impossibility.** What it would take: the ISO
-19005 profile rules per part (version gating, forbidden constructs, metadata conformance,
-font embedding, colour space rules), an XMP model this crate does not have, and a reference
-implementation to be measured against — `veraPDF` **v1.30.4** (2026-11-10), which is Java and
-a large application in its own right. The Rust prior art exists but is young and thin:
-`pdf-compliance` 2.0.0 (756 downloads), `page_validation` 0.13.0 (3 979), `pdf-lint` 0.1.0
-(172, Arlington model). None of them is a validator a document pipeline would stake
-compliance on yet, and building one is a project whose buyer is different from this crate's.
+**What profile conformance costs, stated before it is built.** The ISO 19005 rules per part
+are: version gating, forbidden constructs, metadata conformance (**an XMP model this crate
+does not have**), font embedding rules, colour space rules, and the part-specific structural
+requirements. The reference is `veraPDF` **1.30** (Open Preservation Foundation), which is
+Java, and it is the oracle — the same relationship poppler has with this crate's renderer, so
+verification is external and this crate stays a pure-Rust reader.
 
-**The honest middle** — and the verdict — is that this crate validates *its own
-preconditions* and says so out loud, which is exactly what the read side already promises
-("report, don't guess"). A PDF/A claim, if it is ever wanted, is a separate crate reading the
-same objects: `pdf-compliance`-shaped, not a mode of `check`.
+**Where the work goes**: a `pdfa` module in `pdf2-cli` (the library stays the reader) that
+walks the profile's clauses over the object model, with a finding per clause — the same shape
+`--strict` uses, so a report names a clause rather than an opinion. The Rust prior art
+(`pdf-compliance`, `page_validation`, `pdf-lint`/Arlington) is worth reading and not worth
+depending on; none of it is a validator a pipeline would stake compliance on yet.
 
 ## Design (structural mode)
 
@@ -77,6 +84,10 @@ decoded by every other measurement.
   `/Length` one too long (`length`), a `/Count` that disagrees with the walk (`page-tree`),
   an `/ObjStm` whose `/N` exceeds its contents (`objstm`), and a `/Encrypt` whose `/ID` is
   missing (`encrypt`). Every one asserts the *finding name and clause*, not just "failed".
+- **PDF/A is measured against veraPDF, not against our reading of the clause**: a subset of
+  the veraPDF corpus (CC BY 4.0) — one file per profile part and per expected verdict — is
+  validated by both tools in CI, and the two verdicts agree case by case. A disagreement is
+  the bug, whichever side has it.
 - **The committed corpus is clean under `--strict`**: `cargo run -p pdf2-cli -- check
   --strict` over `corpus/tier-a/*.pdf` reports zero findings — the control that proves the
   checks are not trigger-happy. Files that fail this are a bug in the check, not in the file,
@@ -89,8 +100,10 @@ decoded by every other measurement.
 1. **The checks and their fixtures** — `--strict`, the seven findings, the damaged-file tests
    built in the test, and the corpus-as-control run. One round if the parser exposes what it
    already knows; two if `/Length` and `/Size` need plumbing out.
-2. **The output contract** — exit codes, the clause in every JSON finding, and a
-   `docs/FEATURES.md` row for rank 13 that says "structural only, PDF/A refused" with a link
-   here. Half a round.
-3. **Only if a buyer appears**: the PDF/A question reopens as a separate crate, and this file
-   is where the evidence for saying no is kept.
+2. **The output contract** — exit codes, the clause in every JSON finding, and the
+   `docs/FEATURES.md` row for rank 13 that says what is in scope, with a link here. Half a
+   round.
+3. **PDF/A, per part** — the `pdfa` module in `pdf2-cli`, one part at a time (2b first: it is
+   the one a pipeline asks for), each clause a named finding, each part gated on the veraPDF
+   corpus subset agreeing case by case. One round per part, and the XMP model the metadata
+   rules need is the first of them to land.
