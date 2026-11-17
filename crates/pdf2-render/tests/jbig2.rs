@@ -160,15 +160,19 @@ fn reference() -> Pbm {
 }
 
 #[test]
-fn the_reference_raster_records_the_expected_difference() {
+fn our_raster_matches_the_reference_exactly() {
     // pdfium's own expected raster for this page, committed under `corpus/reference/`
-    // (see the README there). It is the independent arbiter the oracle case list has
-    // been missing: our decoder and the three engines disagree, and this says which
-    // raster is the one a second implementation produced.
+    // (see the README there): a fourth implementation's answer, which is what the
+    // engine-agreement argument could not provide.
     //
-    // The numbers are **pinned as they are**, not as they should be: the gap is open
-    // work, and a test that tolerated it would not notice the day it changes. Any
-    // movement — a fix, or a regression — fails here and has to be explained.
+    // This test began life pinning a **19 553 pixel** difference (mean |Δ| 31.24 of
+    // 255) and the search it forced found the cause in the sink rather than the
+    // decoder: `Rows` packed the pixels as one continuous bit stream while a 1-bit
+    // PDF image is row-aligned to a byte, so with a width of 399 every row drifted
+    // by one bit. hayro's own output was byte-exact all along — decoded straight
+    // from the stream it reports 10 950 black, the reference's count — and with the
+    // sink fixed the two rasters agree to the pixel, which is what is asserted here
+    // so the alignment cannot regress.
     let reference = reference();
     assert_eq!((reference.width, reference.height), (399, 400));
     let dark = reference.black.iter().filter(|black| **black).count();
@@ -195,27 +199,14 @@ fn the_reference_raster_records_the_expected_difference() {
             }
         }
     }
-    let pixels = u64::from(reference.width) * u64::from(reference.height);
-    let mean = 255.0 * flipped as f64 / pixels as f64;
-    assert_eq!(
-        flipped, 19_553,
-        "pixels that differ from the reference (mean |Δ| {mean:.2} of 255)"
-    );
-    assert!(
-        (mean - 31.24).abs() < 0.01,
-        "mean |Δ| against the reference: {mean:.2}"
-    );
-    // The disagreement is a misplacement, not missing ink: ~9.6 k stroke pixels sit
-    // on the wrong side of a pixel boundary, and they cluster in one column band.
     let (busiest, count) = columns
         .iter()
         .enumerate()
         .max_by_key(|(_, count)| **count)
         .map(|(column, count)| (column as u32, *count))
         .expect("a column");
-    assert!(
-        (320..=340).contains(&busiest),
-        "the busiest column is x = {busiest} with {count} flips"
+    assert_eq!(
+        flipped, 0,
+        "the raster matches pdfium's reference (busiest column x = {busiest} with {count} flips)"
     );
-    assert!(count >= 120, "x = {busiest} carries {count} flips");
 }
