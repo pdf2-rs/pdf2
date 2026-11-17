@@ -29,6 +29,14 @@ use crate::raster::{clip_mask, fill_polygons};
 /// fires rather than a stack overflow.
 const MAX_FORM_DEPTH: usize = 8;
 
+/// How many pattern cells one fill may paint.
+///
+/// The clause sets no bound on the lattice ("Painting with the pattern replicates
+/// the cell at fixed horizontal and vertical intervals"), so `/XStep 0.01` over a
+/// page is millions of cells; the budget is the renderer's own, in
+/// [`MAX_FORM_DEPTH`]'s shape: a named constant, a reported operator, a test.
+const MAX_TILE_CELLS: usize = 4096;
+
 /// What a page render should look like.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderOptions {
@@ -153,6 +161,15 @@ struct Type3Font {
     resources: Option<pdf2::Dictionary>,
 }
 
+/// What a `/Pattern` fill paints (8.7.3): a shading, or a tiling pattern's cell.
+#[derive(Debug, Clone)]
+enum PatternFill {
+    /// `/PatternType 2`: a shading that fills the path.
+    Shading(std::rc::Rc<crate::shading::Shading>),
+    /// `/PatternType 1`: a cell replicated over the path.
+    Tile(std::rc::Rc<crate::pattern::Tile>),
+}
+
 /// A composite (Type 0) font: two-byte codes, CIDs mapped to glyph ids through
 /// `/CIDToGIDMap`, and advances from `/W` with `/DW` as the default (9.7.4).
 #[derive(Debug, Clone)]
@@ -251,6 +268,7 @@ pub fn render_page(
         pending_clip: None,
         mask: ClipMask::all(width, height),
         form_depth: 0,
+        stream_starts: Vec::new(),
     };
     walker.run(&content)?;
     // Annotation appearance streams are drawn after the page content (12.5.5),
@@ -285,8 +303,8 @@ struct State {
     blend: BlendMode,
     /// The colour space `cs`/`CS` selected, when it is one this renderer can tint.
     space: Option<crate::shading::Space>,
-    /// A `/PatternType 2` fill: the shading, when `scn` named one.
-    pattern: Option<std::rc::Rc<crate::shading::Shading>>,
+    /// What a `/Pattern` fill paints, when `scn` named one.
+    pattern: Option<PatternFill>,
     font: Option<Font>,
     font_size: f64,
     miter_limit: f64,
@@ -350,10 +368,14 @@ struct Walker<'a> {
     mask: ClipMask,
     /// Form XObjects currently being drawn, for [`MAX_FORM_DEPTH`].
     form_depth: usize,
+    /// The state each enclosing content stream started with, innermost last: a
+    /// pattern cell is painted with the parent stream's *initial* state (8.7.3.1).
+    stream_starts: Vec<State>,
 }
 
 impl Walker<'_> {
     fn run(&mut self, content: &[u8]) -> crate::Result<()> {
+        self.stream_starts.push(self.state.clone());
         let mut parser = Parser::new(content);
         let mut operands: Vec<Object> = Vec::new();
         loop {
@@ -372,6 +394,7 @@ impl Walker<'_> {
                 }
             }
         }
+        self.stream_starts.pop();
         Ok(())
     }
 
@@ -699,8 +722,8 @@ impl Walker<'_> {
         };
         if painted && !polylines.is_empty() {
             if let Some(pattern) = self.state.pattern.clone() {
-                // A shading pattern paints where the path fills: the path becomes
-                // the clip and the shading the paint (8.7.3.3).
+                // A pattern paints where the path fills: the path becomes the
+                // clip and the pattern the paint (8.7.3).
                 let mut mask = self.mask.clone();
                 mask.intersect(&clip_mask(
                     self.canvas.width(),
@@ -708,13 +731,21 @@ impl Walker<'_> {
                     &polylines,
                     even_odd,
                 ));
-                let to_device = pattern.matrix().multiply(ctm);
-                pattern.with_matrix(to_device).paint_through(
-                    self.canvas,
-                    &mask,
-                    self.state.fill_alpha,
-                    self.state.blend,
-                );
+                match &pattern {
+                    PatternFill::Shading(shading) => {
+                        let to_device = shading.matrix().multiply(ctm);
+                        shading.with_matrix(to_device).paint_through(
+                            self.canvas,
+                            &mask,
+                            self.state.fill_alpha,
+                            self.state.blend,
+                        );
+                    }
+                    PatternFill::Tile(tile) => {
+                        let tile = tile.clone();
+                        self.paint_tile(&tile, &polylines, &mask, ctm)?;
+                    }
+                }
                 self.path = Path::new();
                 return Ok(());
             }
@@ -956,6 +987,146 @@ impl Walker<'_> {
         self.run_form_nested(stream, Matrix::IDENTITY)
     }
 
+    /// Paint a tiling pattern over the filled path (8.7.3.1).
+    ///
+    /// The path is already the clip. The lattice is computed in **pattern
+    /// space** — the path's device box mapped back through the pattern matrix —
+    /// and each cell is clipped to its own `/BBox` and run as nested content.
+    /// The clause sets no bound on the lattice, so [`MAX_TILE_CELLS`] is the
+    /// renderer's: over it the fill is reported instead of attempted.
+    fn paint_tile(
+        &mut self,
+        tile: &crate::pattern::Tile,
+        polylines: &[Vec<Point>],
+        mask: &ClipMask,
+        ctm: Matrix,
+    ) -> crate::Result<()> {
+        let to_device = tile.matrix.multiply(ctm);
+        let Some(to_pattern) = to_device.invert() else {
+            self.report.note(b"pattern");
+            return Ok(());
+        };
+        // The path's device box, and the pattern-space box it covers.
+        let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
+        let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for point in polylines.iter().flatten() {
+            min_x = min_x.min(point.x);
+            min_y = min_y.min(point.y);
+            max_x = max_x.max(point.x);
+            max_y = max_y.max(point.y);
+        }
+        if !min_x.is_finite() || !min_y.is_finite() {
+            return Ok(());
+        }
+        let (mut p_min_x, mut p_min_y) = (f64::INFINITY, f64::INFINITY);
+        let (mut p_max_x, mut p_max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for corner in [
+            Point::new(min_x, min_y),
+            Point::new(max_x, min_y),
+            Point::new(max_x, max_y),
+            Point::new(min_x, max_y),
+        ] {
+            let pattern = to_pattern.apply(corner);
+            p_min_x = p_min_x.min(pattern.x);
+            p_min_y = p_min_y.min(pattern.y);
+            p_max_x = p_max_x.max(pattern.x);
+            p_max_y = p_max_y.max(pattern.y);
+        }
+        // Cells sit at multiples of the step, with the key cell at the origin.
+        #[allow(clippy::cast_possible_truncation)]
+        let first_i = (p_min_x / tile.x_step).floor() as i64;
+        #[allow(clippy::cast_possible_truncation)]
+        let last_i = (p_max_x / tile.x_step).ceil() as i64;
+        #[allow(clippy::cast_possible_truncation)]
+        let first_j = (p_min_y / tile.y_step).floor() as i64;
+        #[allow(clippy::cast_possible_truncation)]
+        let last_j = (p_max_y / tile.y_step).ceil() as i64;
+        let columns = last_i.saturating_sub(first_i).saturating_add(1);
+        let rows = last_j.saturating_sub(first_j).saturating_add(1);
+        let cells = columns.saturating_mul(rows);
+        if cells <= 0 || usize::try_from(cells).unwrap_or(usize::MAX) > MAX_TILE_CELLS {
+            self.report.note(b"pattern");
+            return Ok(());
+        }
+        // The cell's own box, in pattern space, as a device quad per cell.
+        let cell_corners = [
+            Point::new(tile.bbox[0], tile.bbox[1]),
+            Point::new(tile.bbox[2], tile.bbox[1]),
+            Point::new(tile.bbox[2], tile.bbox[3]),
+            Point::new(tile.bbox[0], tile.bbox[3]),
+        ];
+        for row in first_j..=last_j {
+            for column in first_i..=last_i {
+                #[allow(clippy::cast_precision_loss)]
+                let offset = Matrix::new(
+                    1.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    column as f64 * tile.x_step,
+                    row as f64 * tile.y_step,
+                );
+                let cell = offset.multiply(to_device);
+                let quad: Vec<Point> = cell_corners
+                    .iter()
+                    .map(|point| cell.apply(*point))
+                    .collect();
+                let mut cell_mask = mask.clone();
+                cell_mask.intersect(&clip_mask(
+                    self.canvas.width(),
+                    self.canvas.height(),
+                    &[quad],
+                    false,
+                ));
+                if cell_mask.count() == 0 {
+                    continue;
+                }
+                self.run_tile(tile, cell, cell_mask)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Run one pattern cell's content with its own state and resources.
+    ///
+    /// The clause says a cell is painted with "the graphics state that was in
+    /// effect at the beginning of the pattern's parent content stream", so the
+    /// base is the state this stream started with, and only the CTM is the
+    /// pattern matrix composed with the one in force at fill time.
+    fn run_tile(
+        &mut self,
+        tile: &crate::pattern::Tile,
+        ctm: Matrix,
+        mask: ClipMask,
+    ) -> crate::Result<()> {
+        if self.form_depth >= MAX_FORM_DEPTH {
+            self.report.note(b"pattern");
+            return Ok(());
+        }
+        let saved_state = self.state.clone();
+        let saved_mask = core::mem::replace(&mut self.mask, mask);
+        let saved_resources = self.resources.clone();
+        let saved_path = core::mem::replace(&mut self.path, Path::new());
+
+        let mut base = self
+            .stream_starts
+            .last()
+            .cloned()
+            .unwrap_or_else(|| self.state.clone());
+        base.ctm = ctm;
+        self.state = base;
+        self.resources = tile.resources.clone();
+        self.form_depth += 1;
+        let result = self.run(&tile.content);
+        self.form_depth -= 1;
+
+        self.state = saved_state;
+        self.mask = saved_mask;
+        self.resources = saved_resources;
+        self.path = saved_path;
+        result
+    }
+
     /// Run a form with `outer` composed after its own `/Matrix`.
     ///
     /// An annotation appearance is placed by mapping its transformed `/BBox`
@@ -1181,6 +1352,7 @@ impl Walker<'_> {
             pending_clip: None,
             mask: ClipMask::all(self.canvas.width(), self.canvas.height()),
             form_depth: self.form_depth,
+            stream_starts: Vec::new(),
         };
         walker.run(&content)?;
         // A `Do` inside the mask group is the page's business too: merging the
@@ -1249,7 +1421,7 @@ impl Walker<'_> {
                     return Ok(());
                 };
                 if let Ok(shading) = crate::shading::Shading::from_object(self.document, shading) {
-                    self.state.pattern = Some(std::rc::Rc::new(shading));
+                    self.state.pattern = Some(PatternFill::Shading(std::rc::Rc::new(shading)));
                 } else {
                     self.report.note(b"pattern");
                 }
@@ -1258,12 +1430,20 @@ impl Walker<'_> {
             // decoded — but the lattice that replicates it is the next round's
             // work, so the fill reports `pattern` instead of painting the
             // previous colour and saying nothing (8.7.3).
-            Some(1) => {
-                if let Object::Stream(stream) = &object {
-                    let _ = crate::pattern::Tile::from_stream(self.document, stream);
+            Some(1) => match &object {
+                Object::Stream(stream) => {
+                    match crate::pattern::Tile::from_stream(self.document, stream) {
+                        Ok(tile) => {
+                            self.state.pattern = Some(PatternFill::Tile(std::rc::Rc::new(tile)))
+                        }
+                        Err(error) => {
+                            let _ = error;
+                            self.report.note(b"pattern");
+                        }
+                    }
                 }
-                self.report.note(b"pattern");
-            }
+                _ => self.report.note(b"pattern"),
+            },
             _ => self.report.note(b"pattern"),
         }
         Ok(())

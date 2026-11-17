@@ -176,6 +176,12 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 335 032) — a gradient is a function evaluated per pixel, and the calculator's
 operators are the bulk of it.
 
+**The npm bundle budget moved from 356 KiB to 364 KiB on 2026-11-17, for tiling
+patterns**: the lattice painter, the pattern-dictionary parser and the
+parent-stream state stack cost **+4 189 gzip bytes** (361 056 → 365 245, measured in
+CI). It buys the two corpus pages that fill with a `/PatternType 1` cell, one of
+which selects its pattern from inside a Type 3 char procedure.
+
 **The npm bundle budget moved from 336 KiB to 356 KiB on 2026-11-16, for the
 simple-font CFF and Type 3 fonts**: reading a bare CFF's charset *names* and
 matching them against the encoding's characters costs **+2 156 gzip bytes**
