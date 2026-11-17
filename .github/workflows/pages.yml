@@ -4,7 +4,16 @@ on:
   push:
     branches: [main]
     paths:
+      # The site ships a wasm build of the *whole* renderer and copies its samples
+      # out of the repository, so a path filter that watched only `pdf2-wasm` let the
+      # demo lag the library: the `/TilingType` snap (2026-11-17) changed
+      # `pdf2-render` and the deployed page kept serving the previous build. Anything
+      # that changes the bytes or the samples belongs here.
       - "crates/pdf2-wasm/**"
+      - "crates/pdf2-render/**"
+      - "tests/fixtures/**"
+      - "corpus/tier-a/**"
+      - "Cargo.toml"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
