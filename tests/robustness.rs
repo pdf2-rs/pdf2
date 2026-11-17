@@ -124,10 +124,10 @@ fn exercise(document: &Document) {
     let _ = document.page_count();
     let _ = document.page(0);
     for number in 0..12 {
-        if let Ok(object) = document.get_object_by_number(number) {
-            if let Some(stream) = object.as_stream() {
-                let _ = document.decode_stream(stream);
-            }
+        if let Ok(object) = document.get_object_by_number(number)
+            && let Some(stream) = object.as_stream()
+        {
+            let _ = document.decode_stream(stream);
         }
     }
 }

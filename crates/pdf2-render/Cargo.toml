@@ -1,7 +1,7 @@
 [package]
 name = "pdf2-render"
 version = "1.3.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.100"
 description = "Rasteriser for the pdf2 crate: paths, clips, transforms and (soon) images and text."
 license = "Unlicense OR MIT"

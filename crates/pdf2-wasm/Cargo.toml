@@ -1,7 +1,7 @@
 [package]
 name = "pdf2-wasm"
 version = "1.2.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.100"
 description = "WebAssembly bindings for pdf2: open, inspect and render PDF 2.0 pages in the browser."
 license = "Unlicense OR MIT"

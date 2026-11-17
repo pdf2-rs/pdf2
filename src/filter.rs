@@ -8,7 +8,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miniz_oxide::inflate::stream::{inflate, InflateState};
+use miniz_oxide::inflate::stream::{InflateState, inflate};
 use miniz_oxide::{DataFormat, MZFlush, MZStatus};
 
 use crate::error::{Error, Result};
@@ -97,13 +97,13 @@ impl FilterSpec {
                 return Err(Error::Malformed {
                     what: "indirect /Filter needs the document",
                     offset: None,
-                })
+                });
             }
             Some(_) => {
                 return Err(Error::Malformed {
                     what: "/Filter must be a name or an array of names",
                     offset: None,
-                })
+                });
             }
         };
         let parms = match dict.get(b"DecodeParms") {
@@ -124,13 +124,13 @@ impl FilterSpec {
                 return Err(Error::Malformed {
                     what: "indirect /DecodeParms needs the document",
                     offset: None,
-                })
+                });
             }
             Some(_) => {
                 return Err(Error::Malformed {
                     what: "/DecodeParms must be a dictionary or an array",
                     offset: None,
-                })
+                });
             }
         };
         Ok(filters
@@ -329,7 +329,7 @@ fn flate_decode(data: &[u8], limit: usize) -> Result<Vec<u8>> {
             return Err(Error::Limit {
                 what: "a Flate stream",
                 limit,
-            })
+            });
         }
         Err(_) => {}
     }
@@ -391,7 +391,7 @@ fn inflate_capped(data: &[u8], format: DataFormat, limit: usize) -> Result<Vec<u
                 return Err(Error::Malformed {
                     what: "FlateDecode payload",
                     offset: None,
-                })
+                });
             }
         }
     }
@@ -570,29 +570,29 @@ fn lzw_decode(data: &[u8], early_change: bool) -> Result<Vec<u8>> {
                     return Err(Error::Malformed {
                         what: "LZWDecode code without a base sequence",
                         offset: None,
-                    })
+                    });
                 }
             },
             _ => {
                 return Err(Error::Malformed {
                     what: "LZWDecode code out of range",
                     offset: None,
-                })
+                });
             }
         };
         out.extend_from_slice(&sequence);
-        if let Some(previous) = previous {
-            if table.len() < LZW_MAX_CODE {
-                let mut entry = previous;
-                entry.push(sequence[0]);
-                table.push(entry);
-                if table.len() + usize::from(early_change) == 512 {
-                    code_width = 10;
-                } else if table.len() + usize::from(early_change) == 1024 {
-                    code_width = 11;
-                } else if table.len() + usize::from(early_change) == 2048 {
-                    code_width = 12;
-                }
+        if let Some(previous) = previous
+            && table.len() < LZW_MAX_CODE
+        {
+            let mut entry = previous;
+            entry.push(sequence[0]);
+            table.push(entry);
+            if table.len() + usize::from(early_change) == 512 {
+                code_width = 10;
+            } else if table.len() + usize::from(early_change) == 1024 {
+                code_width = 11;
+            } else if table.len() + usize::from(early_change) == 2048 {
+                code_width = 12;
             }
         }
         previous = Some(sequence);
@@ -665,7 +665,7 @@ fn png_predictor(data: &[u8], predictor: Predictor) -> Result<Vec<u8>> {
                     return Err(Error::Malformed {
                         what: "PNG predictor row filter must be 0–4",
                         offset: None,
-                    })
+                    });
                 }
             };
         }
@@ -714,8 +714,8 @@ fn tiff_predictor(data: &[u8], predictor: Predictor) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_predictor, ascii85_decode, ascii_hex_decode, decode_chain, lzw_decode,
-        run_length_decode, Filter, FilterSpec, Predictor,
+        Filter, FilterSpec, Predictor, apply_predictor, ascii_hex_decode, ascii85_decode,
+        decode_chain, lzw_decode, run_length_decode,
     };
     use crate::error::Error;
     use crate::object::{Dictionary, Object};
@@ -892,14 +892,16 @@ mod tests {
             ..Predictor::default()
         };
         assert!(apply_predictor(&[0, 0], unsupported).is_err());
-        assert!(apply_predictor(
-            &[0],
-            Predictor {
-                predictor: 7,
-                ..Predictor::default()
-            }
-        )
-        .is_err());
+        assert!(
+            apply_predictor(
+                &[0],
+                Predictor {
+                    predictor: 7,
+                    ..Predictor::default()
+                }
+            )
+            .is_err()
+        );
     }
 
     #[test]

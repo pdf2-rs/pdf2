@@ -107,7 +107,7 @@ impl Document {
                 return Err(Error::Malformed {
                     what: "trailer /Root must be an indirect reference",
                     offset: None,
-                })
+                });
             }
         }
         let mut document = Self {
@@ -134,7 +134,7 @@ impl Document {
                         return Err(Error::Malformed {
                             what: "trailer /Encrypt is not a dictionary",
                             offset: None,
-                        })
+                        });
                     }
                 },
                 Object::Dictionary(dict) => (dict.clone(), None),
@@ -142,7 +142,7 @@ impl Document {
                     return Err(Error::Malformed {
                         what: "trailer /Encrypt must be a reference or a dictionary",
                         offset: None,
-                    })
+                    });
                 }
             };
             // Revisions 2–4 mix the first `/ID` element into the key, so the
@@ -203,7 +203,7 @@ impl Document {
                 return Err(Error::Malformed {
                     what: "trailer /Root must be an indirect reference",
                     offset: None,
-                })
+                });
             }
         };
         self.get_object(root)
@@ -230,7 +230,7 @@ impl Document {
                 return Err(Error::Malformed {
                     what: "object is free in the cross-reference",
                     offset: None,
-                })
+                });
             }
             XrefEntry::InUse { offset, .. } => self.parse_at(id.number, offset)?,
             XrefEntry::Compressed { stream, index } => {
@@ -479,13 +479,13 @@ impl Document {
                     return Err(Error::Malformed {
                         what: "object stream index points at a different object",
                         offset: None,
-                    })
+                    });
                 }
                 None => {
                     return Err(Error::Malformed {
                         what: "object stream index is out of range",
                         offset: None,
-                    })
+                    });
                 }
             }
         }
@@ -507,7 +507,7 @@ impl Document {
                 return Err(Error::Malformed {
                     what: "object stream entry points at an object that is not a stream",
                     offset: None,
-                })
+                });
             }
         };
         let count = stream_integer(&stream, b"N")?;
@@ -732,7 +732,7 @@ fn read_xref_chain(data: &[u8]) -> Result<(BTreeMap<u32, XrefEntry>, Dictionary)
                 return Err(Error::Malformed {
                     what: "trailer /Prev must be an integer",
                     offset: Some(offset),
-                })
+                });
             }
         };
         let previous = usize::try_from(previous).map_err(|_| Error::Malformed {
@@ -775,10 +775,10 @@ fn parse_xref_section(
         return Ok(section);
     }
     let before = &data[..offset.min(data.len())];
-    if let Some(found) = find_last(before, b"\nxref") {
-        if let Ok(section) = parse_xref_section_at(data, found + 1) {
-            return Ok(section);
-        }
+    if let Some(found) = find_last(before, b"\nxref")
+        && let Ok(section) = parse_xref_section_at(data, found + 1)
+    {
+        return Ok(section);
     }
     parse_xref_section_at(data, offset)
 }
@@ -844,7 +844,7 @@ fn parse_xref_table(
                             return Err(Error::Malformed {
                                 what: "cross-reference entry kind",
                                 offset: Some(offset),
-                            })
+                            });
                         }
                     };
                     if generation < 0 {
@@ -882,7 +882,7 @@ fn parse_xref_table(
                             return Err(Error::Malformed {
                                 what: "cross-reference entry kind must be n or f",
                                 offset: Some(offset),
-                            })
+                            });
                         }
                     };
                     entries.entry(number).or_insert(entry);
@@ -892,13 +892,13 @@ fn parse_xref_table(
                 return Err(Error::Malformed {
                     what: "cross-reference table without a trailer",
                     offset: Some(offset),
-                })
+                });
             }
             _ => {
                 return Err(Error::Malformed {
                     what: "cross-reference subsection header",
                     offset: Some(offset),
-                })
+                });
             }
         }
     }
@@ -908,7 +908,7 @@ fn parse_xref_table(
             return Err(Error::Malformed {
                 what: "trailer is not a dictionary",
                 offset: Some(offset),
-            })
+            });
         }
     };
     Ok((entries, trailer))
@@ -927,7 +927,7 @@ fn parse_xref_stream(data: &[u8], offset: usize) -> Result<(BTreeMap<u32, XrefEn
             return Err(Error::Malformed {
                 what: "startxref points at an object that is not a cross-reference stream",
                 offset: Some(offset),
-            })
+            });
         }
     };
     let dict = stream.dict().clone();
@@ -998,7 +998,7 @@ fn parse_xref_stream(data: &[u8], offset: usize) -> Result<(BTreeMap<u32, XrefEn
                             _ => "cross-reference stream entry type",
                         },
                         offset: Some(offset),
-                    })
+                    });
                 }
             };
             entries.entry(number).or_insert(entry);
@@ -1071,7 +1071,7 @@ fn xref_index(dict: &Dictionary) -> Result<Vec<(u32, u32)>> {
                 return Err(Error::Malformed {
                     what: "/Index pairs must be non-negative integers",
                     offset: None,
-                })
+                });
             }
         }
     }

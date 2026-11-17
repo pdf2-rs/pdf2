@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use pdf2::Document;
-use pdf2_render::{render_page_number, RenderOptions, RenderedPage};
+use pdf2_render::{RenderOptions, RenderedPage, render_page_number};
 
 fn corpus(name: &str) -> Vec<u8> {
     let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -32,10 +32,10 @@ fn count(rendered: &RenderedPage, matches: impl Fn([u8; 4]) -> bool) -> usize {
     let mut painted = 0;
     for y in 0..rendered.canvas.height() {
         for x in 0..rendered.canvas.width() {
-            if let Some(pixel) = rendered.canvas.pixel(x, y) {
-                if matches(pixel) {
-                    painted += 1;
-                }
+            if let Some(pixel) = rendered.canvas.pixel(x, y)
+                && matches(pixel)
+            {
+                painted += 1;
             }
         }
     }
