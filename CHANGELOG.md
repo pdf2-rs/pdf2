@@ -18,8 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manifest and would otherwise veto the 1.88-era APIs this release starts using.
   The library still builds with `--no-default-features --features alloc` for
   `thumbv7em-none-eabihf`, verified on 1.100.
-- Edition 2024 and the `1.88`–`1.100` API sweep follow in this same release; each
-  lands with its own note below.
+- **Edition 2024.** Every crate moves, and the migration found nothing to fix: both
+  `cargo fix --edition` runs (root and each member) were no-ops, so the source was
+  already 2024-compatible. What the edition *unlocks* is let-chains, and clippy's
+  `collapsible_if` immediately asks for them at the thirteen nested `if let` sites
+  that had no `else` and no escaping binding — one chain each, shape-only. The
+  rustfmt 2024 style edition then reformatted the tree in a commit of its own
+  (self-imports lead their group; a macro call in tail position loses its
+  semicolon), so the next diff stays readable.
 
 ## [1.3.0] — 2026-11-17
 

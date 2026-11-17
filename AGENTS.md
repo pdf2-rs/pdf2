@@ -29,7 +29,11 @@ paths and 1.0's layout depend on them.
 - **`no_std` keeps building.** `cargo +stable build -p pdf2
   --no-default-features --features alloc` must pass for
   `thumbv7em-none-eabihf`; `alloc`/`core` only, no new `std` dependency.
-- **MSRV is 1.100.** CI tests it explicitly; do not raise it without a
+- **Edition 2024, MSRV 1.100.** Let-chains are available (they need both); the
+  `#[unsafe(...)]` attribute form is required for `no_mangle`/`export_name`/
+  `link_section`; rustfmt's 2024 style edition is what `cargo fmt --all` produces,
+  so a formatting-only change touches many files and belongs in its own commit. CI
+  tests the MSRV explicitly; do not raise it without a
   CHANGELOG note and a reason. `1.100` is the current stable, so the MSRV job is
   also the guard against adopting an API that only exists in 1.101.
 - **No new dependencies without a justification in the commit message.** The
