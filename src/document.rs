@@ -46,7 +46,7 @@ const MAX_RESOLVE_DEPTH: usize = 32;
 
 /// Where one object lives according to the cross-reference data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum XrefEntry {
+pub(crate) enum XrefEntry {
     /// A free entry (`f`, type 0): the object number is unused.
     Free { generation: u16 },
     /// An in-use entry (`n`, type 1): the object is at a byte offset.
@@ -80,6 +80,65 @@ pub struct Document {
     object_limit: Cell<usize>,
     /// How many pages a page tree may list.
     page_limit: Cell<usize>,
+}
+
+/// What a page-tree walk needs of a document (§7.7.3.2).
+///
+/// [`Document`] and the editing overlay both walk the same tree under the same
+/// rules; they differ only in which object answer wins, so the walk takes a
+/// source rather than existing twice.
+pub(crate) trait ObjectSource {
+    /// Fetch an object by id, through whatever overlay the source has.
+    fn get_object(&self, id: ObjectId) -> Result<Object>;
+
+    /// The page-tree ceiling this source applies.
+    fn page_limit(&self) -> usize;
+
+    /// The catalog's object id, reached through the trailer's `/Root`.
+    fn root_id(&self) -> Result<ObjectId>;
+
+    /// Replace an indirect reference with the object it points at.
+    fn resolve(&self, object: Option<&Object>) -> Result<Option<Object>> {
+        match object {
+            None => Ok(None),
+            Some(Object::Reference(id)) => Ok(Some(self.get_object(*id)?)),
+            Some(Object::Array(items)) => {
+                let mut resolved = Vec::with_capacity(items.len());
+                for item in items {
+                    resolved.push(
+                        self.resolve(Some(item))?
+                            .ok_or(Error::malformed("array entry"))?,
+                    );
+                }
+                Ok(Some(Object::Array(resolved)))
+            }
+            Some(other) => Ok(Some(other.clone())),
+        }
+    }
+}
+
+impl ObjectSource for Document {
+    fn get_object(&self, id: ObjectId) -> Result<Object> {
+        Document::get_object(self, id)
+    }
+
+    fn page_limit(&self) -> usize {
+        Document::page_limit(self)
+    }
+
+    fn root_id(&self) -> Result<ObjectId> {
+        match self.trailer.get(b"Root") {
+            Some(Object::Reference(id)) => Ok(*id),
+            _ => Err(Error::Malformed {
+                what: "trailer /Root must be an indirect reference",
+                offset: None,
+            }),
+        }
+    }
+
+    fn resolve(&self, object: Option<&Object>) -> Result<Option<Object>> {
+        Document::resolve(self, object)
+    }
 }
 
 impl Document {
@@ -191,6 +250,38 @@ impl Document {
     /// The newest trailer dictionary.
     pub fn trailer(&self) -> &Dictionary {
         &self.trailer
+    }
+
+    /// The bytes this document was opened from, untouched.
+    ///
+    /// An incremental save appends to exactly these bytes (§7.5.6), which is what
+    /// makes a signature over the original still check out. Crate-internal: the
+    /// editing overlay in [`crate::edit`] is the only caller.
+    #[allow(dead_code)] // The save appends to these bytes; `edit` reads them.
+    pub(crate) fn base_bytes(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// The offset the newest section's `startxref` names.
+    ///
+    /// An appended trailer carries this as its `/Prev`.
+    #[allow(dead_code)] // The appended trailer names it as `/Prev`; `edit` reads it.
+    pub(crate) fn base_startxref(&self) -> Result<usize> {
+        startxref_offset(&self.data)
+    }
+
+    /// The cross-reference as it was read, for deciding what a save must write.
+    pub(crate) fn base_xref(&self) -> &BTreeMap<u32, XrefEntry> {
+        &self.xref
+    }
+
+    /// The security handler the file was opened with, when it has one.
+    ///
+    /// An appended object must be encrypted with the same handler and the same
+    /// per-object key the base used (§7.6.4).
+    #[allow(dead_code)] // The save encrypts with it; `edit` reads it.
+    pub(crate) fn base_encryption(&self) -> Option<&Encryption> {
+        self.encryption.as_ref()
     }
 
     /// The document catalog, reached through the trailer's `/Root`.

@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 
 use alloc::collections::BTreeSet;
 
-use crate::document::Document;
+use crate::document::{Document, ObjectSource};
 use crate::error::{Error, Result};
 use crate::object::{Dictionary, Object, ObjectId};
 
@@ -136,15 +136,7 @@ impl Document {
 
     /// Walk the page tree and return every page in document order.
     pub fn pages(&self) -> Result<Vec<Page>> {
-        let catalog = self.catalog_dict()?;
-        let root = catalog.get(b"Pages").ok_or(Error::Malformed {
-            what: "catalog without /Pages",
-            offset: None,
-        })?;
-        let mut pages = Vec::new();
-        let mut visited = BTreeSet::new();
-        self.collect_pages(root, &Inherited::default(), 0, &mut visited, &mut pages)?;
-        Ok(pages)
+        pages_of(self)
     }
 
     /// Number of pages, counted by walking the tree rather than trusting
@@ -227,139 +219,170 @@ impl Document {
             }),
         }
     }
-
-    fn collect_pages(
-        &self,
-        node: &Object,
-        inherited: &Inherited,
-        depth: usize,
-        visited: &mut BTreeSet<ObjectId>,
-        pages: &mut Vec<Page>,
-    ) -> Result<()> {
-        if depth > MAX_PAGE_TREE_DEPTH {
+}
+/// Walk the page tree of any object source and return every page in order.
+pub(crate) fn pages_of<S: ObjectSource + ?Sized>(source: &S) -> Result<Vec<Page>> {
+    let catalog = match source.get_object(source.root_id()?)? {
+        Object::Dictionary(dict) => dict,
+        _ => {
             return Err(Error::Malformed {
-                what: "page tree is nested too deeply",
+                what: "catalog /Root is not a dictionary",
                 offset: None,
             });
         }
-        if pages.len() >= self.page_limit() {
-            return Err(Error::TooMany {
-                what: "the page tree",
-                limit: self.page_limit(),
-            });
-        }
-        let (dict, id) = match node {
-            Object::Reference(id) => {
-                if !visited.insert(*id) {
-                    return Err(Error::Malformed {
-                        what: "page tree contains a cycle",
-                        offset: None,
-                    });
-                }
-                match self.get_object(*id)? {
-                    Object::Dictionary(dict) => (dict, Some(*id)),
-                    _ => {
-                        return Err(Error::Malformed {
-                            what: "page tree node is not a dictionary",
-                            offset: None,
-                        });
-                    }
-                }
-            }
-            Object::Dictionary(dict) => (dict.clone(), None),
-            _ => {
+    };
+    let root = catalog.get(b"Pages").ok_or(Error::Malformed {
+        what: "catalog without /Pages",
+        offset: None,
+    })?;
+    let mut pages = Vec::new();
+    let mut visited = BTreeSet::new();
+    collect_pages(
+        source,
+        root,
+        &Inherited::default(),
+        0,
+        &mut visited,
+        &mut pages,
+    )?;
+    Ok(pages)
+}
+
+fn collect_pages<S: ObjectSource + ?Sized>(
+    source: &S,
+    node: &Object,
+    inherited: &Inherited,
+    depth: usize,
+    visited: &mut BTreeSet<ObjectId>,
+    pages: &mut Vec<Page>,
+) -> Result<()> {
+    if depth > MAX_PAGE_TREE_DEPTH {
+        return Err(Error::Malformed {
+            what: "page tree is nested too deeply",
+            offset: None,
+        });
+    }
+    if pages.len() >= source.page_limit() {
+        return Err(Error::TooMany {
+            what: "the page tree",
+            limit: source.page_limit(),
+        });
+    }
+    let (dict, id) = match node {
+        Object::Reference(id) => {
+            if !visited.insert(*id) {
                 return Err(Error::Malformed {
-                    what: "page tree node is not a dictionary or reference",
+                    what: "page tree contains a cycle",
                     offset: None,
                 });
             }
-        };
+            match source.get_object(*id)? {
+                Object::Dictionary(dict) => (dict, Some(*id)),
+                _ => {
+                    return Err(Error::Malformed {
+                        what: "page tree node is not a dictionary",
+                        offset: None,
+                    });
+                }
+            }
+        }
+        Object::Dictionary(dict) => (dict.clone(), None),
+        _ => {
+            return Err(Error::Malformed {
+                what: "page tree node is not a dictionary or reference",
+                offset: None,
+            });
+        }
+    };
 
-        let inherited = Inherited {
-            media_box: self.box_of(&dict, b"MediaBox")?.or(inherited.media_box),
-            crop_box: self.box_of(&dict, b"CropBox")?.or(inherited.crop_box),
-            rotate: match dict.get(b"Rotate") {
-                Some(rotate) => normalise_rotate(rotate)?,
-                None => inherited.rotate,
-            },
-            resources: match dict.get(b"Resources") {
-                Some(resources) => Some(self.resources_of(resources)?),
-                None => inherited.resources.clone(),
-            },
-        };
+    let inherited = Inherited {
+        media_box: box_of(source, &dict, b"MediaBox")?.or(inherited.media_box),
+        crop_box: box_of(source, &dict, b"CropBox")?.or(inherited.crop_box),
+        rotate: match dict.get(b"Rotate") {
+            Some(rotate) => normalise_rotate(rotate)?,
+            None => inherited.rotate,
+        },
+        resources: match dict.get(b"Resources") {
+            Some(resources) => Some(resources_of(source, resources)?),
+            None => inherited.resources.clone(),
+        },
+    };
 
-        if let Some(kids) = dict.get(b"Kids") {
-            // Only the array itself may be indirect: the entries stay
-            // references so that each page keeps its object id.
-            let kids = match kids {
-                Object::Array(items) => items.clone(),
-                Object::Reference(id) => match self.get_object(*id)? {
-                    Object::Array(items) => items,
-                    _ => {
-                        return Err(Error::Malformed {
-                            what: "/Kids must be an array",
-                            offset: None,
-                        });
-                    }
-                },
+    if let Some(kids) = dict.get(b"Kids") {
+        // Only the array itself may be indirect: the entries stay
+        // references so that each page keeps its object id.
+        let kids = match kids {
+            Object::Array(items) => items.clone(),
+            Object::Reference(id) => match source.get_object(*id)? {
+                Object::Array(items) => items,
                 _ => {
                     return Err(Error::Malformed {
                         what: "/Kids must be an array",
                         offset: None,
                     });
                 }
-            };
-            for kid in &kids {
-                self.collect_pages(kid, &inherited, depth + 1, visited, pages)?;
+            },
+            _ => {
+                return Err(Error::Malformed {
+                    what: "/Kids must be an array",
+                    offset: None,
+                });
             }
-            return Ok(());
-        }
-
-        let is_page = matches!(
-            dict.get(b"Type").and_then(Object::as_name),
-            Some(name) if name == b"Page"
-        ) || dict.contains_key(b"MediaBox")
-            || inherited.media_box.is_some();
-        if !is_page {
-            return Err(Error::Malformed {
-                what: "page tree node has neither /Kids nor /Type /Page",
-                offset: None,
-            });
-        }
-        let crop_box = inherited.crop_box.or(inherited.media_box);
-        pages.push(Page {
-            id,
-            media_box: inherited.media_box,
-            crop_box,
-            rotate: inherited.rotate,
-            resources: inherited.resources,
-            contents: page_contents(&dict)?,
-        });
-        Ok(())
-    }
-
-    fn box_of(&self, dict: &Dictionary, key: &[u8]) -> Result<Option<Rect>> {
-        let Some(value) = dict.get(key) else {
-            return Ok(None);
         };
-        let value = self.resolve(Some(value))?.unwrap_or(Object::Null);
-        match value {
-            Object::Array(items) => Rect::from_array(&items).map(Some),
-            _ => Err(Error::Malformed {
-                what: "a page box must be an array of four numbers",
-                offset: None,
-            }),
+        for kid in &kids {
+            collect_pages(source, kid, &inherited, depth + 1, visited, pages)?;
         }
+        return Ok(());
     }
 
-    fn resources_of(&self, resources: &Object) -> Result<Dictionary> {
-        match self.resolve(Some(resources))?.unwrap_or(Object::Null) {
-            Object::Dictionary(dict) => Ok(dict),
-            _ => Err(Error::Malformed {
-                what: "/Resources must be a dictionary",
-                offset: None,
-            }),
-        }
+    let is_page = matches!(
+        dict.get(b"Type").and_then(Object::as_name),
+        Some(name) if name == b"Page"
+    ) || dict.contains_key(b"MediaBox")
+        || inherited.media_box.is_some();
+    if !is_page {
+        return Err(Error::Malformed {
+            what: "page tree node has neither /Kids nor /Type /Page",
+            offset: None,
+        });
+    }
+    let crop_box = inherited.crop_box.or(inherited.media_box);
+    pages.push(Page {
+        id,
+        media_box: inherited.media_box,
+        crop_box,
+        rotate: inherited.rotate,
+        resources: inherited.resources,
+        contents: page_contents(&dict)?,
+    });
+    Ok(())
+}
+
+fn box_of<S: ObjectSource + ?Sized>(
+    source: &S,
+    dict: &Dictionary,
+    key: &[u8],
+) -> Result<Option<Rect>> {
+    let Some(value) = dict.get(key) else {
+        return Ok(None);
+    };
+    let value = source.resolve(Some(value))?.unwrap_or(Object::Null);
+    match value {
+        Object::Array(items) => Rect::from_array(&items).map(Some),
+        _ => Err(Error::Malformed {
+            what: "a page box must be an array of four numbers",
+            offset: None,
+        }),
+    }
+}
+
+fn resources_of<S: ObjectSource + ?Sized>(source: &S, resources: &Object) -> Result<Dictionary> {
+    match source.resolve(Some(resources))?.unwrap_or(Object::Null) {
+        Object::Dictionary(dict) => Ok(dict),
+        _ => Err(Error::Malformed {
+            what: "/Resources must be a dictionary",
+            offset: None,
+        }),
     }
 }
 
