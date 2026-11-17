@@ -364,7 +364,7 @@ impl Interpreter<'_> {
                         let mut values = core::mem::take(&mut self.stack);
                         values.reverse();
                         if values.len() >= 13 {
-                            for pair in values[..12].chunks_exact(6) {
+                            for pair in values[..12].as_chunks::<6>().0 {
                                 self.curve_by(pair[0], pair[1], pair[2], pair[3], pair[4], pair[5]);
                             }
                         }

@@ -1,7 +1,8 @@
 # Toolchain used for local development and for the stable jobs in CI.
 #
-# The minimum supported Rust version is 1.87 (declared as `rust-version` in
-# Cargo.toml). CI checks that explicitly with `cargo +1.87`, and the explicit
+# The minimum supported Rust version is 1.100 (declared as `rust-version` in
+# Cargo.toml, which is the current stable). CI checks that explicitly with
+# `cargo +1.100`, and the explicit
 # `+toolchain` argument takes precedence over this file, so pinning stable here
 # never hides an MSRV break.
 [toolchain]

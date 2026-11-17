@@ -128,10 +128,14 @@ pub fn distance(left: &Ppm, right: &Ppm) -> Result<Distance, String> {
     for (a, b) in left.pixels.iter().zip(&right.pixels) {
         total += u64::from(a.abs_diff(*b));
     }
+    // `as_chunks` turns the constant length into a type, so the pixel loop needs
+    // no neighbour bytes and no bounds check.
     for (pa, pb) in left
         .pixels
-        .chunks_exact(3)
-        .zip(right.pixels.chunks_exact(3))
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(right.pixels.as_chunks::<3>().0.iter())
     {
         if pa.iter().zip(pb).any(|(a, b)| a.abs_diff(*b) > 32) {
             over += 1;

@@ -214,7 +214,7 @@ public surface, no open P1 bugs.
 
 - `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test` (unit, integration, doc-tests), `cargo doc` with warnings denied.
-- MSRV 1.87 and beta (and, for the library, the `alloc` and wasm targets).
+- MSRV 1.100 and beta (and, for the library, the `alloc` and wasm targets).
 - `tests/robustness.rs` sweeps over every fixture, unchanged.
 - Workspace tests install the *published* versions of the sibling crates, so a
   broken release is a red build, not a user report.

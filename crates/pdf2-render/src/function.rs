@@ -885,7 +885,9 @@ fn reals(dict: &Dictionary, key: &[u8]) -> Result<Vec<f64>> {
 fn pairs(dict: &Dictionary, key: &[u8]) -> Result<Vec<(f64, f64)>> {
     let values = reals(dict, key)?;
     Ok(values
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| (pair[0], pair[1]))
         .collect())
 }

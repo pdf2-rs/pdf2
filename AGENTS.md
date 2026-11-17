@@ -29,8 +29,9 @@ paths and 1.0's layout depend on them.
 - **`no_std` keeps building.** `cargo +stable build -p pdf2
   --no-default-features --features alloc` must pass for
   `thumbv7em-none-eabihf`; `alloc`/`core` only, no new `std` dependency.
-- **MSRV is 1.87.** CI tests it explicitly; do not raise it without a
-  CHANGELOG note and a reason.
+- **MSRV is 1.100.** CI tests it explicitly; do not raise it without a
+  CHANGELOG note and a reason. `1.100` is the current stable, so the MSRV job is
+  also the guard against adopting an API that only exists in 1.101.
 - **No new dependencies without a justification in the commit message.** The
   library has four, chosen so `no_std` works; `cargo deny` gates licences
   (allow-list in `deny.toml`) and advisories.
@@ -62,7 +63,7 @@ gh pr merge --squash --delete-branch
 ```
 
 - Branch prefixes: `feat/`, `fix/`, `docs/`, `chore/`, `release/`.
-- The required checks are every job in `ci.yml`: Gate, Test (1.87), Test (beta),
+- The required checks are every job in `ci.yml`: Gate, Test (1.100), Test (beta),
   Package, both `no_std` jobs, `wasm`, `wasm package`, Licences and advisories,
   Semver and Benchmarks. A red one blocks the merge; a flaky one is re-run, not
   skipped.
@@ -110,6 +111,10 @@ cargo gate --full   # plus no_std, wasm modules and the benchmark budget
 4. `cargo test -p pdf2 --all-features`
 5. `cargo doc --workspace --no-deps --lib` with `RUSTDOCFLAGS=-D warnings`
 
+`cargo gate` runs `cargo` from `PATH`, so it proves the *active* toolchain, not the
+MSRV: the MSRV proof is `cargo +1.100 test --workspace` (plus the `thumbv7em` build
+above), and CI runs it as the `Test (1.100)` job.
+
 The same lint levels live in `[workspace.lints]` in the root `Cargo.toml`, so
 clippy and `unsafe_code` failures surface in a plain `cargo build`/`cargo test`
 as well; CI is the backstop, not the only check. The chores are implemented once,
@@ -138,7 +143,7 @@ required check in the ruleset.
 | Job | Guards | What a failure means |
 | --- | --- | --- |
 | Gate | fmt, clippy, tests, all-features, docs | the change is not ready; fix locally with `cargo gate` |
-| Test (1.87, beta) | MSRV and the next toolchain | a 1.87 break or a new warning on beta |
+| Test (1.100, beta) | MSRV and the next toolchain | a 1.100 break or a new warning on beta |
 | Package | `cargo package -p pdf2` and `-p pdf2-cli` | a file the tests need is missing from the tarball, or metadata is invalid |
 | no_std | `alloc` build on x86_64 and thumbv7em | a `std` dependency crept into the library |
 | wasm | browser and WASI smoke tests, size budgets | the wasm build broke or grew past the budget in `docs/PERFORMANCE.md` |

@@ -341,8 +341,8 @@ fn decode(bytes: &[u8]) -> String {
         }
         return text;
     }
-    for pair in bytes.chunks_exact(2) {
-        let unit = u16::from_be_bytes([pair[0], pair[1]]);
+    for pair in bytes.as_chunks::<2>().0 {
+        let unit = u16::from_be_bytes(*pair);
         text.push(core::char::from_u32(u32::from(unit)).unwrap_or('\u{FFFD}'));
     }
     text
@@ -426,7 +426,7 @@ impl Lexer<'_> {
                         return Err(Error::malformed("a hex string with an odd digit count"));
                     }
                     let mut bytes = Vec::with_capacity(digits.len() / 2);
-                    for pair in digits.chunks_exact(2) {
+                    for pair in digits.as_chunks::<2>().0 {
                         bytes.push((pair[0] << 4) | pair[1]);
                     }
                     return Ok(Some(Token::Hex(bytes)));

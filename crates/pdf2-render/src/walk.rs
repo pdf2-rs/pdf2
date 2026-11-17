@@ -765,8 +765,8 @@ impl Walker<'_> {
     fn show_text(&mut self, bytes: &[u8]) -> crate::Result<()> {
         if let Some(cid) = self.state.cid.clone() {
             // Identity-H and friends: the string is a run of two-byte codes.
-            for pair in bytes.chunks_exact(2) {
-                let code = u16::from_be_bytes([pair[0], pair[1]]);
+            for pair in bytes.as_chunks::<2>().0 {
+                let code = u16::from_be_bytes(*pair);
                 if let Some(glyph) = cid.font.glyph_by_id(cid.glyph_id(code)) {
                     self.place_glyph(&glyph);
                 }
@@ -1783,8 +1783,10 @@ impl Walker<'_> {
                 .stream_data(*id)
                 .map(|data| {
                     CidToGid::Table(
-                        data.chunks_exact(2)
-                            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                        data.as_chunks::<2>()
+                            .0
+                            .iter()
+                            .map(|pair| u16::from_be_bytes(*pair))
                             .collect(),
                     )
                 })

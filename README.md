@@ -313,11 +313,11 @@ still opens.
 Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 `.github/workflows/ci.yml` runs the gate in this README's *Status* section on
-stable, on beta and on the declared MSRV (1.87), builds the docs with warnings
+stable, on beta and on the declared MSRV (1.100), builds the docs with warnings
 denied, and packages the crate.
 
 `rust-toolchain.toml` pins stable (with `rustfmt` and `clippy`) for local work.
-The MSRV stays checkable with `cargo +1.87 test`, because an explicit
+The MSRV stays checkable with `cargo +1.100 test`, because an explicit
 `+toolchain` argument outranks that file — which is also how CI names every
 toolchain it uses.
 
