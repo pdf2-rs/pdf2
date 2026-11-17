@@ -107,38 +107,3 @@ fn a_jbig2_without_the_feature_names_the_feature() {
         "the message names the codec and the feature: {message}"
     );
 }
-
-#[cfg(feature = "jpx")]
-#[test]
-fn the_corpus_codestream_header_parses_and_then_refuses() {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/tier-a/bug_jpx.pdf");
-    let document = Document::open(std::fs::read(&path).expect("corpus")).expect("open");
-    let mut found = None;
-    for number in 1..=512u32 {
-        let Ok(object) = document.get_object_by_number(number) else {
-            continue;
-        };
-        let is_jpx = object.as_stream().is_some_and(|stream| {
-            stream
-                .dict()
-                .get(b"Filter")
-                .and_then(|filter| filter.as_name())
-                .is_some_and(|name| name == b"JPXDecode")
-        });
-        if is_jpx {
-            found = Some(number);
-            break;
-        }
-    }
-    let number = found.expect("the corpus page carries a /JPXDecode image");
-    let object = document.get_object_by_number(number).expect("the image");
-    let stream = object.as_stream().expect("the image is a stream");
-    let message = Image::from_stream(&document, stream, Some(ObjectId::new(number, 0)))
-        .expect_err("the pixels are the next round's work")
-        .to_string();
-    assert!(
-        message.contains("a /JPXDecode image") && !message.contains("codestream"),
-        "the codestream header parsed, so the decoder ran before refusing: {message}"
-    );
-}

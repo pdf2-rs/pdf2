@@ -6,6 +6,15 @@ rust-version = "1.100"
 publish = false
 description = "Compare this renderer with independent engines (poppler, mupdf, Ghostscript) and gate on the measured tolerance."
 
+[features]
+# The decoders are non-default features of the renderer (ADR 0007: ~138 KiB gzip
+# on the wasm bundle, so the npm build leaves them out). This tool is evidence,
+# not a shipped artefact, so its CI build turns them on — but through a feature
+# of its own: enabling them on the dependency would unify across the workspace
+# and switch them on for every `cargo test --workspace`, silently dropping the
+# renderer's "the codec is absent" assertions.
+decoders = ["pdf2-render/jpx", "pdf2-render/jbig2"]
+
 [dependencies]
 pdf2 = { path = "../..", version = "1.4.0" }
 pdf2-render = { path = "../pdf2-render", version = "1.4.0" }

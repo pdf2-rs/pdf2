@@ -245,7 +245,9 @@ jobs:
 
       - name: Compare every case with the oracles
         run: |
-          cargo +stable build --release -p pdf2-oracle
+          # The decoders are non-default features (ADR 0007): without this the
+          # JPX and JBIG2 cases would be compared with the codecs off.
+          cargo +stable build --release -p pdf2-oracle --features decoders
           ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt \
             --tolerances corpus/tolerances.tsv \
             --budget corpus/render-budget.tsv
