@@ -11,6 +11,14 @@ readme = "README.md"
 keywords = ["pdf", "pdf2", "wasm", "render"]
 categories = ["wasm", "graphics"]
 
+[features]
+default = []
+# Pass-through only: the decoders stay off for the npm package, and the demo
+# build turns them on. Declaring them as `pdf2-render/…` keeps `dct` enabled,
+# which re-declaring the dependency with `default-features = false` would not.
+jpx = ["pdf2-render/jpx"]
+jbig2 = ["pdf2-render/jbig2"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
