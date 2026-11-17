@@ -16,6 +16,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Icc` space and an unnamed one are refused by name. `bug_jpx.pdf` draws, and it
   joins the oracle case list: within tolerance, and **poppler segfaults on it**, so
   mupdf and Ghostscript are its engines.
+- **`/JBIG2Decode` rows were misaligned, and the fix closes a 31.261 mean gap**: the
+  sink packed decoded pixels as one continuous bit stream where a 1-bit PDF image is
+  row-aligned to a byte, so a 399-pixel row (50 bytes with one padding bit) drifted one
+  bit per row and the final row read as black. Every `/JBIG2Decode` image whose width is
+  not a multiple of eight was affected. pdfium's expected raster — committed under
+  `corpus/reference/` with its licence — is what identified it: our render differed from
+  it by 19 553 pixels while `hayro-jbig2`'s own output matched it exactly. Both pdf.js
+  corpus pages now join the oracle gate at **0.243040 mean against an engines' spread of
+  0.326558**, closer to the engines than they are to each other.
 - **`/TilingType` 1 and 3 snap to the device grid** (`8.7.3.1`): the clause's type 1
   wants constant spacing with up to a pixel of cell distortion and type 3 wants the same
   with more distortion for speed, so each cell's device origin is rounded to a whole
