@@ -49,12 +49,19 @@ corpus/tier-a/ccitt_EndOfBlock_false.pdf 1
 # once the generated program is accepted by FreeType.
 corpus/tier-a/colorkeymask.pdf 1
 
-# Added on probation 2026-11-17, with the decoders behind non-default features
-# (ADR 0007) and `pdf2-oracle` built with them on. `bug_jpx.pdf` is a pdf.js
-# *bug* file whose 204-byte codestream carries three SOT segments for tile 0 and
-# decodes to a flat black field, so the engines may disagree with it by design;
-# its tolerance and (if it survives) the /JBIG2Globals pair's are recorded from
-# the CI run that added them.
+# Added 2026-11-17 with the decoders behind non-default features (ADR 0007) and
+# `pdf2-oracle` built with them on. This page is a pdf.js *bug* file — a 204-byte
+# codestream with three SOT segments for tile 0 — and it decodes to a flat black
+# field, which is what the engines draw too: 0.0008 over the tolerance, 4.4 mean
+# against a 0.0100 budget. **Poppler 26.01.0 segfaults on it** (`signal: 11`), so
+# this case is gated by mupdf and Ghostscript alone.
 corpus/tier-a/bug_jpx.pdf 1
-corpus/tier-a/bitmap-composite-and-xnor.pdf 1
-corpus/tier-a/bitmap-p32-eof.pdf 1
+
+# The two pdf.js JBIG2 pages are **not** gated, and the numbers say why: our
+# decoder and the engines disagree by 31.261 mean (0.0100 budget) with 13.53 % of
+# pixels over the threshold, identically for `bitmap-composite-and-xnor.pdf` and
+# `bitmap-p32-eof.pdf` — so the difference is in the decoder, not in the container
+# or in `/JBIG2Globals`, and adding the pair would gate our own bug as if it were
+# the engines' opinion. Tracked as the open item in docs/RENDERING-QUALITY.md; the
+# pair is still proved by crates/pdf2-render/tests/jbig2.rs (both rasters equal,
+# ink on white).

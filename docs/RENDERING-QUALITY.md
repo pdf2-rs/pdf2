@@ -65,6 +65,30 @@ experiences, and it is dominated by two things: Form XObjects (everything an
 office suite or Illustrator writes lives in one) and the image codecs item 9
 owns (JPX, CCITT, CMYK JPEG).
 
+## JBIG2 decodes, and disagrees with the engines by a measurable margin
+
+Measured 2026-11-17 on the two pdf.js pages from the pinned corpus, with the
+decoders on ([ADR 0007](adr/0007-decoder-features.md)) and `pdf2-oracle` built
+with `--features decoders`:
+
+| Case | our mean distance | budget | pixels over |
+| --- | --- | --- | --- |
+| `bitmap-composite-and-xnor#1` | 31.261 | 0.0100 | 13.53 % |
+| `bitmap-p32-eof#1` | 31.261 | 0.0100 | 13.53 % |
+
+The two rows are **identical to the digit**, which is the useful part: one page
+carries its segments inline and the other in a `/JBIG2Globals` stream, so a container
+or globals bug would separate them. The difference is in the decoder, and 13.5 % of
+a bi-level scan is not an edge effect. It is recorded rather than hidden: neither
+page joins `corpus/oracle-cases.txt` until the gap is understood, and both stay
+proved by `crates/pdf2-render/tests/jbig2.rs`, which asserts the two rasters are
+equal and that the sense is ink on white.
+
+The JPX page behaves the opposite way: `bug_jpx.pdf` joins the list at 0.0008 over
+the tolerance and 4.4 mean, and **poppler 26.01.0 segfaults** on it (a pdf.js bug
+file whose codestream has three SOT segments for tile 0), so that case is gated by
+mupdf and Ghostscript alone.
+
 ## The worst failure mode is silence
 
 49 of those 160 blank pages report **nothing wrong** — the report says "all
