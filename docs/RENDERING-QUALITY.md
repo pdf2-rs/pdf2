@@ -74,29 +74,46 @@ experiences, and it is dominated by two things: Form XObjects (everything an
 office suite or Illustrator writes lives in one) and the image codecs item 9
 owns (JPX, CCITT, CMYK JPEG).
 
-## JBIG2 decodes, and disagrees with the engines by a measurable margin
+## JBIG2: the gap was ours, and a reference raster proved it
 
-Measured 2026-11-17 on the two pdf.js pages from the pinned corpus, with the
-decoders on ([ADR 0007](adr/0007-decoder-features.md)) and `pdf2-oracle` built
-with `--features decoders`:
+**The 31.261 mean these pages used to carry was our bug, not the decoder's.** Both
+pdf.js pages (one inline, one through `/JBIG2Globals`) were excluded from the oracle
+case list with that number on 2026-11-17, because three engines agreed with each other
+and disagreed with us. pdfium's expected raster for the page
+(`corpus/reference/bitmap-composite-and-xnor.pbm`, BSD-3-Clause, from `pdfium_tests`)
+settled where the truth was: our render differed from **it** by 19 553 pixels
+(12.25 %, mean |Δ| 31.24) — and decoding the stream straight through `hayro-jbig2`
+reported 10 950 black, the reference's own count.
 
-| Case | our mean distance | budget | pixels over |
-| --- | --- | --- | --- |
-| `bitmap-composite-and-xnor#1` | 31.261 | 0.0100 | 13.53 % |
-| `bitmap-p32-eof#1` | 31.261 | 0.0100 | 13.53 % |
+The cause was in `image.rs`, not in any composite operator: `Rows` packed the decoded
+pixels as one continuous bit stream, while a 1-bit PDF image is **row-aligned to a
+byte**. A 399-pixel row is 50 bytes with one padding bit, so every row after the first
+drifted one bit, and the final, unwritten row read as black. With the sink row-aligned
+our raster matches the reference to the pixel (`crates/pdf2-render/tests/jbig2.rs`
+asserts 0 differing pixels); every `/JBIG2Decode` image whose width is not a multiple
+of eight was affected.
 
-The two rows are **identical to the digit**, which is the useful part: one page
-carries its segments inline and the other in a `/JBIG2Globals` stream, so a container
-or globals bug would separate them. The difference is in the decoder, and 13.5 % of
-a bi-level scan is not an edge effect. It is recorded rather than hidden: neither
-page joins `corpus/oracle-cases.txt` until the gap is understood, and both stay
-proved by `crates/pdf2-render/tests/jbig2.rs`, which asserts the two rasters are
-equal and that the sense is ink on white.
+Both pages are gated now, and the numbers say more than "within tolerance"
+(CI, `corpus/oracle-summary.csv`, the run that added them):
 
-The JPX page behaves the opposite way: `bug_jpx.pdf` joins the list at 0.0008 over
-the tolerance and 4.4 mean, and **poppler 26.01.0 segfaults** on it (a pdf.js bug
-file whose codestream has three SOT segments for tile 0), so that case is gated by
-mupdf and Ghostscript alone.
+| Case | our mean | engines' spread | pixels over | budget | AA ceiling |
+| --- | --- | --- | --- | --- | --- |
+| `bitmap-composite-and-xnor#1` (4×4) | 0.243040 | 0.326558 | 0.000000 | 80 ms | 0.7 |
+| `bitmap-composite-and-xnor#1` (1×1) | 0.521491 | 0.528947 | 0.005924 | 80 ms | 0.7 |
+| `bitmap-p32-eof#1` (4×4) | 0.243040 | 0.326558 | 0.000000 | 80 ms | 0.7 |
+| `bitmap-p32-eof#1` (1×1) | 0.521491 | 0.528947 | 0.005924 | 80 ms | 0.7 |
+
+**Our raster is closer to the engines than they are to each other** (0.243 against a
+0.327 spread), which is the honest form of "it matches": at 1×1 the residual is the
+engines' own anti-aliasing on the scan's edges, not a difference of content.
+
+The JPX page: `bug_jpx.pdf` joins the list at 0.000784 over the tolerance and a mean
+of **0.050835** at 4×4 and **0.050637** at 1×1 (`corpus/oracle-summary.csv`, the run
+that added it). **Poppler 26.01.0 segfaults** on it — a pdf.js bug file whose
+codestream has three SOT segments for tile 0 — so that case is gated by mupdf and
+Ghostscript alone. An earlier version of this paragraph said "4.4 mean", a number no
+measurement ever produced: the summary CSV had no rows in it until the oracle's writer
+was fixed on 2026-11-17.
 
 ## The worst failure mode is silence
 

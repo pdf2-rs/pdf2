@@ -33,9 +33,10 @@ the published crate, so nothing here ships.
 
 ## What it is for
 
-Our JBIG2 decoder and poppler, mupdf and Ghostscript disagree by 31.261 mean on these
-pages, and three engines agreeing with each other is not proof of anything. This
-raster is a **fourth implementation's** answer: our render differs from it by
-19 553 pixels (12.25 %, mean |Δ| 31.24 of 255), which
-`crates/pdf2-render/tests/jbig2.rs` pins so the day it changes — fix or regression —
-is visible in a test rather than in a release note.
+It settled a disagreement that had kept these pages out of the oracle case list. Our
+raster differed from it by 19 553 pixels (12.25 %, mean |Δ| 31.24 of 255) while three
+engines agreed with each other and with it — and the cause turned out to be in this
+repository, not in `hayro-jbig2`: a row-stride bug in the JBIG2 sink. With that fixed
+our raster matches this one to the pixel, which
+`crates/pdf2-render/tests/jbig2.rs` asserts (0 differing pixels) so the day it drifts —
+fix or regression — is visible in a test rather than in a release note.
