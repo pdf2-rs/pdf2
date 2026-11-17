@@ -183,9 +183,12 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 compiled in, against **365 705** with neither — measured on the 1.4.0 tree by the
 commands above, with `--features jpx,jbig2` on the `cargo build` and gzip level 9.
 The default keeps its 364 KiB budget, so the npm package decodes neither; the demo
-site loads a second, decoder-enabled artefact with its own budget line, and
-`crates/pdf2-oracle` enables both unconditionally because it is evidence rather than
-a shipped artefact.
+site loads a second, decoder-enabled artefact with its own **505 KiB** budget
+(measured 506 424 gzip, 501 614 of it the module), and `crates/pdf2-oracle` enables
+both through its `decoders` feature because it is evidence rather than a shipped
+artefact. `check.mjs` measures both artefacts and also asserts the site's bundle is
+more than 100 KiB larger than the package's — a demo that silently fell back to the
+lean build would otherwise show a blank page where it claims a codec.
 
 The measurement has a trap worth recording: a build that links the decoders only far
 enough to read a codestream header measures **+23 410** for both, because the decode

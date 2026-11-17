@@ -257,12 +257,34 @@ fn wasm_package() -> Result<(), String> {
     ] {
         copy(from, to)?;
     }
-    for file in ["pdf2_wasm.js", "pdf2_wasm_bg.wasm"] {
-        copy(
-            &format!("crates/pdf2-wasm/pkg/{file}"),
-            &format!("crates/pdf2-wasm/demo/pkg/{file}"),
-        )?;
-    }
+    // The demo's artefact is **not** the npm one: the decoders are non-default
+    // features (ADR 0007), so the site is built with them on while the package
+    // stays lean. Two builds, two budgets — otherwise a demo that claims a codec
+    // silently shows a blank page.
+    run(
+        "cargo",
+        &[
+            "build",
+            "-p",
+            "pdf2-wasm",
+            "--release",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--features",
+            "jpx,jbig2",
+        ],
+    )?;
+    run(
+        "wasm-bindgen",
+        &[
+            "--target",
+            "web",
+            "--no-typescript",
+            "--out-dir",
+            "crates/pdf2-wasm/demo/pkg",
+            WASM,
+        ],
+    )?;
     // GitHub Pages serves fixed file names with a cache lifetime, so a browser
     // can pair a new page with last week's wasm and render nothing where the
     // newer build would draw. The demo imports the module with this stamp.
@@ -351,6 +373,17 @@ fn wasm_package() -> Result<(), String> {
             "corpus/tier-a/colorkeymask.pdf",
             "crates/pdf2-wasm/demo/samples/colorkeymask.pdf",
         ),
+        // The decoder samples: the demo build carries the codecs (ADR 0007), so
+        // the site can show a JPEG 2000 image and a JBIG2 scan rather than claim
+        // them. Both are pdf.js corpus files, like the ones above.
+        (
+            "corpus/tier-a/bug_jpx.pdf",
+            "crates/pdf2-wasm/demo/samples/jpx.pdf",
+        ),
+        (
+            "corpus/tier-a/bitmap-composite-and-xnor.pdf",
+            "crates/pdf2-wasm/demo/samples/jbig2-scan.pdf",
+        ),
         (
             "tests/fixtures/colour-key.pdf",
             "crates/pdf2-wasm/demo/samples/colour-key.pdf",
@@ -366,11 +399,12 @@ fn wasm_package() -> Result<(), String> {
     ] {
         copy(from, to)?;
     }
-    // Three samples come from pdf.js's corpus (Apache-2.0), so the page ships the
+    // Five samples come from pdf.js's corpus (Apache-2.0), so the page ships the
     // attribution beside them rather than only in the repository.
     std::fs::write(
         "crates/pdf2-wasm/demo/samples/NOTICE.md",
-        "`cff.pdf`, `cjk.pdf` and `colorkeymask.pdf` are from the pdf.js test corpus,\n\
+        "`cff.pdf`, `cjk.pdf`, `colorkeymask.pdf`, `jpx.pdf` and `jbig2-scan.pdf` are from\n\
+         the pdf.js test corpus,\n\
          commit d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a, used under the\n\
          Apache License 2.0 (`corpus/LICENSES/Apache-2.0.txt`).\n\
          They are copied by `cargo xtask wasm-package`, not edited.\n",

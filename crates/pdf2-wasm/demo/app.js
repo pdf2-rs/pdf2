@@ -37,6 +37,10 @@ const SAMPLES = [
   { file: 'samples/colour-key.pdf', title: 'An image /Mask that hides its own samples' },
   { file: 'samples/tr-clip.pdf', title: 'Clipped text: Tr modes 4 to 7' },
   { file: 'samples/tr-clip-type3.pdf', title: 'A Type 3 glyph under a text clip (reported)' },
+  // 1.5's own samples: the two image codecs, which the site's build carries and
+  // the npm package deliberately does not (ADR 0007).
+  { file: 'samples/jpx.pdf', title: 'JPEG 2000: a /JPXDecode image' },
+  { file: 'samples/jbig2-scan.pdf', title: 'JBIG2: a bi-level scan' },
 ];
 
 // Each entry names a sample (index into SAMPLES) and the page it starts on, so a
@@ -76,6 +80,9 @@ const FEATURES = [
   { label: 'A colour key that hides its own samples', sample: 14, page: 0 },
   { label: '`Tr` 7 clips to the glyph and paints nothing', sample: 15, page: 0 },
   { label: '`Tr` 4 fills the glyph and clips what follows', sample: 15, page: 1 },
+  // 1.5
+  { label: 'A JPEG 2000 codestream decoded and drawn', sample: 17, page: 0 },
+  { label: 'A JBIG2 scan, ink on white', sample: 18, page: 0 },
 ];
 
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
