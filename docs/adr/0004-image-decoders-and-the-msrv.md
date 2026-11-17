@@ -1,5 +1,10 @@
 # 0004 — Which image decoders land, and the MSRV they cost
 
+> **Partly superseded 2026-11-17**: the *floor* moved to **1.100**
+> ([ADR 0005](0005-msrv-1-100.md)), so the two decoders this ADR deferred —
+> JPEG 2000 and JBIG2 — are unblocked and scheduled, with their wasm cost measured.
+> The decoder choices below (DCT on `zune-jpeg`, CCITT in-crate) still stand.
+
 - **Status:** accepted
 - **Date:** 2026-11-16
 - **Deciders:** repository owner
