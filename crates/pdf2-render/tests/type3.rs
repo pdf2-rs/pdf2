@@ -69,14 +69,13 @@ fn a_type3_glyph_that_shows_text_in_its_own_font_terminates() {
     // text in the same font. The depth limit is what makes this terminate; the
     // test is that it renders at all, and that the inner glyph's paint is there.
     let rendered = render("ContentStreamCycleType3insideType3.pdf");
-    // The glyph's procedure also fills with a `/PatternType 1` tile, so the page
-    // reports `pattern` — it did not before 2026-11-17 only because the pattern
-    // was ignored in silence (see `tests/pattern.rs`). The cycle still
-    // terminates, which is what this test is about.
+    // The glyph's procedure also fills with a `/PatternType 1` tile; it paints
+    // since the lattice landed, and the recursion still terminates — which is what
+    // this test is about (`tests/pattern.rs` covers the tile itself).
     assert_eq!(
         rendered.report.to_string(),
-        "pattern×3",
-        "the nested glyph is drawn and the tile it fills with is named: {}",
+        "all operators supported",
+        "the nested glyph is drawn, its tile painted: {}",
         rendered.report
     );
     let green = count(&rendered, |[r, g, b, _]| g > 150 && r < 100 && b < 100);

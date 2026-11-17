@@ -1415,6 +1415,47 @@ def make_shading():
 
 
 
+def make_tiling():
+    """A tiling pattern whose cells are checkable by arithmetic (8.7.3).
+
+    Page 1 fills a 20x20 square with `/PatternType 1` cells of 10x10 whose content
+    is the left half black: four cells, so the black runs land at x in [0,5) and
+    [10,15) and the cell boundary at x = 10. Page 2 is the cell-budget case: the
+    same fill with `/XStep 0.01`, which wants four million cells and must be
+    reported instead of attempted.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /Pattern << /P1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", b"/Pattern cs /P1 scn 0 0 20 20 re f")
+    # The cell paints its left half black and leaves the right half alone.
+    writer.stream(
+        5,
+        b"/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1"
+        b" /BBox [0 0 10 10] /XStep 10 /YStep 10",
+        b"0 g 0 0 5 10 re f",
+    )
+    writer.obj(
+        6,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 7 0 R "
+        b"/Resources << /Pattern << /P2 8 0 R >> >> >>",
+    )
+    writer.stream(7, b"", b"/Pattern cs /P2 scn 0 0 20 20 re f")
+    writer.stream(
+        8,
+        b"/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1"
+        b" /BBox [0 0 10 10] /XStep 0.01 /YStep 0.01",
+        b"0 g 0 0 5 10 re f",
+    )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("tiling.pdf", bytes(writer.out))
+
+
 def make_separation():
     """A `/Separation` colour space with its tint transform (8.6.6.4).
 
@@ -1857,5 +1898,6 @@ if __name__ == "__main__":
     make_blend_modes()
     make_shading()
     make_separation()
+    make_tiling()
     make_cmyk_jpeg()
     make_type1_font()

@@ -1,9 +1,11 @@
-//! Tiling patterns (`/PatternType 1`): the report before the paint.
+//! Tiling patterns on the corpus pages that use one.
 //!
-//! The corpus page that fills with a tile is `colorkeymask.pdf`, and until a
-//! lattice exists it must **say** so rather than fill with the previous colour
-//! and claim full support — the difference between a rendered page and a page
-//! that lies about being rendered.
+//! `colorkeymask.pdf` fills a 200×267 rectangle with a `/PatternType 1` cell, and
+//! `ContentStreamCycleType3insideType3.pdf` selects one from inside a Type 3 char
+//! procedure. Both were ignored in silence before the parser landed, then reported
+//! while only the parser existed; now the lattice paints them, so both pages report
+//! clean *and* carry the tile's ink — the report alone would be satisfied by a page
+//! that paints nothing.
 
 use std::path::{Path, PathBuf};
 
@@ -27,31 +29,47 @@ fn render(name: &str) -> RenderedPage {
     render_page_number(&document, 0, &RenderOptions::default()).expect("render")
 }
 
+fn ink(rendered: &RenderedPage) -> usize {
+    let mut painted = 0;
+    for y in 0..rendered.canvas.height() {
+        for x in 0..rendered.canvas.width() {
+            if rendered.canvas.pixel(x, y) != Some([255, 255, 255, 255]) {
+                painted += 1;
+            }
+        }
+    }
+    painted
+}
+
 #[test]
-fn a_tiling_pattern_is_reported_rather_than_silently_ignored() {
+fn the_page_that_fills_with_a_tile_paints_it() {
     let rendered = render("colorkeymask.pdf");
-    let report = rendered.report.to_string();
-    assert!(
-        report.contains("pattern"),
-        "the fill reports the tiling pattern it cannot paint yet: {report}"
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "the tile paints: {}",
+        rendered.report
     );
-    assert_ne!(
-        report, "all operators supported",
-        "the page used to claim full support while painting the previous colour"
+    // The cell is a 200×267 image; the fill would be blank if the lattice did
+    // nothing, and the report was already clean at that point in the sequence, so
+    // the ink is the assertion that matters.
+    assert!(
+        ink(&rendered) > 10_000,
+        "the cell's content is on the page: {} painted pixels",
+        ink(&rendered)
     );
 }
 
 #[test]
-fn a_pattern_inside_a_type3_charproc_is_reported_too() {
-    // Correction to the plan's research: this page does *not* merely own a
-    // `/PatternType 1` object — one of its Type 3 char procedures selects it
-    // (`/Pattern cs /P1 scn`), so the same silence hid a pattern fill inside a
-    // glyph. It reports now, which also means the lattice round must work
-    // through `run_type3_glyph`'s nested walk, not only on page content.
+fn a_char_procedures_tile_paints_too() {
+    // The pattern is selected inside a Type 3 glyph (`/Pattern cs /P1 scn`), which
+    // the walker reaches through `run_type3_glyph`'s nested walk.
     let rendered = render("ContentStreamCycleType3insideType3.pdf");
-    let report = rendered.report.to_string();
-    assert!(
-        report.contains("pattern"),
-        "the char procedure's pattern fill is reported: {report}"
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "the char procedure's tile paints: {}",
+        rendered.report
     );
+    assert!(ink(&rendered) > 5_000, "and the glyph has ink");
 }
