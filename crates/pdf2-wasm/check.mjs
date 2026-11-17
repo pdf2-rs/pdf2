@@ -124,7 +124,7 @@ expect(rejected, 'a wrong password throws');
 // site ships one with the image decoders compiled in (ADR 0007 — they cost about
 // 138 KiB gzip, which is why they are not in the default). Budgets are documented
 // in docs/PERFORMANCE.md; change both together.
-const BUDGET_GZIP = 378 * 1024;
+const BUDGET_GZIP = 384 * 1024;
 const DEMO_BUDGET_GZIP = 516 * 1024;
 
 /// Measure one artefact: the wasm module plus its JS glue, gzipped.

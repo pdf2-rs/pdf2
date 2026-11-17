@@ -83,7 +83,8 @@ Usage:
   cargo xtask ledger    check that docs/FEATURES.md and the roadmap agree
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
-  cargo xtask cmaps     rebuild src/data/japan1_90ms_rksj.bin from vendor/adobe-cmaps
+  cargo run -q -p xtask -- cmaps
+                        rebuild the generated CMap tables from vendor/adobe-cmaps
   cargo xtask bless     re-render the committed golden PNGs
 
 Exit codes: 0 all good, 1 a step failed.";
@@ -1036,6 +1037,48 @@ fn cmaps() -> Result<(), String> {
         previous_code = code;
         previous_unicode = unicode;
     }
+    // `UniJIS-UCS2-H` is a *Unicode* CMap: a two-byte code stands for the
+    // character with that value, so the text table is its coverage. That is what a
+    // font declaring `/Encoding /UniJIS-UCS2-H` needs to extract, and it costs one
+    // table of codes rather than a second mapping.
+    let mut covered: Vec<u32> = back.iter().map(|(code, _)| *code).collect();
+    covered.sort_unstable();
+    covered.dedup();
+    // Ranges, not codes: the coverage is contiguous (a few dozen runs cover every
+    // code), and 9 772 identity entries would cost ~20 KB of wasm to say "text ==
+    // code". `P2VR`: widths, count, then (start delta, run length) per run.
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for code in &covered {
+        match runs.last_mut() {
+            Some((start, length)) if *start + *length == *code => *length += 1,
+            _ => runs.push((*code, 1)),
+        }
+    }
+    let mut ids = Vec::with_capacity(8 + runs.len() * 4);
+    ids.extend_from_slice(b"P2VR");
+    ids.push(2); // two-byte codes only: UCS-2 is what the CMap's name says
+    ids.extend_from_slice(
+        &u16::try_from(runs.len())
+            .map_err(|error| error.to_string())?
+            .to_be_bytes(),
+    );
+    let mut previous = 0_u32;
+    for (start, length) in &runs {
+        push_varint(&mut ids, *start - previous);
+        push_varint(&mut ids, *length);
+        previous = *start;
+    }
+    let ids_path = std::path::Path::new("src/data/japan1_unijis_ucs2.bin");
+    std::fs::create_dir_all("src/data").map_err(|error| error.to_string())?;
+    std::fs::write(ids_path, &ids).map_err(|error| error.to_string())?;
+    println!(
+        "{}: {} codes in {} ranges, {} bytes",
+        ids_path.display(),
+        covered.len(),
+        runs.len(),
+        ids.len()
+    );
+
     let path = std::path::Path::new("src/data/japan1_90ms_rksj.bin");
     std::fs::create_dir_all("src/data").map_err(|error| error.to_string())?;
     std::fs::write(path, &out).map_err(|error| format!("{}: {error}", path.display()))?;

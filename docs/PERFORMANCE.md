@@ -127,7 +127,7 @@ node --no-warnings crates/pdf2-wasm-smoke/smoke.mjs
 
 | Artifact | Raw | Gzip | Gzip budget |
 | --- | --- | --- | --- |
-| browser module (`wasm32-unknown-unknown`, release) | 431 939 B | 164 470 B | 162 KiB |
+| browser module (`wasm32-unknown-unknown`, release) | 442 480 B | 168 959 B | 166 KiB |
 | WASI binary (`wasm32-wasip1`, release) | 479 415 B | 179 922 B | 187 KiB |
 
 Measured 2026-11-15 with `rustc 1.99.1` and the release profile.
@@ -144,6 +144,15 @@ the decoded-stream budget (256 MiB, `Error::Limit`, a capped inflate) cost
 **+4 620 gzip bytes** on that artifact — 175 302 → 179 922, which is the
 security fix's price: refusing a decompression bomb instead of allocating it. The
 browser artifact stayed inside its 160 KiB.
+
+**The browser budget moved from 162 KiB to 166 KiB on 2026-11-17, for the second CMap
+family**: `UniJIS-UCS2-H` is a *Unicode* CMap, so its table is coverage rather than
+mapping — stored as 4 629 runs of codes, 9 294 bytes raw — and the artifact measured
+**168 959 gzip**, **+4 489** over the 162 KiB build. That is the price of a CJK page
+whose font declares a UCS-2 encoding instead of a Shift-JIS one, and it is recorded
+rather than hidden: the ASCII half of the CMap is *not* covered (Adobe's `UniJIS`
+targets the Japanese CIDs, and the table refuses a code it does not list instead of
+inventing it).
 
 **The browser budget moved from 160 KiB to 162 KiB on 2026-11-17, for the extraction
 work**: positioned text, search and `/ActualText` live in the library, so the browser
@@ -202,6 +211,14 @@ The measurement has a trap worth recording: a build that links the decoders only
 enough to read a codestream header measures **+23 410** for both, because the decode
 path is unreachable and link-time dead-code elimination removes it. A decoder costs
 what its pixels drag in, so the number has to come from a build that decodes.
+
+**The npm budget moved from 378 KiB to 384 KiB on 2026-11-17, for the second CMap
+family**: the same `UniJIS-UCS2-H` coverage table that took the browser artifact from
+164 470 to 168 959 gzip took the npm bundle from 382 781 to **387 275** — a 203-byte
+overrun of 378 KiB, which is a budget that had been chasing one feature at a time.
+The step to 384 KiB is deliberately larger than the gap, so the next extraction change
+does not spend a round on arithmetic; CI's number runs a few kilobytes above this
+machine's, and that is inside the new headroom.
 
 **The bundle moved from 320 KiB to 336 KiB on the same day, for shadings**:
 `sh` plus the `/Function` evaluator cost **+7 465 gzip bytes** (327 567 →

@@ -58,22 +58,55 @@ pub(crate) struct Predefined {
 }
 
 const JAPAN1_90MS_RKSJ: &[u8] = include_bytes!("data/japan1_90ms_rksj.bin");
+const JAPAN1_UNIJIS_UCS2: &[u8] = include_bytes!("data/japan1_unijis_ucs2.bin");
+
+/// Whether a table maps codes to text, or only lists the codes it covers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Kind {
+    /// `P2CV`: (code delta, zig-zag text delta) per code.
+    Codes,
+    /// `P2VR`: (start delta, run length) per run, and a code's text is the code —
+    /// which is what a *Unicode* CMap means, so 9 772 identity entries are stored
+    /// as ranges instead.
+    Ranges,
+}
 
 impl Predefined {
     /// The predefined CMap an `/Encoding` name asks for, when it is shipped.
+    ///
+    /// Names are compared **case-insensitively**: `/90MS-RKSJ-H` is the spelling
+    /// many writers emit, and the exact-match comparison this replaced treated it
+    /// as unknown, so a CJK page lost its text to a capital letter.
     pub(crate) fn by_name(name: &[u8]) -> Option<Self> {
-        if name != b"90ms-RKSJ-H" {
-            return None;
-        }
-        let data = JAPAN1_90MS_RKSJ;
+        let lowered = name.to_ascii_lowercase();
+        let data = match lowered.as_slice() {
+            b"90ms-rksj-h" => JAPAN1_90MS_RKSJ,
+            b"unijis-ucs2-h" => JAPAN1_UNIJIS_UCS2,
+            _ => return None,
+        };
         let lengths = &data[4..6];
         Some(Self { data, lengths })
+    }
+
+    fn kind(&self) -> Kind {
+        if self.data.starts_with(b"P2VR") {
+            Kind::Ranges
+        } else {
+            Kind::Codes
+        }
     }
 
     /// The text a code stands for.
     pub(crate) fn text(&self, code: u32, length: u8) -> Option<char> {
         if !self.lengths.contains(&length) {
             return None;
+        }
+        if self.kind() == Kind::Ranges {
+            // A code this CMap covers stands for the character with that value.
+            return self
+                .covers(code)
+                .then(|| core::char::from_u32(code))
+                .flatten();
         }
         let code = u16::try_from(code).ok()?;
         // A one-byte code space holds codes below 0x100 and a two-byte one holds
@@ -99,6 +132,34 @@ impl Predefined {
                 return core::char::from_u32(current_text);
             }
         }
+    }
+
+    /// Whether a range table lists `code`.
+    fn covers(&self, code: u32) -> bool {
+        let Some(count) = self.data.get(6..8) else {
+            return false;
+        };
+        let count = usize::from(u16::from_be_bytes([count[0], count[1]]));
+        let mut position = 8;
+        let mut start = 0_u32;
+        for _ in 0..count {
+            let Some((delta, after)) = read_varint(self.data, position) else {
+                return false;
+            };
+            position = after;
+            start = start.saturating_add(delta);
+            let Some((length, after)) = read_varint(self.data, position) else {
+                return false;
+            };
+            position = after;
+            if code < start {
+                return false;
+            }
+            if code < start.saturating_add(length) {
+                return true;
+            }
+        }
+        false
     }
 
     /// The code widths the CMap allows, ascending.
@@ -638,7 +699,11 @@ endcmap
 
     #[test]
     fn the_predefined_cmap_reads_shift_jis() {
+        // Both spellings, because a writer's capital letters must not cost a page
+        // its text: `90MS-RKSJ-H` is legal and common.
         let map = super::Predefined::by_name(b"90ms-RKSJ-H").expect("shipped");
+        let upper = super::Predefined::by_name(b"90MS-RKSJ-H").expect("case-insensitive");
+        assert_eq!(upper.text(0x93FA, 2), map.text(0x93FA, 2));
         assert_eq!(map.code_lengths(), &[1, 2]);
         assert_eq!(map.max_code_length(), 2);
         // `Hello` in single-byte codes, then the fixture's own text.
@@ -650,6 +715,27 @@ endcmap
         assert_eq!(map.text(0xFFFF, 2), None, "unmapped code");
         assert_eq!(map.text(0x93FA, 1), None, "the width is part of the key");
         assert!(super::Predefined::by_name(b"90pv-RKSJ-H").is_none());
+
+        // The second family: a Unicode CMap, where a code stands for itself.
+        let unicode = super::Predefined::by_name(b"UniJIS-UCS2-H").expect("shipped");
+        assert_eq!(
+            unicode.text(0x65E5, 2),
+            Some('日'),
+            "the code is the character"
+        );
+        // `UniJIS-UCS2-H` maps the Japanese CIDs, not the proportional Latin set
+        // `90ms-RKSJ-H` reaches at 0x20–0x7D, so ASCII is *not* covered here and the
+        // table says so rather than inventing it.
+        assert_eq!(unicode.text(0x0041, 2), None);
+        assert_eq!(
+            unicode.text(0x65E5, 1),
+            None,
+            "UCS-2 codes are two bytes wide"
+        );
+        assert!(
+            unicode.text(0xE000, 2).is_none(),
+            "a code the CMap does not cover is not invented"
+        );
     }
 
     #[test]
