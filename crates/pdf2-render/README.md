@@ -49,13 +49,18 @@ cargo run -p pdf2-render --bin pdf2-render-golden -- --bless  # regenerate
 
 ## Limits
 
-- No anti-aliasing: coverage is sampled at pixel centres.
-- Curves are flattened in fixed steps; joins are round whatever the stream asks
-  for.
-- The built-in font is a fallback: real typography needs an embedded font
-  program. Embedded TrueType is implemented (`ttf-parser`) but unexercised in
-  the test suite, because no licence-free font program can be committed here;
-  a document that carries `/FontFile2` uses it.
-- Images: no `/SMask` alpha, no `/Mask` colour key, no image filters beyond
-  those `pdf2` already decodes (JPEG/JPX are out of scope). Colour is RGB with a
-  naive CMYK conversion; there is no colour management.
+- Anti-aliasing is four sub-scanlines per row with exact horizontal coverage; the
+  vertical error is the one left, and `corpus/aa-ceilings.tsv` gates it at 1×1.
+  Curves are flattened in fixed steps.
+- The built-in font is a fallback: real typography needs an embedded program.
+  TrueType, CFF, Type 1 and Type 3 programs are all drawn; a base-14 font without
+  an embedded program falls back to a 5×7 alphabet.
+- Images: 8 bits per component only. JPEG (`dct`, on by default), CCITT, the
+  colour-key `/Mask`, and JPEG 2000 and JBIG2 behind the **`jpx`** and **`jbig2`**
+  features (off by default — they cost ~78 and ~64 KiB of gzip on the wasm bundle,
+  ADR 0007). A stream `/Mask` (a stencil image) is refused.
+- Colour: RGB with a naive CMYK conversion, `/Separation`/`/DeviceN` through their
+  tint functions, `/Indexed` and `/ICCBased` by component count. There is no ICC
+  colour management; `docs/RENDERING-QUALITY.md` measures what that costs.
+- Everything the renderer cannot draw is *reported* — `Report::unsupported` names
+  the operator — rather than drawn wrong in silence.
