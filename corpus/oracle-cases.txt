@@ -52,9 +52,10 @@ corpus/tier-a/colorkeymask.pdf 1
 # Added 2026-11-17 with the decoders behind non-default features (ADR 0007) and
 # `pdf2-oracle` built with them on. This page is a pdf.js *bug* file — a 204-byte
 # codestream with three SOT segments for tile 0 — and it decodes to a flat black
-# field, which is what the engines draw too: 0.0008 over the tolerance, 4.4 mean
-# against a 0.0100 budget. **Poppler 26.01.0 segfaults on it** (`signal: 11`), so
-# this case is gated by mupdf and Ghostscript alone.
+# field, which is what the engines draw too: 0.0008 pixels over against a 0.0100
+# budget, with the oracles agreeing with each other exactly (spread 0.0000).
+# **Poppler 26.01.0 segfaults on it** (`signal: 11`), so this case is gated by
+# mupdf and Ghostscript alone.
 corpus/tier-a/bug_jpx.pdf 1
 
 # The two pdf.js JBIG2 pages are **not** gated, and the numbers say why: our

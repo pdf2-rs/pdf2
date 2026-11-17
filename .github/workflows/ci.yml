@@ -250,17 +250,24 @@ jobs:
           cargo +stable build --release -p pdf2-oracle --features decoders
           ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt \
             --tolerances corpus/tolerances.tsv \
-            --budget corpus/render-budget.tsv
+            --budget corpus/render-budget.tsv \
+            --summary corpus/oracle-summary.csv
+          cat corpus/oracle-summary.csv
 
       # The 4x4 comparison above cannot see anti-aliasing; at 1x1 it can, and
       # the ceilings in corpus/aa-ceilings.tsv are what make its absence a
       # failure rather than a note (docs/RENDERING-QUALITY.md).
       - name: Anti-aliasing, at full resolution
         run: |
+          # `--summary` prints this renderer's mean distance per case at 1x1, which
+          # is the number an `aa-ceilings.tsv` row has to be calibrated against —
+          # the 4x4 run cannot produce it.
           ./target/release/pdf2-oracle --cases corpus/oracle-cases.txt \
             --blocks 1 --tolerances corpus/tolerances.tsv \
             --aa-ceilings corpus/aa-ceilings.tsv \
-            --budget corpus/render-budget.tsv
+            --budget corpus/render-budget.tsv \
+            --summary corpus/oracle-summary-1x1.csv
+          cat corpus/oracle-summary-1x1.csv
 
   deny:
     name: Licences and advisories
