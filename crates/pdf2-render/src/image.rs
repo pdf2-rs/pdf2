@@ -13,6 +13,8 @@ pub struct Image {
     height: u32,
     pixels: Vec<Color>,
     interpolate: bool,
+    /// Per source pixel: masked by a colour key (`8.9.6.4`), and so not painted.
+    masked: Option<Vec<bool>>,
 }
 
 impl Image {
@@ -63,6 +65,29 @@ impl Image {
                 limit,
             });
         }
+        // A colour key is tested on the samples *before* `/Decode` (8.9.6.4), so
+        // it is read here, and two forms are refused by name rather than ignored:
+        // the clause forbids `/DCTDecode` with a key, and a `/Mask` that is a
+        // stream is a stencil image (8.9.6.3), a different mechanism.
+        let key = match dict.get(b"Mask") {
+            None => None,
+            Some(Object::Array(items)) => Some(ColourKey::parse(items, per_pixel, bits)?),
+            Some(Object::Reference(_)) => {
+                return Err(Error::Unsupported {
+                    what: "a /Mask image stencil",
+                });
+            }
+            Some(_) => {
+                return Err(Error::malformed(
+                    "a /Mask that is neither an array nor a stream",
+                ));
+            }
+        };
+        if key.is_some() && is_dct(dict) {
+            return Err(Error::Unsupported {
+                what: "colour-key /Mask on a /DCTDecode image",
+            });
+        }
         if is_dct(dict) {
             return Self::from_dct(document, stream, id, interpolate);
         }
@@ -81,6 +106,11 @@ impl Image {
         // `/Decode` remaps every sample before the colour space sees it; the
         // default is the identity, and `[1 0]` per component is an inversion
         // (8.9.5.2).
+        let masked = key.map(|key| {
+            data.chunks_exact(per_pixel)
+                .map(|sample| key.masks(sample))
+                .collect::<Vec<bool>>()
+        });
         let decode = decode_ranges(dict.get(b"Decode"), per_pixel);
         let mut pixels = Vec::with_capacity((width as usize) * (height as usize));
         for index in (0..count).step_by(per_pixel) {
@@ -97,6 +127,7 @@ impl Image {
             height,
             pixels,
             interpolate,
+            masked,
         })
     }
 
@@ -205,6 +236,9 @@ impl Image {
             height: u32::from(info.height),
             pixels,
             interpolate,
+            // A `/DCTDecode` image with a key is refused above, so there is
+            // never a mask to carry here.
+            masked: None,
         })
     }
 
@@ -219,6 +253,26 @@ impl Image {
         Err(Error::Unsupported {
             what: "/DCTDecode images (build with the `dct` feature)",
         })
+    }
+
+    /// Whether the source sample nearest to `(u, v)` is hidden by the colour key.
+    fn is_masked(&self, u: f64, v: f64) -> bool {
+        let Some(masked) = &self.masked else {
+            return false;
+        };
+        if self.width == 0 || self.height == 0 {
+            return false;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let x = (u.clamp(0.0, 1.0) * f64::from(self.width)) as u32;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let y = (v.clamp(0.0, 1.0) * f64::from(self.height)) as u32;
+        let x = x.min(self.width - 1);
+        let y = y.min(self.height - 1);
+        masked
+            .get((y * self.width + x) as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Width in samples.
@@ -309,10 +363,68 @@ impl Image {
                 }
                 // Image space has its origin at the bottom-left, but the first
                 // sample row is the top one.
-                let colour = self.sample(user.x, 1.0 - user.y);
+                let v = 1.0 - user.y;
+                if self.is_masked(user.x, v) {
+                    // "Samples in the image that fall within this range shall not
+                    // be painted, allowing the existing background to show
+                    // through" (8.9.6.4): skipped, not blended.
+                    continue;
+                }
+                let colour = self.sample(user.x, v);
                 canvas.blend_with(x, y, colour, alpha * coverage, mode);
             }
         }
+    }
+}
+
+/// A colour key (`8.9.6.4`): samples whose every component falls in its range,
+/// **before** `/Decode`, are not painted.
+///
+/// The clause's ranges are inclusive: `colorkeymask.pdf` writes `min == max` for
+/// the red it wants hidden, which an exclusive reading would never mask.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ColourKey {
+    min: [u8; 4],
+    max: [u8; 4],
+    components: usize,
+}
+
+impl ColourKey {
+    /// Read a `/Mask` array: `2 × n` integers in `0 … 2^bits − 1`, mapped onto the
+    /// byte values the samples are widened to (1-bit samples become 0/255).
+    fn parse(items: &[Object], components: usize, bits: i64) -> Result<Self> {
+        if items.len() != components * 2 {
+            return Err(Error::malformed(
+                "a /Mask whose length is not twice the image's component count",
+            ));
+        }
+        let scale = if bits == 1 { 255.0 } else { 1.0 };
+        let limit = if bits == 1 { 1.0 } else { 255.0 };
+        let mut min = [0_u8; 4];
+        let mut max = [0_u8; 4];
+        for slot in 0..components {
+            let low = items[slot * 2].as_real().unwrap_or(-1.0);
+            let high = items[slot * 2 + 1].as_real().unwrap_or(-1.0);
+            if !(0.0..=limit).contains(&low) || !(0.0..=limit).contains(&high) {
+                return Err(Error::malformed("a /Mask value outside the sample range"));
+            }
+            min[slot] = (low * scale).round() as u8;
+            max[slot] = (high * scale).round() as u8;
+        }
+        Ok(Self {
+            min,
+            max,
+            components,
+        })
+    }
+
+    /// Whether a sample falls inside the key on every component.
+    fn masks(&self, sample: &[u8]) -> bool {
+        sample
+            .iter()
+            .take(self.components)
+            .enumerate()
+            .all(|(slot, byte)| (self.min[slot]..=self.max[slot]).contains(byte))
     }
 }
 
@@ -579,6 +691,7 @@ mod tests {
             height,
             pixels,
             interpolate,
+            masked: None,
         }
     }
 

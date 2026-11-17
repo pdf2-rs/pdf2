@@ -1415,6 +1415,52 @@ def make_shading():
 
 
 
+def colour_key_pixels():
+    """A 2x2 RGB image: red and blue on the top row, cyan and black on the bottom.
+
+    The samples are chosen around the key rather than at random: the key
+    `/Mask [255 255 0 255 0 255]` hides every colour whose **red** is 255, so a
+    white sample would be hidden by it too — the range runs across all three
+    components, not "is this pixel red".
+    """
+    return bytes([255, 0, 0, 0, 0, 255, 0, 255, 255, 0, 0, 0])
+
+
+def make_colour_key():
+    """Colour-key masking (8.9.6.4): a keyed sample is not painted.
+
+    Page 1 draws the 2x2 image over a 40x40 green square with
+    `/Mask [255 255 0 255 0 255]` — red exactly 255, which is the corpus page's
+    own key and the reason the ranges are read as inclusive. Page 2 uses
+    `/Mask [0 0 0 0 0 0]`, so only the pure black sample is hidden.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>")
+    base = (
+        b"/Type /XObject /Subtype /Image /Width 2 /Height 2"
+        b" /ColorSpace /DeviceRGB /BitsPerComponent 8"
+    )
+    for page, (mask, image_number, content_number, pattern_number) in enumerate(
+        [
+            (b" /Mask [255 255 0 255 0 255]", 5, 4, 3),
+            (b" /Mask [0 0 0 0 0 0]", 8, 7, 6),
+        ]
+    ):
+        page_number = pattern_number
+        writer.obj(
+            page_number,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 60 60] /Contents %d 0 R "
+            b"/Resources << /XObject << /Im1 %d 0 R >> >> >>"
+            % (content_number, image_number),
+        )
+        # The background first, then the image on top of it.
+        writer.stream(content_number, b"", b"0 1 0 rg 10 10 40 40 re f q 40 0 0 40 10 10 cm /Im1 Do Q")
+        writer.stream(image_number, base + mask, colour_key_pixels(), compress=True)
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("colour-key.pdf", bytes(writer.out))
+
+
 def make_tiling():
     """A tiling pattern whose cells are checkable by arithmetic (8.7.3).
 
@@ -1899,5 +1945,6 @@ if __name__ == "__main__":
     make_shading()
     make_separation()
     make_tiling()
+    make_colour_key()
     make_cmyk_jpeg()
     make_type1_font()
