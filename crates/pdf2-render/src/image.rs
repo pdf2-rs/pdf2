@@ -416,10 +416,17 @@ impl Image {
         page.decode(&mut rows)
             .map_err(|_| Error::malformed("/JBIG2Decode payload"))?;
         let widened = widen_one_bit(&rows.finish(), width, height, 1)?;
+        // `/Decode` remaps the samples before the colour space sees them (8.9.5.2),
+        // and a 1-bit scan is exactly where a writer states `[1 0]` — the CCITT and
+        // DCT paths applied it from the start, this one did not, so such an image
+        // drew as its negative: white text on a black page.
+        let decode = decode_ranges(stream.dict().get(b"Decode"), 1);
+        let (from, to) = decode[0];
         let pixels = widened
             .into_iter()
             .map(|sample| {
-                let grey = f64::from(sample) / 255.0;
+                let value = f64::from(sample) / 255.0;
+                let grey = (from + value * (to - from)).clamp(0.0, 1.0);
                 Color::rgb(grey, grey, grey)
             })
             .collect();
