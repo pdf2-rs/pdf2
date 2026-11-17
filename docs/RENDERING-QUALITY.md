@@ -44,9 +44,18 @@ So the pages we draw, we draw as correctly as three independent engines agree a
 page can be drawn. Chasing pixel distance further buys nothing until the list
 below is empty.
 
-## Coverage: what we do not draw
+## Coverage: what we did not draw in 1.2 (kept as the baseline)
 
-Two measurements. **Tier A** is the committed 23-file corpus; **the sample** is
+**This table is the 1.2 measurement of 2026-11-15 and every row in it has since
+shipped** — Form XObjects and the image codecs in 1.3–1.5 (`dct`, `jpx`, `jbig2`,
+CCITT), `/ExtGState` alpha/blend/soft-mask, `cs`/`scn` shadings and tint spaces,
+Type 1, CFF, Type 3 and `sh`. It is kept because it is the "before" the releases
+were argued from, and because the 160 blank pages are what "reported rather than
+silently blank" was for: `cargo run -q -p xtask -- corpus` now reports **25 files,
+24 fully readable, 25 rendered**, and the remaining gaps are listed in
+[`RENDERING.md`](RENDERING.md#still-unproven).
+
+Two measurements. **Tier A** was the committed 23-file corpus; **the sample** is
 the first three pages of 300 files from pdf.js's `test/pdfs` (302 pages).
 
 | Missing construct | Tier A pages | Sample pages | Sample share |

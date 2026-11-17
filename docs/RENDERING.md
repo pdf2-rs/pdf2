@@ -106,7 +106,6 @@ real bugs:
 | Annotation appearance streams (`12.5.5`) | **drawn**: `/Annots → /AP → /N`, placed by mapping the appearance's transformed `/BBox` onto the annotation's `/Rect`, after the page content; `/AS` selects from a state dictionary and `/F` invisible/hidden/no-view annotations are skipped |
 | `/Subtype /Form` XObjects (`8.10`) | **drawn**: the form's `/Matrix` is concatenated, its `/BBox` clips, its `/Resources` replace (or inherit) the current ones, and nesting is capped at `MAX_FORM_DEPTH` (8) with the excess reported as `Do` |
 | `/Type0` without a usable program or with a CMap stream | **not drawn**, reported by reason: `font:Type0-no-program`, `font:Type0-cmap`, `font:CIDFontType0` (CFF) |
-| `/Type3` | **not drawn**: `font:Type3` |
 | `/FontFile3` CFF and OpenType programs on a `/Type0` font | **drawn**: the bare CFF is wrapped in the smallest OpenType container and its charset is inverted so a CID finds its glyph (`docs/adr/0003-cff-without-a-dependency.md`) |
 | A TrueType program with no `cmap` table | **not drawn**, reported: `font:TrueType-without-cmap`. The codes cannot be decoded without a map, and guessing glyph ids draws wrong glyphs (`docs/RENDERING-QUALITY.md`) |
 | A page that paints and produces an empty raster | reported: `drew-nothing`, so a blank page that should have had content is visible instead of silent |
@@ -131,19 +130,20 @@ honest fix, and is what the fallback exists to avoid for simple documents.
 
 ## Still unproven
 
-The renderer does not implement these, so no fixture can prove them and content
-using them is reported rather than silently guessed:
+These are the gaps that remain, and content using them is reported rather than
+silently guessed:
 
-- shadings (`sh`), mesh gradients and axial/radial gradient fills;
-- patterns: tiling (`/PatternType 1`) is drawn, `/TilingType` 1 and 3 snap each cell
-  origin to a whole device pixel while type 2 keeps the exact pattern-space lattice
-  (`tests/fixtures/tiling-type.pdf`);
-- transparency groups, soft masks (`/SMask`), `/ca`/`/CA`, blend modes — the
-  `gs` operator is counted as unsupported;
-- vertical writing, `/Mask` as a stencil image, and `TJ` kerning
-  beyond the per-element adjustment;
-- images above 8 bits per component and `/Interpolate` as anything
-  other than bilinear sampling.
+- **mesh shadings** (`8.7.4.5.5`–`.8`) — a `/ShadingType` 4–7 is reported as `sh`;
+- **transparency groups** as a model: isolated and knockout groups, `/I` and `/K`,
+  and a group's own `/CS` are not built — the `gs` dictionary's soft masks, alpha
+  constants, line parameters and sixteen blend modes *are* honoured, one shape at a
+  time;
+- vertical writing mode;
+- `/Mask` as a stencil image — a stream `/Mask` is refused by name (`8.9.6.3`),
+  while the colour-key array beside it is drawn (`8.9.6.4`);
+- `TJ` kerning beyond each element's own adjustment;
+- images above 8 bits per component, and `/Interpolate` as anything other than
+  bilinear sampling.
 
 Those are the next coverage candidates: each needs an implementation first, then
 a page in `calibration.pdf` whose right answer is a sentence, not a screenshot.
