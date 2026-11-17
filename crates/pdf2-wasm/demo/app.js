@@ -206,6 +206,10 @@ function buildTextLayer(base, pageHeight) {
     return;
   }
   const layer = elements.textLayer;
+  // The width is the browser's own text width, not the line's: the transform below
+  // is what makes the glyph run fill the line, and a width of the line box would be
+  // scaled too, leaving the run `box / measured` of the way across it.
+  const built = [];
   for (let index = 0; index < texts.length; index += 1) {
     const [x0, y0, x1, y1] = Array.from(boxes.slice(index * 4, index * 4 + 4));
     const span = document.createElement('span');
@@ -213,11 +217,24 @@ function buildTextLayer(base, pageHeight) {
     span.dataset.index = String(index);
     span.style.left = `${x0 * base}px`;
     span.style.top = `${(pageHeight - y1) * base}px`;
-    span.style.width = `${Math.max(1, (x1 - x0) * base)}px`;
+    span.style.width = 'max-content';
     span.style.height = `${Math.max(1, (y1 - y0) * base)}px`;
     span.style.fontSize = `${Math.max(1, (y1 - y0) * base)}px`;
     layer.append(span);
+    built.push({ span, box: Math.max(1, (x1 - x0) * base) });
     state.spans.push({ text: texts[index], x0, y0, x1, y1 });
+  }
+  // The invisible text is laid out with the browser's advances, which are not the
+  // page's. Scaling each span by the ratio of the painted line to the measured text
+  // puts every glyph — and with it hit-testing and `::selection` — where the canvas
+  // painted it; pdf.js's text layer scales the same way. Measured after the spans
+  // are in the document, so the whole set shares one layout pass.
+  for (const { span, box } of built) {
+    const measured = span.getBoundingClientRect().width;
+    if (measured > 0.5) {
+      span.style.transform = `scaleX(${box / measured})`;
+    }
+    span.dataset.box = box.toFixed(2);
   }
   layer.style.width = `${Math.round(state.canvasWidth)}px`;
   layer.style.height = `${Math.round(state.canvasHeight)}px`;
