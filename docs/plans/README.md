@@ -62,7 +62,7 @@ file that does not exist.
 | [`colour-key-mask.md`](colour-key-mask.md) | Colour-key `/Mask` (rank 10) | `8.9.6.4` | written 2026-11-17 |
 | [`tr-clipping.md`](tr-clipping.md) | The clipping half of `Tr` 4–7 (rank 10) | `9.3.6` | written 2026-11-17 |
 | [`editing.md`](editing.md) | Editing an opened document (rank 11) | `7.5.6` | written 2026-11-17 |
-| `forms.md` | Forms filling and annotation authoring (rank 12) | `12.7.2`, `12.7.3`, `12.5.5` | not written |
+| [`forms.md`](forms.md) | Forms filling and annotation authoring (rank 12) | `12.7.2`, `12.7.3`, `12.5.5` | written 2026-11-17 |
 | `validation.md` | Conformance validation (rank 13) | scope decision, no single clause | not written |
 | `standard-14-fonts.md` | Standard-14 text with real outlines | no clause; a licence question | not written |
 | `mesh-shadings.md` | `/ShadingType` 4–7, refused by name | `8.7.4.5.5`–`.8` | not written |
