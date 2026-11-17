@@ -81,6 +81,18 @@
       "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/axial_shading_many_inputs.pdf"
     },
     {
+      "name": "bitmap-composite-and-xnor.pdf",
+      "sha256": "4432b73b7efcae8eb960b409de37af218f366bd548709d74773dae4ac7c257ef",
+      "bytes": 1314,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/bitmap-composite-and-xnor.pdf"
+    },
+    {
+      "name": "bitmap-p32-eof.pdf",
+      "sha256": "6c959401b0a43e94b4abc580d95b8373adcea87cb13612a3b9eece18767de576",
+      "bytes": 1490,
+      "source_url": "https://raw.githubusercontent.com/mozilla/pdf.js/d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a/test/pdfs/bitmap-p32-eof.pdf"
+    },
+    {
       "name": "blendmode.pdf",
       "sha256": "39ce34c2d32738c7c94970fd76559ecb9efd671f5ab99e515a853674e7a824ce",
       "bytes": 50567,

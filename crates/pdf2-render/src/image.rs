@@ -368,11 +368,13 @@ impl Image {
         })
     }
 
-    /// A `/JBIG2Decode` image with the feature reads its page information.
+    /// A `/JBIG2Decode` image with the feature: the page information decides the
+    /// size, and `/DecodeParms /JBIG2Globals` may carry shared segments that must
+    /// be decoded before the page's own (7.4.7).
     #[cfg(feature = "jbig2")]
     fn from_jbig2(
         document: &Document,
-        _stream: &Stream,
+        stream: &Stream,
         id: Option<pdf2::ObjectId>,
     ) -> Result<Self> {
         let Some(id) = id else {
@@ -380,18 +382,53 @@ impl Image {
                 "a /JBIG2Decode image without an object number",
             ));
         };
+        let interpolate = matches!(
+            stream.dict().get(b"Interpolate"),
+            Some(Object::Boolean(true))
+        );
+        let settings = hayro_jbig2::DecodeSettings::default();
+        // The globals are a *separate* stream: `/DecodeParms /JBIG2Globals` names
+        // it, and its segments have to be decoded before the image's own. A page
+        // wired only to `new_embedded(data, None, …)` fails on exactly these files.
+        let globals = match globals_bytes(document, stream.dict())? {
+            Some(bytes) => Some(
+                hayro_jbig2::Globals::new(&bytes, &settings)
+                    .map_err(|_| Error::malformed("/JBIG2Decode globals stream"))?,
+            ),
+            None => None,
+        };
         let data = document.stream_bytes(id)?;
-        let page =
-            hayro_jbig2::Page::new_embedded(&data, None, &hayro_jbig2::DecodeSettings::default())
-                .map_err(|_| Error::malformed("/JBIG2Decode page"))?;
-        let _ = (page.width(), page.height());
-        // The same reason as the JPX arm: a decoder's weight is its decode
-        // path, so the sink runs even though nothing is painted yet.
-        let mut sink = Sink::default();
-        let _ = page.decode(&mut sink);
-        let _ = sink.pixels;
-        Err(Error::Unsupported {
-            what: "a /JBIG2Decode image",
+        let page = hayro_jbig2::Page::new_embedded(&data, globals.as_ref(), &settings)
+            .map_err(|_| Error::malformed("/JBIG2Decode page"))?;
+        let width = page.width();
+        let height = page.height();
+        let count = (width as usize)
+            .checked_mul(height as usize)
+            .ok_or_else(|| Error::malformed("/JBIG2Decode image dimensions overflow"))?;
+        let limit = document.decoded_limit();
+        if count > limit {
+            return Err(Error::Limit {
+                what: "a /JBIG2Decode image of the size its page information declares",
+                limit,
+            });
+        }
+        let mut rows = Rows::new(width as usize, height as usize);
+        page.decode(&mut rows)
+            .map_err(|_| Error::malformed("/JBIG2Decode payload"))?;
+        let widened = widen_one_bit(&rows.finish(), width, height, 1)?;
+        let pixels = widened
+            .into_iter()
+            .map(|sample| {
+                let grey = f64::from(sample) / 255.0;
+                Color::rgb(grey, grey, grey)
+            })
+            .collect();
+        Ok(Self {
+            width,
+            height,
+            pixels,
+            interpolate,
+            masked: None,
         })
     }
 
@@ -846,24 +883,74 @@ fn jpx_components(space: &hayro_jpeg2000::ColorSpace) -> Result<usize> {
     }
 }
 
-/// A JBIG2 sink that counts pixels instead of storing them.
-///
-/// It exists so the decoder's decode path is linked (see `from_jbig2`); the round
-/// that paints JBIG2 images replaces it with the real 1-bit row writer.
+/// Resolves the `/JBIG2Globals` stream of a `/JBIG2Decode` image, if it names one.
 #[cfg(feature = "jbig2")]
-#[derive(Default)]
-struct Sink {
-    pixels: usize,
+fn globals_bytes(document: &Document, dict: &Dictionary) -> Result<Option<Vec<u8>>> {
+    let Some(parms) = dict.get(b"DecodeParms") else {
+        return Ok(None);
+    };
+    let parms = resolve(document, Some(parms))?;
+    let Some(parms) = parms.as_dict() else {
+        return Ok(None);
+    };
+    let Some(globals) = parms.get(b"JBIG2Globals") else {
+        return Ok(None);
+    };
+    let globals = resolve(document, Some(globals))?;
+    let Some(stream) = globals.as_stream() else {
+        return Err(Error::malformed("/JBIG2Globals is not a stream"));
+    };
+    document.decode_stream(stream).map(Some)
+}
+
+/// A JBIG2 sink that writes packed 1-bit rows the way a PDF image expects them.
+///
+/// `hayro-jbig2` reports `black`, and a 1-bit `/DeviceGray` sample is 1 for
+/// **white** unless `/Decode` inverts it (`src/fax.rs:37` and the CCITT writer
+/// beside it). Writing `black` straight through draws the page as its negative,
+/// which is why the tests assert ink on white instead of trusting the sense.
+#[cfg(feature = "jbig2")]
+struct Rows {
+    packed: Vec<u8>,
+    bit: usize,
 }
 
 #[cfg(feature = "jbig2")]
-impl hayro_jbig2::Decoder for Sink {
-    fn push_pixel(&mut self, _black: bool) {
-        self.pixels += 1;
+impl Rows {
+    fn new(width: usize, height: usize) -> Self {
+        Self {
+            packed: vec![0; width.div_ceil(8) * height],
+            bit: 0,
+        }
     }
 
-    fn push_pixel_chunk(&mut self, _black: bool, chunk_count: u32) {
-        self.pixels += 8 * chunk_count as usize;
+    /// Write `count` samples of one value, MSB first.
+    fn run(&mut self, white: bool, count: usize) {
+        for _ in 0..count {
+            if white {
+                let byte = self.bit / 8;
+                let shift = 7 - self.bit % 8;
+                if let Some(slot) = self.packed.get_mut(byte) {
+                    *slot |= 1 << shift;
+                }
+            }
+            self.bit += 1;
+        }
+    }
+
+    fn finish(self) -> Vec<u8> {
+        self.packed
+    }
+}
+
+#[cfg(feature = "jbig2")]
+impl hayro_jbig2::Decoder for Rows {
+    fn push_pixel(&mut self, black: bool) {
+        self.run(!black, 1);
+    }
+
+    fn push_pixel_chunk(&mut self, black: bool, chunk_count: u32) {
+        self.run(!black, 8 * chunk_count as usize);
     }
 
     fn next_line(&mut self) {}
