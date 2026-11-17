@@ -715,20 +715,16 @@ impl ColourSpace {
                         })
                     }
                     b"ICCBased" => {
-                        let stream = match items.get(1) {
-                            Some(Object::Reference(id)) => document.stream(*id)?,
-                            _ => return Err(Error::malformed("ICCBased without a stream")),
-                        };
-                        let components = stream
-                            .dict()
-                            .get(b"N")
-                            .and_then(Object::as_integer)
-                            .unwrap_or(3);
-                        match components {
-                            1 => Ok(Self::Gray),
-                            3 => Ok(Self::Rgb),
-                            4 => Ok(Self::Cmyk),
-                            _ => Err(Error::malformed("unsupported ICCBased components")),
+                        // One resolver for paints and images: `/N` decides the
+                        // sample count, and `/Alternate` is the writer's fallback
+                        // when it is a count this renderer cannot name.
+                        match crate::shading::icc_components(document, &items)? {
+                            crate::shading::Space::Gray => Ok(Self::Gray),
+                            crate::shading::Space::Rgb => Ok(Self::Rgb),
+                            crate::shading::Space::Cmyk => Ok(Self::Cmyk),
+                            _ => Err(Error::Unsupported {
+                                what: "an /ICCBased image in a tint space",
+                            }),
                         }
                     }
                     _ => Err(Error::malformed("unsupported image /ColorSpace array")),

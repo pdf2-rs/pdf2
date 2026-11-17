@@ -1451,9 +1451,14 @@ impl Walker<'_> {
         let Object::Dictionary(spaces) = resolve(self.document, Some(&entry))? else {
             return Ok(());
         };
-        let Some(value) = spaces.get(name).cloned() else {
+        let Some(entry) = spaces.get(name).cloned() else {
             return Ok(());
         };
+        // The dictionary's entry is usually a *reference* (`/Cs1 5 0 R`, `/R8 8 0 R`),
+        // so it is resolved once here: the array checks below were reading a reference
+        // and concluding "not an array", which is how a legal `[/Pattern]` space got
+        // reported as unresolvable.
+        let value = resolve(self.document, Some(&entry))?;
         // A `/Pattern` colour space may be an array `[/Pattern /DeviceRGB]` whose
         // second element is the underlying space an uncoloured pattern's colour is
         // given in (8.7.3.3); anything else here is a tint space `scn` converts.
@@ -1463,7 +1468,23 @@ impl Walker<'_> {
                 .and_then(|item| crate::shading::parse_space(self.document, item).ok()),
             _ => None,
         };
-        self.state.space = crate::shading::parse_space(self.document, &value).ok();
+        // A space that cannot be resolved used to leave `None` behind in silence,
+        // and `sc` with no space keeps the previous colour: the CV's page painted
+        // black because `/Cs1` was an `/ICCBased` array and the failure was
+        // invisible. `/Pattern` is the exception — its colour arrives through
+        // `scn`, and the underlying space is already installed above.
+        self.state.space = match crate::shading::parse_space(self.document, &value) {
+            Ok(space) => Some(space),
+            Err(_) => {
+                let is_pattern = matches!(&value, Object::Array(items)
+                    if items.first().and_then(Object::as_name) == Some(b"Pattern"));
+                if !is_pattern {
+                    self.report
+                        .note(format!("cs:{}", String::from_utf8_lossy(name)).as_bytes());
+                }
+                None
+            }
+        };
         Ok(())
     }
 
