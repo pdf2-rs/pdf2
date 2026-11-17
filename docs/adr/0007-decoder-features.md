@@ -45,17 +45,22 @@ an integration takes `default-features = false, features = ["std"]`.
 
 Taken 2026-11-17 on the 1.4.0 tree, by the raw commands `docs/PERFORMANCE.md`
 documents (`cargo build -p pdf2-wasm --release --target wasm32-unknown-unknown`, then
-`wasm-bindgen --target web`), gzipped at level 9 the way `check.mjs` does:
+`wasm-bindgen --target web`), gzipped at level 9 the way `check.mjs` does. **The table
+below is the second measurement**, taken on the finished tree: the first, at decision
+time, priced a build whose decoders had only their headers wired (+76 705 / +62 685 /
++138 481), and wiring the decode paths after it moved the numbers by up to 2.3 KB. The
+decision rested on the shape of the cost, which did not change; the figures the
+documents carry are these.
 
 | Bundle | gzip | Δ |
 | --- | --- | --- |
-| no decoders | **365 705** | — |
-| `jpx` | **442 410** | +76 705 |
-| `jbig2` | **428 390** | +62 685 |
-| both | **504 186** | +138 481 |
+| no decoders | **365 734** | — |
+| `jpx` | **443 257** | +77 523 |
+| `jbig2` | **429 879** | +64 145 |
+| both | **506 481** | +140 747 |
 
 ADR 0005's 1.3.0 figures were +76 052, +62 495 and +137 502 — reproduced here within
-about a kilobyte, which is what makes this a decision rather than a quotation.
+about two kilobytes, which is what makes this a decision rather than a quotation.
 
 **The method is part of the number.** A first attempt linked the crates by parsing
 only the codestream and page headers, and measured **+23 410** for both — because the
@@ -68,7 +73,7 @@ paints them replaces the discard with the paint and keeps the number.
 
 - A consumer that needs JPX or JBIG2 enables a feature and pays ~138 KiB of gzip;
   everyone else pays nothing, and `cargo tree -p pdf2-render` stays free of `hayro-*`.
-- The npm default bundle keeps its 364 KiB budget (365 705 measured — ~7 KiB
+- The npm default bundle keeps its 364 KiB budget (365 734 measured — ~7 KiB
   headroom), and the demo gets its own budget line rather than a raised shared one.
 - Two wasm artefacts must be built, size-checked and tested; `cargo gate --full`
   already drives the demo, so the site's build is covered by the same gate.

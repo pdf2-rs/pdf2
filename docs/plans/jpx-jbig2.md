@@ -52,9 +52,10 @@ three options and why the other two lost:
 | **C. JPX only, JBIG2 later** — rejected | as B, with only `jpx` enabled | +76 705 gzip, and it leaves the scanned-document case (JBIG2) broken while the feature machinery is already built |
 
 Re-measured on the 1.4.0 tree before choosing (raw commands from
-`docs/PERFORMANCE.md`, gzip level 9, the same `wasm-bindgen`): no decoders **365 705**,
-`jpx` **442 410** (+76 705), `jbig2` **428 390** (+62 685), both **504 186**
-(+138 481). A first attempt that parsed only codestream headers measured +23 410 for
+`docs/PERFORMANCE.md`, gzip level 9, the same `wasm-bindgen`): no decoders **365 734**,
+`jpx` **443 257** (+77 523), `jbig2` **429 879** (+64 145), both **506 481** (+140 747) —
+re-measured once the decode paths were wired, since the decision-time numbers priced a
+header-only link. A first attempt that parsed only codestream headers measured +23 410 for
 both — the decode path was dead-code eliminated — so the numbers above come from a
 build that decodes before it refuses, which is the shape the rounds below keep.
 
