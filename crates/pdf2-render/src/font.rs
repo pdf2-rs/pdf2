@@ -29,6 +29,8 @@ use crate::geom::Point;
 pub struct Cache {
     /// Character → glyph id, `None` when the `cmap` does not cover it.
     cmap: BTreeMap<char, Option<u16>>,
+    /// Code → glyph id through a Macintosh Roman `(1,0)` subtable, when there is one.
+    mac: BTreeMap<u8, Option<u16>>,
     /// Glyph id → outline and advance.
     glyphs: BTreeMap<u16, Option<Glyph>>,
 }
@@ -96,6 +98,9 @@ pub enum Font {
         /// Whether the program carries a `cmap` table at all: when it does not,
         /// a simple font's code is the glyph id.
         has_cmap: bool,
+        /// Whether a Macintosh Roman `(1,0)` subtable is present, which is the one
+        /// a writer's own codes can be looked up in when the Unicode map is absent.
+        has_mac_cmap: bool,
         /// Parsed answers, shared by clones.
         cache: GlyphCache,
     },
@@ -175,11 +180,32 @@ impl Font {
         if face.units_per_em() == 0 {
             return None;
         }
-        let has_cmap = face.tables().cmap.is_some();
+        // A `cmap` *table* is not the same as a `cmap` we can consult: the CV this
+        // renderer was chasing carries one with a single **Mac Roman** (1,0)
+        // subtable, and a Unicode-only lookup found nothing in it — every glyph
+        // resolved to `None`, the page drew air, and no report fired because the
+        // table existed. Both flavours count as usable now; neither, and the font
+        // is reported (`font:TrueType-without-cmap`) rather than looking blank.
+        let mut has_cmap = false;
+        let mut has_mac_cmap = false;
+        if let Some(cmap) = face.tables().cmap {
+            for subtable in cmap.subtables {
+                if subtable.is_unicode() {
+                    has_cmap = true;
+                }
+                if subtable.platform_id == ttf_parser::PlatformId::Macintosh
+                    && subtable.encoding_id == 0
+                {
+                    has_cmap = true;
+                    has_mac_cmap = true;
+                }
+            }
+        }
         Some(Self::TrueType {
             encoding,
             data,
             has_cmap,
+            has_mac_cmap,
             cache: GlyphCache::default(),
         })
     }
@@ -208,10 +234,16 @@ impl Font {
                 encoding,
                 data,
                 cache,
+                has_mac_cmap,
                 ..
             } => {
                 let character = encoding.character(code)?;
-                cached_glyph(data, cache, glyph_id(data, cache, character)?)
+                let id = glyph_id(data, cache, character).or_else(|| {
+                    has_mac_cmap
+                        .then(|| mac_glyph_id(data, cache, code))
+                        .flatten()
+                })?;
+                cached_glyph(data, cache, id)
             }
             Self::Cff {
                 encoding,
@@ -317,6 +349,30 @@ fn glyph_id(data: &[u8], cache: &GlyphCache, character: char) -> Option<ttf_pars
     let face = ttf_parser::Face::parse(data, 0).ok()?;
     let found = face.glyph_index(character).map(|id| id.0);
     cache.borrow_mut().cmap.insert(character, found);
+    found.map(ttf_parser::GlyphId)
+}
+
+/// A glyph through the font's Macintosh Roman `(1,0)` subtable, by the code.
+///
+/// A PDF code for a simple font *is* a byte of the font's encoding, and when the
+/// program's own `cmap` is Mac Roman that byte is the subtable's code — no Unicode
+/// step, which is exactly the step that was failing.
+fn mac_glyph_id(data: &[u8], cache: &GlyphCache, code: u8) -> Option<ttf_parser::GlyphId> {
+    if let Some(cached) = cache.borrow().mac.get(&code) {
+        return cached.map(ttf_parser::GlyphId);
+    }
+    let face = ttf_parser::Face::parse(data, 0).ok()?;
+    let found = face.tables().cmap.and_then(|cmap| {
+        cmap.subtables
+            .into_iter()
+            .find(|subtable| {
+                subtable.platform_id == ttf_parser::PlatformId::Macintosh
+                    && subtable.encoding_id == 0
+            })
+            .and_then(|subtable| subtable.glyph_index(u32::from(code)))
+            .map(|id| id.0)
+    });
+    cache.borrow_mut().mac.insert(code, found);
     found.map(ttf_parser::GlyphId)
 }
 
@@ -1263,5 +1319,89 @@ mod cache_tests {
             with_cmap.glyph(0x00).is_none(),
             "an unmapped code has no glyph"
         );
+    }
+
+    /// The committed OFL subset, so a `cmap` can be rewritten without a new binary.
+    fn fixture_font() -> Vec<u8> {
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/fonts/CrimsonText-Regular-subset.ttf"
+        ))
+        .expect("the committed subset font")
+    }
+
+    /// Rewrite a program's `cmap` so it holds exactly one format-0 subtable of the
+    /// given platform and encoding, mapping `A` to the glyph the original Unicode
+    /// map chose. The table only ever shrinks, so the directory stays valid.
+    fn with_one_subtable(program: &[u8], platform: u16, encoding: u16) -> Vec<u8> {
+        let mut data = program.to_vec();
+        let tables = u16::from_be_bytes([data[4], data[5]]) as usize;
+        let mut cmap = None;
+        for index in 0..tables {
+            let record = 12 + index * 16;
+            if &data[record..record + 4] == b"cmap" {
+                let offset = u32::from_be_bytes([
+                    data[record + 8],
+                    data[record + 9],
+                    data[record + 10],
+                    data[record + 11],
+                ]) as usize;
+                let length = u32::from_be_bytes([
+                    data[record + 12],
+                    data[record + 13],
+                    data[record + 14],
+                    data[record + 15],
+                ]) as usize;
+                // The glyph the font's own Unicode map gives `A`.
+                let face = ttf_parser::Face::parse(program, 0).expect("a parsable subset");
+                let glyph = face.glyph_index('A').expect("the subset maps A").0;
+                cmap = Some((offset, length, glyph));
+            }
+        }
+        let (offset, length, glyph) = cmap.expect("a cmap table");
+        assert!(
+            length >= 274,
+            "the table has room for a 262-byte format 0 subtable"
+        );
+        // version, one subtable, its record, then a format 0 subtable of 256 codes.
+        let mut table = vec![0_u8; 274];
+        table[2..4].copy_from_slice(&1_u16.to_be_bytes());
+        table[4..6].copy_from_slice(&platform.to_be_bytes());
+        table[6..8].copy_from_slice(&encoding.to_be_bytes());
+        table[8..12].copy_from_slice(&12_u32.to_be_bytes());
+        table[14..16].copy_from_slice(&262_u16.to_be_bytes());
+        table[18 + usize::from(b'A')] = u8::try_from(glyph).expect("a glyph id under 256");
+        data[offset..offset + 274].copy_from_slice(&table);
+        data
+    }
+
+    #[test]
+    fn a_macintosh_only_cmap_is_consulted_by_the_code() {
+        // The CV that started this: `/TT1`'s program has one `(1,0)` subtable, and a
+        // Unicode-only lookup found nothing in it, so every glyph drew air with no
+        // report. The code is the Mac Roman byte, so the subtable answers directly.
+        let font = Font::true_type(
+            Encoding::from_name(b"MacRomanEncoding"),
+            with_one_subtable(&fixture_font(), 1, 0),
+        )
+        .expect("the patched subset loads");
+        assert!(font.has_character_map(), "a (1,0) subtable is usable");
+        let glyph = font
+            .glyph(b'A')
+            .expect("A reaches its glyph through the Mac map");
+        assert!(!glyph.contours.is_empty(), "and the glyph has an outline");
+    }
+
+    #[test]
+    fn a_cmap_no_reader_can_consult_is_reported_as_such() {
+        // `(3,2)` is neither Unicode nor Macintosh Roman: nothing can be decoded, and
+        // the caller reports `font:TrueType-without-cmap` instead of a blank page.
+        let font = Font::true_type(
+            Encoding::standard(),
+            with_one_subtable(&fixture_font(), 3, 2),
+        )
+        .expect("the patched subset loads");
+        assert!(!font.has_character_map());
+        assert!(font.glyph(b'A').is_none());
     }
 }
