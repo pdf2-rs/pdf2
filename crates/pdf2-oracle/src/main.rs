@@ -112,6 +112,11 @@ fn run() -> Result<(), String> {
     );
     let mut failures = 0;
     let mut calibrated = Vec::new();
+    // Every case's inter-oracle spread, whether or not `--calibrate` is on: the
+    // summary CSV is where a per-case mean is read from, and it used to be written
+    // from `calibrated`, which only `--calibrate` fills — so `--summary` on its own
+    // produced a header and no rows.
+    let mut measured = Vec::new();
     let mut timings: Vec<(String, f64)> = Vec::new();
     let mut our_distances: Vec<(String, Distance)> = Vec::new();
     for case in &cases {
@@ -224,6 +229,7 @@ fn run() -> Result<(), String> {
             );
         }
         timings.push((case.name.clone(), elapsed_ms));
+        measured.push((case.name.clone(), spread));
         our_distances.push((case.name.clone(), median));
         if options.calibrate {
             calibrated.push((case.name.clone(), spread));
@@ -256,7 +262,7 @@ fn run() -> Result<(), String> {
         // `--blocks` was asked for: the 4×4 gate's numbers, or the 1×1 numbers
         // that anti-aliasing needs (`docs/RENDERING-QUALITY.md`).
         let mut text = String::from("case,spread_over,spread_mean,ours_over,ours_mean,render_ms\n");
-        for (name, spread) in &calibrated {
+        for (name, spread) in &measured {
             let ms = timings
                 .iter()
                 .find(|(case, _)| case == name)
