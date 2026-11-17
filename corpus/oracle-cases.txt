@@ -47,3 +47,4 @@ corpus/tier-a/ccitt_EndOfBlock_false.pdf 1
 # 0.869 difference between two pictures of different typefaces. The page is proven
 # by its three ink bands (crates/pdf2-render/tests/type1.rs); it can join this list
 # once the generated program is accepted by FreeType.
+corpus/tier-a/colorkeymask.pdf 1
