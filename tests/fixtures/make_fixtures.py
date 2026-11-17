@@ -1426,6 +1426,40 @@ def colour_key_pixels():
     return bytes([255, 0, 0, 0, 0, 255, 0, 255, 255, 0, 0, 0])
 
 
+def make_tr_clip_type3():
+    """`Tr` 4–7 with a Type 3 glyph, which has no outline to clip to.
+
+    A Type 3 glyph is a content stream, so the clause's "as if they were a path"
+    has nothing to work with. The page must say `text-clip` and paint the rectangle
+    unclipped, rather than clipping to an empty mask and silently producing a blank
+    page. One page: the glyph is a filled square (100 pt at 0,0 in glyph space), the
+    text is `7 Tr`, and a blue rectangle covers the page.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R "
+        b"/Resources << /Font << /F3 5 0 R >> >> >>",
+    )
+    writer.stream(
+        4,
+        b"",
+        b"BT /F3 100 Tf 7 Tr 20 20 Td (a) Tj ET 0 0 1 rg 0 0 200 200 re f",
+    )
+    writer.obj(
+        5,
+        b"<< /Type /Font /Subtype /Type3 /FontBBox [0 0 100 100]"
+        b" /FontMatrix [0.01 0 0 0.01 0 0] /CharProcs << /square 6 0 R >>"
+        b" /Encoding << /Type /Encoding /Differences [97 /square] >>"
+        b" /FirstChar 97 /LastChar 97 /Widths [100] /Resources << >> >>",
+    )
+    writer.stream(6, b"", b"0 0 0 100 100 re f")
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("tr-clip-type3.pdf", bytes(writer.out))
+
+
 def make_tr_clip():
     """The clipping half of `Tr` modes 4–7 (9.3.6).
 
@@ -2020,5 +2054,6 @@ if __name__ == "__main__":
     make_tiling()
     make_colour_key()
     make_tr_clip()
+    make_tr_clip_type3()
     make_cmyk_jpeg()
     make_type1_font()
