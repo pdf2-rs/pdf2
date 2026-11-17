@@ -4,7 +4,28 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.1] — in progress
+## [1.3.0] — 2026-11-17
+
+**The renderer draws the page a writer meant, and says so when it cannot.** Twenty
+rounds of measured work land together: every layer the earlier releases skipped —
+`/Subtype /Form` XObjects, annotation appearance streams, `/ExtGState` with its
+alpha, soft masks and sixteen blend modes, shadings through `/Function` objects,
+the colour spaces that tint them, Type 1 / simple CFF / Type 3 fonts, JPEG (now
+including CMYK) and CCITT fax images in all three modes — plus the bounds a reader
+of untrusted files needs: a decoded-bytes budget, an object ceiling and a page
+ceiling, each with a typed error naming the limit. Anti-aliasing was judged before
+it was built and is gated at 1×1.
+
+The corpus is unchanged at 23 files (22 fully readable, 23 rendered) because it was
+the wrong instrument for this work; what moved is the *reports*, measured on the
+302-page pdf.js sample as each round landed (2026-11-16): `Do` notes 119 → 100, `gs`
+38 → 0, pages that render but say nothing 49 → 10, and a page that paints nothing is
+now named (`drew-nothing`) instead of passing as blank.
+
+Tool versions: `pdf2-render` and `pdf2-cli` follow the library at 1.3.0;
+`pdf2-wasm` moves to **1.2.0** (crate and npm) because the wasm blob and its
+dependency pin both carry this release. `docs/DEFERRED.md` records what is
+deliberately still missing, with the reason and the unblock condition for each.
 
 ### Rendering
 
