@@ -29,6 +29,18 @@ impl Image {
         id: Option<pdf2::ObjectId>,
     ) -> Result<Self> {
         let dict = stream.dict();
+        // `/JPXDecode` and `/JBIG2Decode` carry their own colour space and bit
+        // depth: `/ColorSpace` may be absent from a JPX image and its
+        // `/BitsPerComponent` is ignored (7.4.9), so the dispatch has to happen
+        // before either is read. A codec that is not compiled in is reported by
+        // name there, because the alternative is a page that silently loses its
+        // image.
+        if is_jpx(dict) {
+            return Self::from_jpx(document, stream, id);
+        }
+        if is_jbig2(dict) {
+            return Self::from_jbig2(document, stream, id);
+        }
         let width = integer(dict, b"Width")?;
         let height = integer(dict, b"Height")?;
         if width == 0 || height == 0 {
@@ -252,6 +264,91 @@ impl Image {
     ) -> Result<Self> {
         Err(Error::Unsupported {
             what: "/DCTDecode images (build with the `dct` feature)",
+        })
+    }
+
+    /// A `/JPXDecode` image without the feature is reported by name.
+    #[cfg(not(feature = "jpx"))]
+    fn from_jpx(
+        _document: &Document,
+        _stream: &Stream,
+        _id: Option<pdf2::ObjectId>,
+    ) -> Result<Self> {
+        Err(Error::Unsupported {
+            what: "/JPXDecode images (build with the `jpx` feature)",
+        })
+    }
+
+    /// A `/JPXDecode` image with the feature reads its codestream header.
+    ///
+    /// The header is where the size is decided, and reading it here keeps
+    /// `hayro-jpeg2000` linked and reachable — which is what makes the wasm
+    /// bundle measurement in `docs/PERFORMANCE.md` a real number rather than a
+    /// stripped dependency. Painting the pixels is the next round's work.
+    #[cfg(feature = "jpx")]
+    fn from_jpx(document: &Document, _stream: &Stream, id: Option<pdf2::ObjectId>) -> Result<Self> {
+        let Some(id) = id else {
+            return Err(Error::malformed(
+                "a /JPXDecode image without an object number",
+            ));
+        };
+        let data = document.stream_bytes(id)?;
+        let image = hayro_jpeg2000::Image::new(&data, &hayro_jpeg2000::DecodeSettings::default())
+            .map_err(|_| Error::malformed("/JPXDecode codestream"))?;
+        let _ = (
+            image.width(),
+            image.height(),
+            image.color_space(),
+            image.has_alpha(),
+        );
+        // Decoding here and throwing the result away is deliberate for one
+        // round: the wasm cost of a decoder is what its *pixels* drag in, so a
+        // header-only link would measure a number that no shipped build has.
+        // The round that paints them replaces this call with the paint.
+        let mut context = hayro_jpeg2000::DecoderContext::default();
+        let decoded = image.decode(&mut context);
+        let _ = decoded.map(|decoded| decoded.data_u8().len());
+        Err(Error::Unsupported {
+            what: "a /JPXDecode image",
+        })
+    }
+
+    /// A `/JBIG2Decode` image without the feature is reported by name.
+    #[cfg(not(feature = "jbig2"))]
+    fn from_jbig2(
+        _document: &Document,
+        _stream: &Stream,
+        _id: Option<pdf2::ObjectId>,
+    ) -> Result<Self> {
+        Err(Error::Unsupported {
+            what: "/JBIG2Decode images (build with the `jbig2` feature)",
+        })
+    }
+
+    /// A `/JBIG2Decode` image with the feature reads its page information.
+    #[cfg(feature = "jbig2")]
+    fn from_jbig2(
+        document: &Document,
+        _stream: &Stream,
+        id: Option<pdf2::ObjectId>,
+    ) -> Result<Self> {
+        let Some(id) = id else {
+            return Err(Error::malformed(
+                "a /JBIG2Decode image without an object number",
+            ));
+        };
+        let data = document.stream_bytes(id)?;
+        let page =
+            hayro_jbig2::Page::new_embedded(&data, None, &hayro_jbig2::DecodeSettings::default())
+                .map_err(|_| Error::malformed("/JBIG2Decode page"))?;
+        let _ = (page.width(), page.height());
+        // The same reason as the JPX arm: a decoder's weight is its decode
+        // path, so the sink runs even though nothing is painted yet.
+        let mut sink = Sink::default();
+        let _ = page.decode(&mut sink);
+        let _ = sink.pixels;
+        Err(Error::Unsupported {
+            what: "a /JBIG2Decode image",
         })
     }
 
@@ -647,17 +744,32 @@ fn has_adobe_marker(data: &[u8]) -> bool {
     false
 }
 
-/// Whether the stream's filter chain ends in `/DCTDecode`.
-fn is_dct(dict: &Dictionary) -> bool {
+/// Whether the stream's filter chain ends in `name`.
+fn ends_in(dict: &Dictionary, name: &[u8]) -> bool {
     match dict.get(b"Filter") {
-        Some(Object::Name(name)) => name == b"DCTDecode",
+        Some(Object::Name(filter)) => filter == name,
         Some(Object::Array(items)) => items
             .iter()
             .rev()
             .find_map(Object::as_name)
-            .is_some_and(|name| name == b"DCTDecode"),
+            .is_some_and(|filter| filter == name),
         _ => false,
     }
+}
+
+/// Whether the stream's filter chain ends in `/DCTDecode`.
+fn is_dct(dict: &Dictionary) -> bool {
+    ends_in(dict, b"DCTDecode")
+}
+
+/// Whether the stream's filter chain ends in `/JPXDecode` (7.4.9).
+fn is_jpx(dict: &Dictionary) -> bool {
+    ends_in(dict, b"JPXDecode")
+}
+
+/// Whether the stream's filter chain ends in `/JBIG2Decode` (7.4.7).
+fn is_jbig2(dict: &Dictionary) -> bool {
+    ends_in(dict, b"JBIG2Decode")
 }
 
 /// Follow one indirect reference; deeper chains are not needed for images.
@@ -723,4 +835,27 @@ mod tests {
         assert_eq!(canvas.pixel(0, 3), Some([255, 255, 255, 255]));
         assert_eq!(canvas.pixel(3, 3), Some([0, 0, 0, 255]));
     }
+}
+
+/// A JBIG2 sink that counts pixels instead of storing them.
+///
+/// It exists so the decoder's decode path is linked (see `from_jbig2`); the round
+/// that paints JBIG2 images replaces it with the real 1-bit row writer.
+#[cfg(feature = "jbig2")]
+#[derive(Default)]
+struct Sink {
+    pixels: usize,
+}
+
+#[cfg(feature = "jbig2")]
+impl hayro_jbig2::Decoder for Sink {
+    fn push_pixel(&mut self, _black: bool) {
+        self.pixels += 1;
+    }
+
+    fn push_pixel_chunk(&mut self, _black: bool, chunk_count: u32) {
+        self.pixels += 8 * chunk_count as usize;
+    }
+
+    fn next_line(&mut self) {}
 }

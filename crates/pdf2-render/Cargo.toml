@@ -16,8 +16,22 @@ default = ["dct"]
 # OR Zlib`, already on `deny.toml`'s allow-list. Off only for a caller that would
 # rather not pay the wasm bytes for an image codec.
 dct = ["dep:zune-jpeg"]
+# `/JPXDecode` (JPEG 2000) through `hayro-jpeg2000`: `Apache-2.0 OR MIT`, MSRV
+# 1.92, `no_std` with an allocator. Off by default because it costs ~76 KiB
+# gzip on the wasm bundle, and `default-features = false` deliberately drops
+# `simd` (which uses `fearless_simd`'s unsafe) and `image` (which pulls an ICC
+# engine) — neither is needed to decode a page.
+jpx = ["dep:hayro-jpeg2000"]
+# `/JBIG2Decode` through `hayro-jbig2`, on the same terms (~62 KiB gzip).
+jbig2 = ["dep:hayro-jbig2"]
 
 [dependencies]
+hayro-jbig2 = { version = "0.4.0", optional = true, default-features = false, features = [
+    "std",
+] }
+hayro-jpeg2000 = { version = "0.5.0", optional = true, default-features = false, features = [
+    "std",
+] }
 miniz_oxide = "0.9"
 pdf2 = { path = "../..", version = "1.4.0" }
 ttf-parser = "0.25.1"
