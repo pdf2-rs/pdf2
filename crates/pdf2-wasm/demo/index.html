@@ -142,6 +142,34 @@
         overflow: auto;
         max-height: 78vh;
       }
+      /* The canvas and its text layer share one positioned box, so a span's page
+         coordinates become CSS pixels against the same origin the page is drawn at. */
+      .page-box { position: relative; flex: none; margin: auto; }
+      /* The text is there for selection and copying, not for reading: transparent,
+         over the pixels the canvas already drew. */
+      .text-layer {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        user-select: text;
+        cursor: text;
+      }
+      .text-layer span {
+        position: absolute;
+        color: transparent;
+        white-space: pre;
+        line-height: 1;
+        transform-origin: 0 0;
+      }
+      .text-layer span::selection { background: rgba(43, 108, 176, 0.35); }
+      .find-mark {
+        position: absolute;
+        background: rgba(255, 214, 0, 0.45);
+        border-radius: 1px;
+        pointer-events: none;
+      }
+      .find-mark.active { background: rgba(255, 140, 0, 0.65); }
+      .selection-info { color: var(--muted); font-size: 0.85rem; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       /* No `max-width` here. The wrapper scrolls when the page is wider than
          it; clamping the width while the height keeps the zoomed value is what
          made zooming stretch the page vertically. */
@@ -298,13 +326,24 @@
           <button id="fit" type="button" title="Fit the width">Fit</button>
           <button id="fitPage" type="button" title="Fit the whole page">Page</button>
         </div>
+        <div class="group find">
+          <input id="find" type="search" placeholder="Find" aria-label="Find text" spellcheck="false" />
+          <button id="findPrev" type="button" aria-label="Previous match">↑</button>
+          <button id="findNext" type="button" aria-label="Next match">↓</button>
+          <span id="findInfo" aria-live="polite">–</span>
+          <button id="copySelection" type="button" disabled title="Copy the selected text">Copy</button>
+        </div>
+        <span id="selectionInfo" class="selection-info" aria-live="polite"></span>
         <button id="download" type="button" disabled>Download</button>
       </section>
 
       <div class="layout">
         <section class="viewer" id="viewer" aria-label="Page view">
           <div class="canvas-wrap" id="canvasWrap">
-            <canvas id="canvas" width="0" height="0"></canvas>
+            <div class="page-box" id="pageBox">
+              <canvas id="canvas" width="0" height="0"></canvas>
+              <div class="text-layer" id="textLayer"></div>
+            </div>
           </div>
           <div class="minimap" id="minimapBox" aria-hidden="true">
             <div class="minimap-inner" id="minimapInner">

@@ -118,6 +118,14 @@ const elements = {
   minimapInner: document.querySelector('#minimapInner'),
   minimap: document.querySelector('#minimap'),
   minimapViewport: document.querySelector('#minimapViewport'),
+  pageBox: document.querySelector('#pageBox'),
+  textLayer: document.querySelector('#textLayer'),
+  find: document.querySelector('#find'),
+  findPrev: document.querySelector('#findPrev'),
+  findNext: document.querySelector('#findNext'),
+  findInfo: document.querySelector('#findInfo'),
+  copySelection: document.querySelector('#copySelection'),
+  selectionInfo: document.querySelector('#selectionInfo'),
 };
 
 const state = {
@@ -132,6 +140,11 @@ const state = {
   pending: null,
   zoom: 'fit',
   renderToken: 0,
+  spans: [],
+  hits: [],
+  hitIndex: 0,
+  canvasWidth: 0,
+  canvasHeight: 0,
 };
 
 function status(message, isError = false) {
@@ -166,6 +179,135 @@ function scaleFor(pageWidth, pageHeight) {
     return Math.min(byWidth, availableHeight / pageHeight);
   }
   return byWidth;
+}
+
+/// Put a selectable, transparent copy of the page's text over the canvas.
+///
+/// The spans come from the same geometry the find box highlights: page-space
+/// rectangles turned into CSS pixels against the page box, with the y axis
+/// flipped (PDF counts from the bottom, the DOM from the top). The glyphs are not
+/// reproduced — the canvas drew those — only the selectable text and its box, and
+/// a span's own box is the unit of selection, which `ADR 0008` says is what a span
+/// is.
+function buildTextLayer(base, pageHeight) {
+  elements.textLayer.replaceChildren();
+  state.spans = [];
+  state.hits = [];
+  state.hitIndex = 0;
+  if (!state.document) {
+    return;
+  }
+  let boxes;
+  let texts;
+  try {
+    boxes = state.document.spans(state.page);
+    texts = state.document.spanTexts(state.page);
+  } catch {
+    return;
+  }
+  const layer = elements.textLayer;
+  for (let index = 0; index < texts.length; index += 1) {
+    const [x0, y0, x1, y1] = Array.from(boxes.slice(index * 4, index * 4 + 4));
+    const span = document.createElement('span');
+    span.textContent = texts[index];
+    span.dataset.index = String(index);
+    span.style.left = `${x0 * base}px`;
+    span.style.top = `${(pageHeight - y1) * base}px`;
+    span.style.width = `${Math.max(1, (x1 - x0) * base)}px`;
+    span.style.height = `${Math.max(1, (y1 - y0) * base)}px`;
+    span.style.fontSize = `${Math.max(1, (y1 - y0) * base)}px`;
+    layer.append(span);
+    state.spans.push({ text: texts[index], x0, y0, x1, y1 });
+  }
+  layer.style.width = `${Math.round(state.canvasWidth)}px`;
+  layer.style.height = `${Math.round(state.canvasHeight)}px`;
+  renderMinimap();
+}
+
+/// The text the browser currently has selected, inside the text layer only.
+function selectedText() {
+  const selection = globalThis.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return '';
+  }
+  const node = selection.anchorNode;
+  if (node && elements.textLayer.contains(node.nodeType === 1 ? node : node.parentNode)) {
+    return selection.toString();
+  }
+  return '';
+}
+
+/// Highlight every hit, with the active one brighter.
+function paintHits() {
+  for (const mark of elements.textLayer.querySelectorAll('.find-mark')) {
+    mark.remove();
+  }
+  if (state.hits.length === 0) {
+    return;
+  }
+  const hit = state.hits[state.hitIndex];
+  const [x0, y0, x1, y1] = hit.box;
+  const mark = document.createElement('div');
+  mark.className = 'find-mark active';
+  mark.style.left = `${x0 * hit.base}px`;
+  mark.style.top = `${(hit.pageHeight - y1) * hit.base}px`;
+  mark.style.width = `${Math.max(1, (x1 - x0) * hit.base)}px`;
+  mark.style.height = `${Math.max(1, (y1 - y0) * hit.base)}px`;
+  elements.textLayer.prepend(mark);
+}
+
+/// Run the current needle, moving to the first hit's page when it is elsewhere.
+async function runFind(needle, move = 0) {
+  state.hits = [];
+  state.hitIndex = 0;
+  if (!needle) {
+    elements.findInfo.textContent = '–';
+    paintHits();
+    return;
+  }
+  let boxes;
+  let texts;
+  try {
+    boxes = state.document.search(needle);
+    texts = state.document.searchTexts(needle);
+  } catch {
+    elements.findInfo.textContent = '0 / 0';
+    return;
+  }
+  const count = Math.floor(boxes.length / 5);
+  for (let index = 0; index < count; index += 1) {
+    const [page, x0, y0, x1, y1] = Array.from(boxes.slice(index * 5, index * 5 + 5));
+    state.hits.push({ page, text: texts[index], box: [x0, y0, x1, y1] });
+  }
+  if (state.hits.length === 0) {
+    elements.findInfo.textContent = '0 / 0';
+    paintHits();
+    return;
+  }
+  state.hitIndex = (state.hitIndex + move + state.hits.length) % state.hits.length;
+  await focusHit();
+}
+
+/// Show one hit: its page, its highlight, and the counter.
+async function focusHit() {
+  const hit = state.hits[state.hitIndex];
+  if (!hit) {
+    return;
+  }
+  const [, pageHeight] = state.document.pageSize(hit.page);
+  const base = scaleFor(...state.document.pageSize(hit.page));
+  hit.base = base;
+  hit.pageHeight = pageHeight;
+  if (hit.page !== state.page) {
+    state.page = hit.page;
+    await render();
+  }
+  elements.findInfo.textContent = `${state.hitIndex + 1} / ${state.hits.length}`;
+  paintHits();
+  const mark = elements.textLayer.querySelector('.find-mark.active');
+  if (mark) {
+    mark.scrollIntoView({ block: 'center', inline: 'center' });
+  }
 }
 
 /// The thumbnail is only useful when the page does not fit, so it hides itself
@@ -237,6 +379,11 @@ async function render() {
     }
     elements.canvas.style.width = `${Math.round(width * base)}px`;
     elements.canvas.style.height = `${Math.round(height * base)}px`;
+    state.canvasWidth = width * base;
+    state.canvasHeight = height * base;
+    // The text layer is rebuilt with every render: the geometry moves with the
+    // page and the zoom, and a stale layer would select the wrong words.
+    buildTextLayer(base, height);
     const pages = state.document.pageCount();
     elements.pageInfo.textContent = `${state.page + 1} / ${pages}`;
     elements.zoomInfo.textContent =
@@ -438,6 +585,37 @@ for (const [index, feature] of FEATURES.entries()) {
 
 elements.prev.addEventListener('click', () => setPage(state.page - 1));
 elements.next.addEventListener('click', () => setPage(state.page + 1));
+elements.copySelection.addEventListener('click', async () => {
+  const text = selectedText();
+  if (!text) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    elements.selectionInfo.textContent = `copied ${text.length} character(s)`;
+  } catch {
+    elements.selectionInfo.textContent = 'the clipboard is not available';
+  }
+});
+
+document.addEventListener('selectionchange', () => {
+  const text = selectedText().trim();
+  elements.copySelection.disabled = text.length === 0;
+  elements.selectionInfo.textContent = text.length === 0 ? '' : text;
+});
+
+elements.find.addEventListener('input', () => {
+  runFind(elements.find.value.trim());
+});
+elements.find.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    runFind(elements.find.value.trim(), event.shiftKey ? -1 : 1);
+  }
+});
+elements.findNext.addEventListener('click', () => runFind(elements.find.value.trim(), 1));
+elements.findPrev.addEventListener('click', () => runFind(elements.find.value.trim(), -1));
+
 elements.zoomIn.addEventListener('click', () => zoomBy(1));
 elements.zoomOut.addEventListener('click', () => zoomBy(-1));
 elements.fit.addEventListener('click', () => zoomTo('fit'));
