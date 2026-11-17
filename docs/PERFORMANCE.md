@@ -62,18 +62,24 @@ cargo run --release -p pdf2-bench -- --check
 
 ## Reference numbers
 
-Measured 2026-11-14 with the committed baseline, release profile,
-`rustc 1.99.1`, Apple M3 (8 cores), macOS `aarch64`:
+Measured 2026-11-17 with the committed baseline, release profile,
+`rustc 1.100.0`, Apple M3 (8 cores), macOS `aarch64`:
 
 | Group | `read_mb_s` | `pages_s` | `text_pages_s` | allocations | alloc bytes |
 | --- | --- | --- | --- | --- | --- |
-| fixtures (9 files) | 77.3 | 147 626 | 115 004 | 2 195 | 246 987 |
-| pages-1 | 70.5 | 80 758 | 74 614 | 223 | 41 072 |
-| pages-100 | 32.5 | 433 382 | 303 205 | 9 459 | 1 050 024 |
-| pages-1000 | 30.9 | 432 968 | 303 141 | 93 317 | 10 129 018 |
-| stream-1mb | 587.9 | 8 501 | 580 | 257 | 14 720 753 |
+| fixtures (36 files) | 139.0 | 182 294 | 127 825 | 9 765 | 828 464 |
+| objects-65000 | 347.5 | 93 | 93 | 86 763 | 9 153 927 |
+| pages-1 | 65.7 | 75 651 | 69 934 | 223 | 20 312 |
+| pages-100 | 31.9 | 421 873 | 296 852 | 9 654 | 986 492 |
+| pages-1000 | 30.5 | 423 671 | 295 639 | 95 313 | 9 843 844 |
+| stream-1mb | 582.7 | 8 693 | 574 | 257 | 16 797 071 |
 
-Peak RSS for the whole run: 14 640 KiB.
+Peak RSS for the whole run: 27 504 KiB.
+
+The `fixtures` group is every `*.pdf` in `tests/fixtures` except the encrypted
+one, so **adding a fixture moves these five numbers** and the baseline must be
+re-recorded in the same change — that is why the four fixtures of 1.4.0 (tiling,
+colour-key, `Tr` and the Type 3 clip) each arrived with a baseline commit.
 
 What the numbers say:
 
@@ -83,8 +89,8 @@ What the numbers say:
 - Text extraction costs roughly 0.7× the page walk on generated pages (same
   glyph mapping path, plus the interpreter), and is the slowest metric for the
   1 MB stream because the content stream is one long text run.
-- Per-page allocations are flat at ~92 allocations per generated page, which is
-  the number to watch when touching the object model.
+- Per-page allocations are flat at ~95 per generated page (96.5 at 100 pages,
+  95.3 at 1000), which is the number to watch when touching the object model.
 
 ## Render time
 
