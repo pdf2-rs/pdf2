@@ -739,6 +739,23 @@ async function main() {
     await new Promise((done) => setTimeout(done, 400));
     check((await ink()) > 3_000, 'the Tr sample clips its text');
 
+    await pick('/JPEG 2000/');
+    await waitFor(`document.querySelector('#factName').textContent === 'jpx.pdf'`, 'the JPX sample');
+    await new Promise((done) => setTimeout(done, 400));
+    check((await ink()) > 5_000, 'the JPX sample decodes and paints its codestream');
+    const jpxStatus = await evaluate(`return document.querySelector('#status').textContent;`);
+    check(!/Do×/.test(jpxStatus), `the JPX sample reports no skipped image: ${jpxStatus}`);
+
+    await pick('/JBIG2/');
+    await waitFor(
+      `document.querySelector('#factName').textContent === 'jbig2-scan.pdf'`,
+      'the JBIG2 sample',
+    );
+    await new Promise((done) => setTimeout(done, 400));
+    check((await ink()) > 5_000, 'the JBIG2 sample decodes and paints its scan');
+    const jbig2Status = await evaluate(`return document.querySelector('#status').textContent;`);
+    check(!/Do×/.test(jbig2Status), `the JBIG2 sample reports no skipped image: ${jbig2Status}`);
+
     await pick('/Type 3 glyph under/');
     await waitFor(
       `document.querySelector('#factName').textContent === 'tr-clip-type3.pdf'`,

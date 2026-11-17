@@ -95,19 +95,37 @@ expect(rejected, 'a wrong password throws');
   }
 }
 
-// Size budget: the wasm-bindgen output that ships to the browser, gzipped.
-// Budgets are documented in docs/PERFORMANCE.md; change both together.
+// Size budgets, one per artefact: the npm package ships the lean build, the demo
+// site ships one with the image decoders compiled in (ADR 0007 — they cost about
+// 138 KiB gzip, which is why they are not in the default). Budgets are documented
+// in docs/PERFORMANCE.md; change both together.
 const BUDGET_GZIP = 364 * 1024;
-const files = [join(pkg, 'pdf2_wasm_bg.wasm'), join(pkg, 'pdf2_wasm.js')];
-let total = 0;
-for (const file of files) {
-  const raw = readFileSync(file);
-  const compressed = gzipSync(raw, { level: 9 }).length;
-  total += compressed;
-  console.log(`size ${file.split('/').pop()}: ${raw.length} raw, ${compressed} gzip`);
-}
-console.log(`size total: ${total} gzip (budget ${BUDGET_GZIP})`);
-expect(total <= BUDGET_GZIP, `bundle is ${total} gzip bytes, over the ${BUDGET_GZIP} budget`);
+const DEMO_BUDGET_GZIP = 505 * 1024;
+
+/// Measure one artefact: the wasm module plus its JS glue, gzipped.
+const measure = (directory, budget, name) => {
+  const files = [join(directory, 'pdf2_wasm_bg.wasm'), join(directory, 'pdf2_wasm.js')];
+  let total = 0;
+  for (const file of files) {
+    const raw = readFileSync(file);
+    const compressed = gzipSync(raw, { level: 9 }).length;
+    total += compressed;
+    console.log(`size ${name} ${file.split('/').pop()}: ${raw.length} raw, ${compressed} gzip`);
+  }
+  console.log(`size ${name} total: ${total} gzip (budget ${budget})`);
+  expect(total <= budget, `the ${name} bundle is ${total} gzip bytes, over the ${budget} budget`);
+  return total;
+};
+
+const npmSize = measure(pkg, BUDGET_GZIP, 'npm');
+const demoSize = measure(join(here, 'demo', 'pkg'), DEMO_BUDGET_GZIP, 'demo');
+// The site must not be smaller than the package by accident: that would mean the
+// feature build silently fell back to the lean one, and the demo's decoder
+// samples would paint nothing.
+expect(
+  demoSize > npmSize + 100 * 1024,
+  `the demo build carries the decoders (${demoSize} against the npm ${npmSize})`,
+);
 
 // The demo is a site, not part of the package: every sample it names must
 // exist, every element it reaches for must be in the page, and the two files it
