@@ -42,6 +42,16 @@ faces, measured properly rather than divided), and the fidelity risk (the fallba
 *every* standard-14 page, so changing it moves goldens and oracle distances at once — a
 measured before/after, not a swap).
 
+## Design (if the refusal lifts)
+
+A refusal still owes the shape of what it refuses, so a future objective has somewhere to
+start: a `Font::Base14 { face }` variant beside `Cff` in `crates/pdf2-render/src/font.rs`,
+fed by an embedded program and selected by `9.6.2.2`'s fourteen names mapped to the three
+families a document can actually reference (`Helvetica`, `Times`, `Courier`, each with its
+bold/italic variants); `/Widths` continues to drive advances, so the face supplies *shapes*
+only and a wrong substitute cannot move text. The wasm cost is taken by ADR 0005's spike
+method — linked, measured, reverted — before any of it is committed.
+
 ## What would change the answer
 
 1. **Demand evidence**: a user-visible failure caused by the fallback — text *positions* from
