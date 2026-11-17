@@ -8,6 +8,30 @@ standard without vendoring it. Where a sub-clause number matters, confirm it
 against that free copy: the numbering below follows the standard's table of
 contents as it stood at ISO 32000-1 for the chapters 2.0 kept unchanged.
 
+## Verified for the deferred plans
+
+The clause numbers the plans in [`docs/plans/`](plans/README.md) rely on. Each was
+checked against the published 2020 edition through the PDF Association's errata
+(`pdf-issues.pdfa.org/32000-2-2020/…`), which quotes the clause headings, rather than
+recalled — and the file naming is what a plan must cite.
+
+| Clause | Name | Needed by |
+| --- | --- | --- |
+| `7.4.7` | JBIG2Decode filter | `jpx-jbig2.md` |
+| `7.4.9` | JPXDecode filter | `jpx-jbig2.md` |
+| `7.5.6` | Incremental updates | `editing.md` |
+| `8.5.3.3` | Filling (non-zero winding) | `tr-clipping.md` |
+| `8.6.5.5` | ICCBased colour spaces | `icc.md` |
+| `8.6.5.8` | Rendering intents | `icc.md` |
+| `8.7.3` | Tiling patterns | `tiling-patterns.md` |
+| `8.7.4` | Shading patterns | `tiling-patterns.md`, `mesh-shadings.md` |
+| `8.7.4.5.5`–`.8` | Shading types 4–7 (mesh) | `mesh-shadings.md` |
+| `8.9.6.4` | Colour key masking | `colour-key-mask.md` |
+| `9.3.6` | Text rendering mode | `tr-clipping.md` |
+| `10.4` | Conversions among device colour spaces | `icc.md` |
+| `12.5.5` | Appearance streams | `forms.md` |
+| `12.7.2`, `12.7.3` | Interactive form dictionary, field dictionaries | `forms.md` |
+
 Status values: **done** = implemented and covered by tests, **partial** = the
 happy path works and edge cases are planned, **planned** = not started, with the
 round from the objective file that will deliver it.

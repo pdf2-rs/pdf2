@@ -15,33 +15,37 @@ Recorded 2026-11-16, at `1.2.1`.
 
 ## 1. Out of scope for the current objective, with a reason
 
-These are the seven things the 2026-11-16 plan (`rounds/plan-20261116.md`, Q13)
+These are the eight things the 2026-11-16 plan (`rounds/plan-20261116.md`, Q13)
 names as deferred rather than missing. Each is a decision with a cost, not an
 oversight.
 
-| Item | Why not now | Evidence | What would unblock it |
-| --- | --- | --- | --- |
-| **Editing an opened document** (`11` in the ranked list) — object mutation, incremental saves | `src/writer.rs` only builds new files; `Document` is read-only by construction (its cache is `RefCell`, its data is borrowed through `Arc`-free slices) | Rank 11: `lopdf`'s 30.3M downloads is the demand; a release of its own | A mutation model (copy-on-write objects, a free-list, an `/Prev` chain) — i.e. a release, not a round |
-| **Forms *filling* and annotation *authoring*** (rank `12`'s second half) | Reading and *rendering* annotation appearance streams shipped (`12b`); writing `/Annots` and `/AcroForm` values is editing again | `docs/FEATURES.md` `12.7`, `12.5` rows: appearance streams shipped, authoring unplanned | Rank 11, plus a form model and a `/NeedAppearances` decision |
-| **Conformance validation** (PDF/A, PDF 2.0, rank `13`) | A validator is a different product: no rendering synergy, and the reference is `veraPDF` (Java) | Rank 13 in `docs/ROADMAP-NEXT.md` | A separate crate reading the same objects — a project, not a round |
-| **JPX and JBIG2 decoding** — **unblocked 2026-11-17**, now a size decision | Both decoders need `rust-version = "1.92"`, and the floor is now **1.100** ([ADR 0005](adr/0005-msrv-1-100.md)), so nothing technical blocks them. What remains is the bundle: measured by linking them, JPEG 2000 costs **+76 052 gzip**, JBIG2 **+62 495**, both **+137 502** — against an npm budget of 356 KiB, so both would need **~499 KiB** (37 % more), or a non-default `pdf2-wasm` feature that the browser demo would not get | `docs/adr/0005-msrv-1-100.md` (the measurement table); rank 9 in `docs/ROADMAP-NEXT.md` | A budget decision: raise the npm budget, or ship them behind a feature and give the demo a second build. The browser/WASI budgets are unaffected either way, because those modules contain no renderer |
-| **ICC colour management** (`10b`) | Still a fidelity decision, not a bug: the engines disagree with each other by **8 %** on the CMYK page, and ICCBased **images** already decode by component count. Measured 2026-11-16: `cmykjpeg.pdf` decodes correctly — 8 mean absolute units from an independent decoder — yet sits **8.455 mean** from the engines' 2.000 because they honour `/Intent /RelativeColorimetric`. **Since 2026-11-17 the dependency question is answered**: `moxcms` 0.9.2 needs 1.89 (below the floor), is `BSD-3-Clause OR Apache-2.0` (already allowed by `deny.toml`), and is pure Rust — so the blocker is now purely the fidelity decision and a size measurement like JPX's | `docs/RENDERING-QUALITY.md`; `docs/adr/0005-msrv-1-100.md` | Decide to be more precise than the inter-oracle spread, measure the profile paths before and after, and take the size verdict (`cargo xtask wasm-package` with the feature on) |
-| **Tiling patterns** (`/PatternType 1`) | Painting a tile means flattening a content stream into a cell and repeating it; two corpus pages use one (`colorkeymask.pdf` is one of them) | `docs/RENDERING.md` says the operator is reported; `crates/pdf2-render/src/walk.rs` handles `/PatternType 2` only | A pattern-tile renderer — a canvas, a cell, and a repeat rule — which is a round of its own |
-| **Colour-key `/Mask`** | One corpus page (`colorkeymask.pdf`), and it is the *same* page as the tiling pattern, so its case cannot be measured in isolation | `docs/RENDERING.md` masks row | Either the tiling patterns above (the page needs both), or a generated fixture proving the key alone |
-| **The clipping half of `Tr` modes 4–7** | Clipping text to its glyph outlines needs the path as a clip *without* painting; no corpus page asks for it, so nothing would prove it | `crates/pdf2-render/src/walk.rs` honours the fill and stroke halves (modes 0–3) and reports the rest | A generated fixture with `Tr 7` around an image — a hand-built page, not something the corpus offers |
+| Item | Why not now | Evidence | What would unblock it | Planned in |
+| --- | --- | --- | --- | --- |
+| **Editing an opened document** (`11` in the ranked list) — object mutation, incremental saves | `src/writer.rs` only builds new files; `Document` is read-only by construction (its cache is `RefCell`, its data is borrowed through `Arc`-free slices) | Rank 11: `lopdf`'s 30.3M downloads is the demand; a release of its own | A mutation model (copy-on-write objects, a free-list, an `/Prev` chain) — i.e. a release, not a round | [index](plans/README.md) |
+| **Forms *filling* and annotation *authoring*** (rank `12`'s second half) | Reading and *rendering* annotation appearance streams shipped (`12b`); writing `/Annots` and `/AcroForm` values is editing again | `docs/FEATURES.md` `12.7`, `12.5` rows: appearance streams shipped, authoring unplanned | Rank 11, plus a form model and a `/NeedAppearances` decision | [index](plans/README.md) |
+| **Conformance validation** (PDF/A, PDF 2.0, rank `13`) | A validator is a different product: no rendering synergy, and the reference is `veraPDF` (Java) | Rank 13 in `docs/ROADMAP-NEXT.md` | A separate crate reading the same objects — a project, not a round | [index](plans/README.md) |
+| **JPX and JBIG2 decoding** — **unblocked 2026-11-17**, now a size decision | Both decoders need `rust-version = "1.92"`, and the floor is now **1.100** ([ADR 0005](adr/0005-msrv-1-100.md)), so nothing technical blocks them. What remains is the bundle: measured by linking them, JPEG 2000 costs **+76 052 gzip**, JBIG2 **+62 495**, both **+137 502** — against an npm budget of 356 KiB, so both would need **~499 KiB** (37 % more), or a non-default `pdf2-wasm` feature that the browser demo would not get | `docs/adr/0005-msrv-1-100.md` (the measurement table); rank 9 in `docs/ROADMAP-NEXT.md` | A budget decision: raise the npm budget, or ship them behind a feature and give the demo a second build. The browser/WASI budgets are unaffected either way, because those modules contain no renderer | [index](plans/README.md) |
+| **ICC colour management** (`10b`) | Still a fidelity decision, not a bug: the engines disagree with each other by **8 %** on the CMYK page, and ICCBased **images** already decode by component count. Measured 2026-11-16: `cmykjpeg.pdf` decodes correctly — 8 mean absolute units from an independent decoder — yet sits **8.455 mean** from the engines' 2.000 because they honour `/Intent /RelativeColorimetric`. **Since 2026-11-17 the dependency question is answered**: `moxcms` 0.9.2 needs 1.89 (below the floor), is `BSD-3-Clause OR Apache-2.0` (already allowed by `deny.toml`), and is pure Rust — so the blocker is now purely the fidelity decision and a size measurement like JPX's | `docs/RENDERING-QUALITY.md`; `docs/adr/0005-msrv-1-100.md` | Decide to be more precise than the inter-oracle spread, measure the profile paths before and after, and take the size verdict (`cargo xtask wasm-package` with the feature on) | [index](plans/README.md) |
+| **Tiling patterns** (`/PatternType 1`) | Painting a tile means flattening a content stream into a cell and repeating it; two corpus pages use one (`colorkeymask.pdf` is one of them) | `docs/RENDERING.md` says the operator is reported; `crates/pdf2-render/src/walk.rs` handles `/PatternType 2` only | A pattern-tile renderer — a canvas, a cell, and a repeat rule — which is a round of its own | [index](plans/README.md) |
+| **Colour-key `/Mask`** | One corpus page (`colorkeymask.pdf`), and it is the *same* page as the tiling pattern, so its case cannot be measured in isolation | `docs/RENDERING.md` masks row | Either the tiling patterns above (the page needs both), or a generated fixture proving the key alone | [index](plans/README.md) |
+| **The clipping half of `Tr` modes 4–7** | Clipping text to its glyph outlines needs the path as a clip *without* painting; no corpus page asks for it, so nothing would prove it | `crates/pdf2-render/src/walk.rs` honours the fill and stroke halves (modes 0–3) and reports the rest | A generated fixture with `Tr 7` around an image — a hand-built page, not something the corpus offers | [index](plans/README.md) |
+
+Mesh shadings (`/ShadingType` 4–7) are deferred by name in the renderer
+(`crates/pdf2-render/src/shading.rs:127`) rather than by a row in this table, and are
+planned in the same index: [`docs/plans/README.md`](plans/README.md).
 
 ## 2. Refused by design
 
 These are non-goals in [`docs/adr/0001-differentiators.md`](adr/0001-differentiators.md),
 not gaps. They will not be scheduled.
 
-| Item | ADR line | Why |
-| --- | --- | --- |
-| Racing hayro's throughput | non-goal 1 | The differentiator is one model for render, extract and rewrite — not a benchmark |
-| A C or C++ core, `unsafe`, or a bundled wasm decoder | non-goal 2 | `#![forbid(unsafe_code)]`, `no_std` and the wasm size budgets are the shape of the crate |
-| JavaScript actions and scripting | non-goal 3 | A viewer's job, and a security surface |
-| PDF/A conversion, rewriting a document into a profile | non-goal 4 | Validation is item 13 above; conversion is editing |
-| Rendering with system fonts for standard-14 text | measured, not decided | There is no font in the crate to draw with; `docs/RENDERING-QUALITY.md` records what that costs (the standard-14 page measures 21.271 mean against the oracles' 1.400) and it is why such a page is proven by its report and ink, not by a pixel comparison |
+| Item | ADR line | Why | Planned in |
+| --- | --- | --- | --- |
+| Racing hayro's throughput | non-goal 1 | The differentiator is one model for render, extract and rewrite — not a benchmark | — |
+| A C or C++ core, `unsafe`, or a bundled wasm decoder | non-goal 2 | `#![forbid(unsafe_code)]`, `no_std` and the wasm size budgets are the shape of the crate | — |
+| JavaScript actions and scripting | non-goal 3 | A viewer's job, and a security surface | — |
+| PDF/A conversion, rewriting a document into a profile | non-goal 4 | Validation is item 13 above; conversion is editing | — |
+| Rendering with system fonts for standard-14 text | measured, not decided | There is no font in the crate to draw with; `docs/RENDERING-QUALITY.md` records what that costs (the standard-14 page measures 21.271 mean against the oracles' 1.400) and it is why such a page is proven by its report and ink, not by a pixel comparison | [index](plans/README.md) |
 
 ## 3. Reported, not drawn wrong
 
