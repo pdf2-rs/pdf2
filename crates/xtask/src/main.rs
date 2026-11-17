@@ -341,14 +341,36 @@ fn wasm_package() -> Result<(), String> {
             "tests/fixtures/type1.pdf",
             "crates/pdf2-wasm/demo/samples/type1.pdf",
         ),
+        // The 1.4 samples: the three painting features, one page each, plus the
+        // Type 3 page that shows what happens when a clip has no outline to take.
+        // The tiling showcase is the corpus page, not the crate's own fixture:
+        // `tiling.pdf` paints a 15x20 pt lattice to keep its pixel assertions
+        // exact, which is a nearly blank page in a 200 pt viewer, while
+        // `colorkeymask.pdf` fills a 200x267 rectangle with one cell.
+        (
+            "corpus/tier-a/colorkeymask.pdf",
+            "crates/pdf2-wasm/demo/samples/colorkeymask.pdf",
+        ),
+        (
+            "tests/fixtures/colour-key.pdf",
+            "crates/pdf2-wasm/demo/samples/colour-key.pdf",
+        ),
+        (
+            "tests/fixtures/tr-clip.pdf",
+            "crates/pdf2-wasm/demo/samples/tr-clip.pdf",
+        ),
+        (
+            "tests/fixtures/tr-clip-type3.pdf",
+            "crates/pdf2-wasm/demo/samples/tr-clip-type3.pdf",
+        ),
     ] {
         copy(from, to)?;
     }
-    // Two samples come from pdf.js's corpus (Apache-2.0), so the page ships the
+    // Three samples come from pdf.js's corpus (Apache-2.0), so the page ships the
     // attribution beside them rather than only in the repository.
     std::fs::write(
         "crates/pdf2-wasm/demo/samples/NOTICE.md",
-        "`cff.pdf` and `cjk.pdf` are from the pdf.js test corpus,\n\
+        "`cff.pdf`, `cjk.pdf` and `colorkeymask.pdf` are from the pdf.js test corpus,\n\
          commit d60bc7426aa0968d5b95ff8ca3a76dbc6ce23a3a, used under the\n\
          Apache License 2.0 (`corpus/LICENSES/Apache-2.0.txt`).\n\
          They are copied by `cargo xtask wasm-package`, not edited.\n",

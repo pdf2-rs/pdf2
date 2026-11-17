@@ -31,6 +31,12 @@ const SAMPLES = [
   { file: 'samples/shading.pdf', title: 'Gradients: axial, radial, function-based' },
   { file: 'samples/blend-modes.pdf', title: 'The sixteen blend modes' },
   { file: 'samples/type1.pdf', title: 'A Type 1 font program, drawn' },
+  // 1.4's own samples: the three painting features, then the page that shows what
+  // happens when a clip has no outline — reported, not silently blank.
+  { file: 'samples/colorkeymask.pdf', title: 'A tiling pattern whose key hides its samples' },
+  { file: 'samples/colour-key.pdf', title: 'An image /Mask that hides its own samples' },
+  { file: 'samples/tr-clip.pdf', title: 'Clipped text: Tr modes 4 to 7' },
+  { file: 'samples/tr-clip-type3.pdf', title: 'A Type 3 glyph under a text clip (reported)' },
 ];
 
 // Each entry names a sample (index into SAMPLES) and the page it starts on, so a
@@ -64,6 +70,12 @@ const FEATURES = [
   { label: 'A radial gradient with its own colour stops', sample: 10, page: 1 },
   { label: 'All sixteen /BM blend modes', sample: 11, page: 0 },
   { label: 'A Type 1 font program (`/FontFile`)', sample: 12, page: 0 },
+  // 1.4
+  { label: 'A tiling pattern filling a rectangle', sample: 13, page: 0 },
+  { label: 'Its colour key: the red band is the page', sample: 13, page: 0 },
+  { label: 'A colour key that hides its own samples', sample: 14, page: 0 },
+  { label: '`Tr` 7 clips to the glyph and paints nothing', sample: 15, page: 0 },
+  { label: '`Tr` 4 fills the glyph and clips what follows', sample: 15, page: 1 },
 ];
 
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];

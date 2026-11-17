@@ -711,6 +711,47 @@ async function main() {
     await new Promise((done) => setTimeout(done, 400));
     check((await ink()) > 3_000, 'the Type 1 sample draws its glyphs');
 
+    // 1.4's samples: the tile is painted rather than reported, the key hides its
+    // samples, and the Type 3 page says `text-clip` while still drawing the rest.
+    await pick('/tiling pattern/');
+    await waitFor(
+      `document.querySelector('#factName').textContent === 'colorkeymask.pdf'`,
+      'the tiling sample',
+    );
+    await new Promise((done) => setTimeout(done, 400));
+    check((await ink()) > 3_000, 'the tiling sample paints its cells');
+    const tilingStatus = await evaluate(`return document.querySelector('#status').textContent;`);
+    check(
+      !/unsupported|pattern×/i.test(tilingStatus),
+      `the tiling sample reports no skipped pattern: ${tilingStatus}`,
+    );
+
+    await pick('/\\/Mask/');
+    await waitFor(
+      `document.querySelector('#factName').textContent === 'colour-key.pdf'`,
+      'the colour-key sample',
+    );
+    await new Promise((done) => setTimeout(done, 400));
+    check((await ink()) > 1_000, 'the colour-key sample draws its keyed image');
+
+    await pick('/Clipped text/');
+    await waitFor(`document.querySelector('#factName').textContent === 'tr-clip.pdf'`, 'the Tr sample');
+    await new Promise((done) => setTimeout(done, 400));
+    check((await ink()) > 3_000, 'the Tr sample clips its text');
+
+    await pick('/Type 3 glyph under/');
+    await waitFor(
+      `document.querySelector('#factName').textContent === 'tr-clip-type3.pdf'`,
+      'the Type 3 clip sample',
+    );
+    await new Promise((done) => setTimeout(done, 400));
+    const type3ClipStatus = await evaluate(`return document.querySelector('#status').textContent;`);
+    check(
+      /text-clip/.test(type3ClipStatus),
+      `the Type 3 clip sample names what it cannot do: ${type3ClipStatus}`,
+    );
+    check((await ink()) > 3_000, 'and still draws the rest of the page');
+
     // Nothing above should have thrown or logged an error.
     const errors = [];
     for (const event of cdp.events) {
