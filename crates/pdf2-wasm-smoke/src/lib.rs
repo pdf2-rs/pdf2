@@ -25,7 +25,7 @@ thread_local! {
 ///
 /// Any previous contents are dropped; the buffer is zero-filled so the host can
 /// copy into it without worrying about stale bytes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pdf2_input(len: usize) -> *mut u8 {
     INPUT.with(|input| {
         let mut input = input.borrow_mut();
@@ -36,7 +36,7 @@ pub extern "C" fn pdf2_input(len: usize) -> *mut u8 {
 }
 
 /// Page count of the PDF in the input buffer, or `0` when it cannot be read.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pdf2_pages(len: usize) -> u32 {
     INPUT.with(|input| {
         let input = input.borrow();
@@ -52,7 +52,7 @@ pub extern "C" fn pdf2_pages(len: usize) -> u32 {
 
 /// Extract the first page's text into the output buffer and return its length,
 /// or `0` when the file cannot be read or interpreted.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pdf2_text(len: usize) -> u32 {
     INPUT.with(|input| {
         let input = input.borrow();
@@ -78,7 +78,7 @@ pub extern "C" fn pdf2_text(len: usize) -> u32 {
 }
 
 /// Pointer to the output buffer filled by [`pdf2_text`].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pdf2_output_ptr() -> *const u8 {
     OUTPUT.with(|output| output.borrow().as_ptr())
 }
