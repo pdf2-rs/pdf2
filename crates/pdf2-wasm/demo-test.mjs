@@ -500,6 +500,131 @@ async function main() {
       'Fit hides the minimap again',
     );
 
+    // The text layer: one selectable span per line, laid over the canvas at the
+    // page's own coordinates. Selection is what a reader does with a PDF, and it
+    // reads the same spans the find box highlights. The sample has to be one whose
+    // text is on the page rather than inside a form or a Type 3 glyph run, so this
+    // check switches to the plain text sample first.
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      select.value = [...select.options].find((option) => /Text and accents/.test(option.textContent)).value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(`document.querySelector('#factName').textContent === 'text.pdf'`, 'the text sample');
+    await new Promise((done) => setTimeout(done, 300));
+    const layer = await evaluate(`
+      const canvas = document.querySelector('#canvas').getBoundingClientRect();
+      const layer = document.querySelector('#textLayer').getBoundingClientRect();
+      const spans = [...document.querySelectorAll('#textLayer span')];
+      return {
+        canvas: [Math.round(canvas.width), Math.round(canvas.height)],
+        layer: [Math.round(layer.width), Math.round(layer.height)],
+        count: spans.length,
+        first: spans[0] ? spans[0].textContent : '',
+        page: document.querySelector('#text').textContent,
+      };
+    `);
+    check(layer.count > 0, `the text layer has spans: ${layer.count}`);
+    check(
+      Math.abs(layer.canvas[0] - layer.layer[0]) <= 2 && Math.abs(layer.canvas[1] - layer.layer[1]) <= 2,
+      `the layer covers the canvas: ${layer.layer} against ${layer.canvas}`,
+    );
+    check(
+      layer.first.trim().length > 0 && layer.page.includes(layer.first.trim().slice(0, 8)),
+      `the first span is the page's own text: ${JSON.stringify(layer.first)}`,
+    );
+
+    const selected = await evaluate(`
+      const span = document.querySelector('#textLayer span');
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      return {
+        text: span.textContent,
+        info: document.querySelector('#selectionInfo').textContent,
+        copyDisabled: document.querySelector('#copySelection').disabled,
+      };
+    `);
+    check(
+      selected.info.trim() === selected.text.trim() && selected.copyDisabled === false,
+      `selecting a line offers it: ${JSON.stringify(selected.info)}`,
+    );
+
+    // Copy hands the selection to the clipboard; stub it, since a headless profile
+    // has no permission to read one back.
+    await evaluate(`
+      globalThis.__copied = null;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (text) => { globalThis.__copied = text; } },
+      });
+      document.querySelector('#copySelection').click();
+    `);
+    await new Promise((done) => setTimeout(done, 100));
+    const copied = await evaluate(`return globalThis.__copied;`);
+    check(
+      typeof copied === 'string' && copied.trim() === selected.text.trim(),
+      `the copy button passes the selection on: ${JSON.stringify(copied)}`,
+    );
+
+    // The find box reads the library's search: the counter, one mark per hit, and
+    // next moving the active one.
+    const needle = layer.first.trim().split(/\s+/)[0];
+    const found = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = ${JSON.stringify(needle)};
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 200));
+      return {
+        info: document.querySelector('#findInfo').textContent,
+        marks: document.querySelectorAll('#textLayer .find-mark').length,
+        active: [...document.querySelectorAll('#textLayer .find-mark')].findIndex((mark) => mark.classList.contains('active')),
+      };
+    `);
+    check(/^\d+ \/ \d+$/.test(found.info), `the find box counts its hits: ${found.info}`);
+    const total = Number(found.info.split('/')[1].trim());
+    check(total >= 1, `"${needle}" is found at least once: ${found.info}`);
+    check(found.marks === 1, `one mark is drawn for the active hit: ${found.marks}`);
+
+    const nextInfo = await evaluate(`
+      document.querySelector('#findNext').click();
+      await new Promise((done) => setTimeout(done, 200));
+      return document.querySelector('#findInfo').textContent;
+    `);
+    check(
+      total === 1 || nextInfo !== found.info,
+      `next moves to another hit: ${found.info} then ${nextInfo}`,
+    );
+
+    // An empty box clears the counter rather than leaving the last result behind.
+    const cleared = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = '';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 100));
+      return {
+        info: document.querySelector('#findInfo').textContent,
+        marks: document.querySelectorAll('#textLayer .find-mark').length,
+      };
+    `);
+    check(cleared.info === '–' && cleared.marks === 0, `an empty needle clears: ${cleared.info}`);
+
+    // Back to the sample the checks below expect, since this block borrowed the
+    // text one for its spans.
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      select.value = [...select.options].find((option) => /Calibration/.test(option.textContent)).value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(
+      `document.querySelector('#factName').textContent === 'calibration.pdf'`,
+      'the calibration sample back',
+    );
+    await new Promise((done) => setTimeout(done, 300));
+
     // Download hands over the document that is on screen.
     const download = await evaluate(`
       window.__downloads = [];
