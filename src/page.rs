@@ -77,7 +77,7 @@ impl Rect {
                     return Err(Error::Malformed {
                         what: "a page box must be an array of four numbers",
                         offset: None,
-                    })
+                    });
                 }
             };
         }
@@ -262,7 +262,7 @@ impl Document {
                         return Err(Error::Malformed {
                             what: "page tree node is not a dictionary",
                             offset: None,
-                        })
+                        });
                     }
                 }
             }
@@ -271,7 +271,7 @@ impl Document {
                 return Err(Error::Malformed {
                     what: "page tree node is not a dictionary or reference",
                     offset: None,
-                })
+                });
             }
         };
 
@@ -299,14 +299,14 @@ impl Document {
                         return Err(Error::Malformed {
                             what: "/Kids must be an array",
                             offset: None,
-                        })
+                        });
                     }
                 },
                 _ => {
                     return Err(Error::Malformed {
                         what: "/Kids must be an array",
                         offset: None,
-                    })
+                    });
                 }
             };
             for kid in &kids {
@@ -371,7 +371,7 @@ fn normalise_rotate(value: &Object) -> Result<i64> {
             return Err(Error::Malformed {
                 what: "/Rotate must be an integer",
                 offset: None,
-            })
+            });
         }
     };
     if value % 90 != 0 {
@@ -397,7 +397,7 @@ fn page_contents(dict: &Dictionary) -> Result<Vec<ObjectId>> {
                         return Err(Error::Malformed {
                             what: "/Contents array entries must be stream references",
                             offset: None,
-                        })
+                        });
                     }
                 }
             }
@@ -412,7 +412,7 @@ fn page_contents(dict: &Dictionary) -> Result<Vec<ObjectId>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalise_rotate, page_contents, Rect};
+    use super::{Rect, normalise_rotate, page_contents};
     use crate::object::{Dictionary, Object, ObjectId};
 
     #[test]
@@ -447,13 +447,15 @@ mod tests {
     #[test]
     fn malformed_rectangles_are_errors() {
         assert!(Rect::from_array(&[Object::Integer(0), Object::Integer(0)]).is_err());
-        assert!(Rect::from_array(&[
-            Object::Integer(0),
-            Object::Integer(0),
-            Object::Integer(1),
-            Object::name("top"),
-        ])
-        .is_err());
+        assert!(
+            Rect::from_array(&[
+                Object::Integer(0),
+                Object::Integer(0),
+                Object::Integer(1),
+                Object::name("top"),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

@@ -191,7 +191,7 @@ impl Parser<'_> {
             match byte {
                 b'"' => {
                     return String::from_utf8(bytes)
-                        .map_err(|_| "string is not valid UTF-8".to_owned())
+                        .map_err(|_| "string is not valid UTF-8".to_owned());
                 }
                 b'\\' => {
                     let Some(escaped) = self.next() else {
@@ -312,7 +312,7 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{number, parse, string, Json};
+    use super::{Json, number, parse, string};
 
     #[test]
     fn scalars_round_trip() {

@@ -151,7 +151,7 @@ pub fn distance(left: &Ppm, right: &Ppm) -> Result<Distance, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{distance, downsample, Ppm};
+    use super::{Ppm, distance, downsample};
 
     fn solid(width: u32, height: u32, colour: [u8; 3]) -> Ppm {
         let mut pixels = Vec::new();

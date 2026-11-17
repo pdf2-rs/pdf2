@@ -5,7 +5,7 @@
 //! byte-for-byte, and the parser turns those same bytes back into the object.
 
 use pdf2::{
-    parse_indirect_object, parse_object, Dictionary, IndirectObject, Object, ObjectId, PdfString,
+    Dictionary, IndirectObject, Object, ObjectId, PdfString, parse_indirect_object, parse_object,
 };
 
 /// The inline corpus shared by the write and parse halves of the round-trip.

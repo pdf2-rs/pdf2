@@ -125,7 +125,7 @@ impl Shading {
             Some(4..=7) => {
                 return Err(Error::Unsupported {
                     what: "mesh shadings (types 4 to 7)",
-                })
+                });
             }
             _ => return Err(Error::malformed("a shading without a known /ShadingType")),
         };
@@ -384,7 +384,7 @@ fn matrix_operand(items: &[Object]) -> Option<Matrix> {
 
 #[cfg(test)]
 mod tests {
-    use super::{color_in, parse_space, Color};
+    use super::{Color, color_in, parse_space};
     use pdf2::{Document, Object};
 
     fn corpus(name: &str) -> Document {

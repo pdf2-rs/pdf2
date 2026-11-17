@@ -28,8 +28,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use pdf2::Document;
-use pdf2_render::{render_page_number, RenderOptions};
-use ppm::{distance, downsample, Distance, Ppm};
+use pdf2_render::{RenderOptions, render_page_number};
+use ppm::{Distance, Ppm, distance, downsample};
 
 /// One page to compare.
 struct Case {

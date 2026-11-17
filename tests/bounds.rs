@@ -135,7 +135,7 @@ fn the_budget_does_not_disturb_the_committed_fixtures() {
 /// so the test does not need the gigabyte to exist.
 fn bomb_stream(total: usize) -> Vec<u8> {
     use miniz_oxide::deflate::core::{
-        compress, create_comp_flags_from_zip_params, CompressorOxide, TDEFLFlush, TDEFLStatus,
+        CompressorOxide, TDEFLFlush, TDEFLStatus, compress, create_comp_flags_from_zip_params,
     };
     let mut state = CompressorOxide::new(create_comp_flags_from_zip_params(1, 15, 0));
     let chunk = vec![0_u8; 1 << 20];

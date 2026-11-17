@@ -23,8 +23,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::geom::Point;
 use crate::Glyph;
+use crate::geom::Point;
 
 /// The `eexec` section key (`t1disasm`, Adobe Type 1 Font Format §7.2).
 const EEXEC_R: u16 = 55665;
@@ -594,7 +594,7 @@ fn parse_int(token: &[u8]) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{find, Program};
+    use super::{Program, find};
 
     fn fixture() -> Program {
         let data = std::fs::read(concat!(

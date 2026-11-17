@@ -265,9 +265,11 @@ fn a_truncated_flate_payload_is_an_error_not_a_panic() {
         let document = document_with_stream("/Filter /FlateDecode", &payload[..end]);
         let _ = document.stream_data(ObjectId::new(2, 0));
     }
-    assert!(document_with_stream("/Filter /FlateDecode", &payload)
-        .stream_data(ObjectId::new(2, 0))
-        .is_ok());
+    assert!(
+        document_with_stream("/Filter /FlateDecode", &payload)
+            .stream_data(ObjectId::new(2, 0))
+            .is_ok()
+    );
 }
 
 #[test]

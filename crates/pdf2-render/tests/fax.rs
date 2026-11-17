@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use pdf2::Document;
-use pdf2_render::{render_page_number, RenderOptions, RenderedPage};
+use pdf2_render::{RenderOptions, RenderedPage, render_page_number};
 
 fn corpus(name: &str) -> Vec<u8> {
     let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))

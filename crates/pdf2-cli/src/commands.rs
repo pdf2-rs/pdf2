@@ -205,11 +205,7 @@ fn path_text(path: &Path) -> String {
 }
 
 fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
+    if value { "yes" } else { "no" }
 }
 
 fn object_text(id: ObjectId) -> String {

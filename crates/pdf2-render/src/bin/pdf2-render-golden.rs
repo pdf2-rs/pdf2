@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use pdf2::Document;
-use pdf2_render::{encode_png, render_page_number, RenderOptions};
+use pdf2_render::{RenderOptions, encode_png, render_page_number};
 
 const FIXTURE: &str = "tests/fixtures/paths.pdf";
 const GOLDEN: &str = "tests/fixtures/golden/paths.png";

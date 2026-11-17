@@ -27,7 +27,7 @@
 use alloc::vec::Vec;
 
 use aes::cipher::{
-    block_padding::NoPadding, BlockDecrypt, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit,
+    BlockDecrypt, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, block_padding::NoPadding,
 };
 use aes::{Aes128, Aes256};
 use sha2::{Digest, Sha256, Sha384, Sha512};
@@ -88,7 +88,7 @@ impl Encryption {
                 return Err(Error::Malformed {
                     what: "only the /Standard security handler is supported",
                     offset: None,
-                })
+                });
             }
         }
         let version = integer(dict, b"V")?;
@@ -98,7 +98,7 @@ impl Encryption {
                 return Err(Error::Malformed {
                     what: "/EncryptMetadata must be a boolean",
                     offset: None,
-                })
+                });
             }
             None => true,
         };
@@ -183,7 +183,7 @@ impl Encryption {
                 return Err(Error::Malformed {
                     what: "revision 2 to 4 keys are 40 to 128 bits, in whole bytes",
                     offset: None,
-                })
+                });
             }
         };
         let owner = bytes(dict, b"O", 32)?;
@@ -387,7 +387,7 @@ impl Encryption {
         match stream.dict().get(b"Type").and_then(Object::as_name) {
             Some(name) if name == b"XRef" => return Ok(stream.data().to_vec()),
             Some(name) if name == b"Metadata" && !self.encrypt_metadata => {
-                return Ok(stream.data().to_vec())
+                return Ok(stream.data().to_vec());
             }
             _ => {}
         }
@@ -888,7 +888,7 @@ fn bytes(dict: &Dictionary, key: &[u8], length: usize) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_r6, unpad, Encryption};
+    use super::{Encryption, hash_r6, unpad};
     use crate::object::{Dictionary, Object, PdfString};
 
     #[test]
@@ -1037,7 +1037,7 @@ mod tests {
 
 #[cfg(test)]
 mod nist {
-    use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+    use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::NoPadding};
 
     fn hex(text: &str) -> Vec<u8> {
         text.as_bytes()

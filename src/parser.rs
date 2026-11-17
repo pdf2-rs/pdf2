@@ -171,7 +171,7 @@ impl<'a> Parser<'a> {
                 return Err(Error::Malformed {
                     what: "object number",
                     offset: Some(offset),
-                })
+                });
             }
         };
         let generation = match self.next_token()? {
@@ -180,7 +180,7 @@ impl<'a> Parser<'a> {
                 return Err(Error::Malformed {
                     what: "object generation",
                     offset: Some(offset),
-                })
+                });
             }
         };
         if number < 1 {
@@ -374,7 +374,7 @@ impl<'a> Parser<'a> {
                     return Err(Error::Malformed {
                         what: "dictionary key",
                         offset: Some(self.lexer.position()),
-                    })
+                    });
                 }
             }
         }
@@ -425,7 +425,7 @@ fn stream_data_start(after_keyword: usize, input: &[u8]) -> Result<usize> {
             return Err(Error::Malformed {
                 what: "stream keyword without an end-of-line",
                 offset: Some(start),
-            })
+            });
         }
     }
     Ok(start)
@@ -493,7 +493,7 @@ fn scan_endstream(input: &[u8], start: usize) -> Result<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_indirect_object, parse_object, IndirectObject, LengthResolver, Parser, MAX_DEPTH,
+        IndirectObject, LengthResolver, MAX_DEPTH, Parser, parse_indirect_object, parse_object,
     };
     use crate::error::Error;
     use crate::object::{Dictionary, Object, ObjectId};

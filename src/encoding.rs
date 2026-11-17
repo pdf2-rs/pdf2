@@ -94,7 +94,7 @@ impl Encoding {
                     return Err(Error::Malformed {
                         what: "/Differences entries must be integers or names",
                         offset: None,
-                    })
+                    });
                 }
             }
         }
@@ -285,7 +285,7 @@ fn glyph_name_character_lookup(name: &[u8]) -> Option<char> {
 
 #[cfg(test)]
 mod tests {
-    use super::{glyph_name_character, Encoding};
+    use super::{Encoding, glyph_name_character};
     use crate::object::Object;
 
     #[test]

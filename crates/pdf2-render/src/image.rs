@@ -410,7 +410,7 @@ impl ColourSpace {
                             _ => {
                                 return Err(Error::malformed(
                                     "Indexed image without a lookup table",
-                                ))
+                                ));
                             }
                         };
                         Ok(Self::Indexed {

@@ -188,7 +188,7 @@ impl DocumentBuilder {
                 return Err(Error::Malformed {
                     what: "the catalog object was removed from the document",
                     offset: None,
-                })
+                });
             }
         }
 
@@ -394,7 +394,7 @@ fn number_object(value: f64) -> Object {
 
 #[cfg(test)]
 mod tests {
-    use super::{pack_object_stream, rect_object, DocumentBuilder, XMP_PACKET};
+    use super::{DocumentBuilder, XMP_PACKET, pack_object_stream, rect_object};
     use crate::object::Object;
     use crate::page::Rect;
 
