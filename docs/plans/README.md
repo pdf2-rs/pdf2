@@ -64,8 +64,8 @@ file that does not exist.
 | [`editing.md`](editing.md) | Editing an opened document (rank 11) | `7.5.6` | written 2026-11-17 |
 | [`forms.md`](forms.md) | Forms filling and annotation authoring (rank 12) | `12.7.2`, `12.7.3`, `12.5.5` | written 2026-11-17 |
 | [`validation.md`](validation.md) | Conformance validation (rank 13) | scope decision, no single clause | verdict 2026-11-17: structural `--strict`, PDF/A refused |
-| `standard-14-fonts.md` | Standard-14 text with real outlines | no clause; a licence question | not written |
-| `mesh-shadings.md` | `/ShadingType` 4–7, refused by name | `8.7.4.5.5`–`.8` | not written |
+| [`standard-14-fonts.md`](standard-14-fonts.md) | Standard-14 text with real outlines | no clause; a licence question | refused 2026-11-17, with numbers |
+| [`mesh-shadings.md`](mesh-shadings.md) | `/ShadingType` 4–7, refused by name | `8.7.4.5.5`–`.8` | written 2026-11-17 |
 
 The clause numbers above are the ones confirmed against the published 2020 edition and
 listed in [`docs/SPEC-MAP.md`](../SPEC-MAP.md); chapter 10 is the one place where the
