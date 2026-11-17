@@ -334,6 +334,60 @@ fn lines_come_out_in_reading_order_not_paint_order() {
     );
 }
 
+/// A one-page PDF whose content stream is `content`, on a base-14 font.
+fn page_with(content: &str) -> Vec<u8> {
+    let body = format!(
+        "<< /Length {} >>\nstream\n{content}\nendstream",
+        content.len()
+    );
+    pdf(&[
+        (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+        (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+        (
+            3,
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>",
+        ),
+        (4, &body),
+        (5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+    ])
+}
+
+#[test]
+fn actual_text_replaces_the_codes_inside_its_marked_content() {
+    // The CV that started this work wraps each `fi` ligature in
+    // `/Span << /ActualText (fi) >> BDC … EMC`: the glyph's code says one thing and
+    // the writer says another, and `14.9.4` makes the writer right. Without this the
+    // text reads "Pro|le" and a search for "Profile" finds nothing.
+    let bytes = page_with(
+        "BT /F1 12 Tf 10 50 Td (Pro) Tj /Span << /ActualText (fi) >> BDC (X) Tj EMC (le) Tj ET",
+    );
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "Profile");
+
+    // The same content without the marker keeps the code's own text.
+    let plain = page_with("BT /F1 12 Tf 10 50 Td (Pro) Tj (X) Tj (le) Tj ET");
+    let document = open(&plain);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "ProXle");
+}
+
+#[test]
+fn a_search_finds_the_text_actual_text_states() {
+    let bytes = page_with(
+        "BT /F1 12 Tf 10 50 Td (Pro) Tj /Span << /ActualText (fi) >> BDC (X) Tj EMC (le) Tj ET",
+    );
+    let document = open(&bytes);
+    let hits = document.search("Profile").expect("search");
+    assert_eq!(hits.len(), 1, "the writer's text is what the reader sees");
+    assert_eq!(hits[0].hits[0].text, "Profile");
+    assert!(
+        document.search("ProXle").expect("search").is_empty(),
+        "the glyph codes are not searchable"
+    );
+}
+
 #[test]
 fn a_composite_font_reads_through_its_to_unicode_map() {
     // The fixture's codes bear no relation to their text, and its second run is

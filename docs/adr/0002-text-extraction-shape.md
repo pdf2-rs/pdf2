@@ -63,7 +63,10 @@ Two measured facts bound the options:
   widths. Advances arrive with `/Widths` in Q5, for composite fonts, where they
   are also needed to keep glyphs apart.
 - Ligatures are not decomposed (`ﬁ` stays one character), which matches what
-  `text()` returns today.
+  `text()` returns today — **amended 2026-11-17**: a writer that states the
+  decomposition in `/ActualText` gets it honoured (`14.9.4`), because that is the
+  document saying what the text means, not this crate guessing; see
+  [ADR 0008](0008-positioned-text.md)'s round in `rounds/plan-20261117-gaps.md`.
 
 ## Proven by
 

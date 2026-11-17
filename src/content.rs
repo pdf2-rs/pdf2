@@ -283,6 +283,19 @@ struct TextInterpreter<'a> {
     ctm_stack: Vec<Matrix>,
     /// The text matrix, which `BT` resets and `Tm`/`Td`/`TD`/`T*` move (`9.4.2`).
     text_matrix: Matrix,
+    /// The open marked-content sequences, each with its `/ActualText` when it has
+    /// one — a stack, because `BDC` nests.
+    captures: Vec<Option<Capture>>,
+}
+
+/// One `/ActualText` sequence being collected.
+struct Capture {
+    /// The line it belongs to, once its first glyph has placed one.
+    line: Option<usize>,
+    /// Where in that line's text the replacement goes, in characters.
+    offset: usize,
+    /// What the writer says the content means.
+    text: String,
 }
 
 impl<'a> TextInterpreter<'a> {
@@ -302,6 +315,7 @@ impl<'a> TextInterpreter<'a> {
             ctm: Matrix::IDENTITY,
             ctm_stack: Vec::new(),
             text_matrix: Matrix::IDENTITY,
+            captures: Vec::new(),
         }
     }
 
@@ -369,6 +383,48 @@ impl<'a> TextInterpreter<'a> {
         });
         #[allow(clippy::unwrap_used)]
         self.lines.last_mut().unwrap()
+    }
+
+    /// `BDC` whose properties carry `/ActualText`: what the writer says the
+    /// content means, in place of what the glyph codes would give (`14.9.4`).
+    ///
+    /// The replacement is remembered rather than substituted immediately, because
+    /// the text it replaces is only known once the sequence closes — and a
+    /// ligature glyph is exactly one code whose text is two characters.
+    fn enter_marked(&mut self, properties: Option<&Object>) -> Result<()> {
+        let mut capture = None;
+        if let Some(properties) = properties {
+            let resolved = self
+                .document
+                .resolve(Some(properties))?
+                .unwrap_or(Object::Null);
+            if let Object::Dictionary(dict) = resolved
+                && let Some(Object::String(text)) = dict.get(b"ActualText")
+            {
+                capture = Some(Capture {
+                    line: None,
+                    offset: 0,
+                    text: String::from_utf8_lossy(text.as_bytes()).into_owned(),
+                });
+            }
+        }
+        self.captures.push(capture);
+        Ok(())
+    }
+
+    /// `EMC`: put the sequence's text where the codes' own text would have gone.
+    fn leave_marked(&mut self) {
+        let Some(capture) = self.captures.pop().flatten() else {
+            return;
+        };
+        let Some(index) = capture.line else {
+            return;
+        };
+        let Some(line) = self.lines.get_mut(index) else {
+            return;
+        };
+        let at = char_to_byte(&line.text, capture.offset);
+        line.text.insert_str(at, &capture.text);
     }
 
     fn execute(
@@ -498,6 +554,15 @@ impl<'a> TextInterpreter<'a> {
                     }
                 }
             }
+            b"BDC" | b"BMC" => {
+                let properties = if operator == b"BDC" {
+                    operands.get(1)
+                } else {
+                    None
+                };
+                self.enter_marked(properties)?;
+            }
+            b"EMC" => self.leave_marked(),
             b"BI" => {
                 // Inline images are opaque data; text cannot hide inside them,
                 // so skip to the `EI` that closes them.
@@ -535,6 +600,40 @@ impl<'a> TextInterpreter<'a> {
         // with it, and a quarter of an em is the threshold a word space clears.
         let gap =
             self.pen_tracked && self.size > 0.0 && self.line_x > self.pen_x + 0.25 * self.size;
+        // `/ActualText` replaces what the codes say: the glyphtext still places the
+        // line and moves the pen, but the characters are dropped here and the
+        // writer's own string is inserted when `EMC` arrives.
+        let inside_has_line = self
+            .captures
+            .iter()
+            .rev()
+            .find_map(|capture| capture.as_ref())
+            .is_some_and(|capture| capture.line.is_some());
+        let capturing = self
+            .captures
+            .iter()
+            .rev()
+            .find_map(|capture| capture.as_ref())
+            .is_some();
+        if capturing {
+            self.line();
+            let index = self.lines.len() - 1;
+            let offset = self.lines[index].text.len();
+            if !inside_has_line
+                && let Some(slot) = self
+                    .captures
+                    .iter_mut()
+                    .rev()
+                    .find_map(|capture| capture.as_mut())
+            {
+                slot.line = Some(index);
+                slot.offset = offset;
+            }
+            if self.pen_tracked {
+                self.pen_x = self.line_x + advance * self.size;
+            }
+            return;
+        }
         let line = self.line();
         if gap && !line.text.is_empty() && !line.text.ends_with(' ') {
             line.text.push(' ');
@@ -961,6 +1060,13 @@ impl Document {
             })
             .collect())
     }
+}
+
+/// The byte offset of a character position in `text`.
+fn char_to_byte(text: &str, characters: usize) -> usize {
+    text.char_indices()
+        .nth(characters)
+        .map_or(text.len(), |(at, _)| at)
 }
 
 /// The nearest character boundary at or below a byte offset.
