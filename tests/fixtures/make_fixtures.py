@@ -1497,6 +1497,139 @@ def make_cmyk_jpeg():
     write("cmyk-jpeg.pdf", bytes(writer.out))
 
 
+def type1_encrypt(data, key):
+    """The Type 1 cipher (`eexec`).
+
+    The key steps on the **plaintext** byte, which is what makes the same routine
+    both encrypt and decrypt: on the way out the reader recovers the plaintext and
+    steps the key with it.
+    """
+    out = bytearray()
+    for plain in data:
+        out.append(plain ^ (key >> 8))
+        key = ((plain + key) * 52845 + 22719) & 0xFFFF
+    return bytes(out)
+
+
+def type1_number(value):
+    """One Type 1 charstring number (§6.2): five encodings, shortest first."""
+    if -107 <= value <= 107:
+        return bytes([value + 139])
+    if 108 <= value <= 1131:
+        value -= 108
+        return bytes([247 + value // 256, value % 256])
+    if -1131 <= value <= -108:
+        value = -value - 108
+        return bytes([251 + value // 256, value % 256])
+    return bytes([255]) + value.to_bytes(4, "big", signed=True)
+
+
+def type1_charstring(operators):
+    """A charstring from numbers and raw operator bytes."""
+    out = bytearray()
+    for term in operators:
+        if isinstance(term, int):
+            out.extend(type1_number(term))
+        else:
+            out.extend(term)
+    return bytes(out)
+
+
+def make_type1_font():
+    """A `/Type1` font with a `/FontFile` program, and a page that draws it.
+
+    The program is a real Type 1 font: a `%!PS-AdobeFont-1.0` header, a `Private`
+    dictionary with `/lenIV -1` (so the charstrings are plain, which keeps the
+    fixture reviewable), `/Subrs` and `/CharStrings`, all inside a `currentfile
+    eexec` section encrypted with the format's fixed key. Two glyphs are drawn with
+    different operators — `A` is a triangle of `rlineto`s and `B` a box of
+    `hlineto`/`vlineto` — and a third calls a subroutine so `callsubr` is covered.
+    """
+    # 1/1000 em glyph space, y up. Width 600, and each glyph is easy to check by eye.
+    hsbw, rmoveto, rlineto, hlineto, vlineto, closepath, endchar = (
+        b"\x0d", b"\x15", b"\x05", b"\x06", b"\x07", b"\x09", b"\x0e")
+    callsubr, return_ = b"\x0a", b"\x0b"
+    # Each glyph declares its sidebearing with `hsbw`, then draws inside
+    # `[0, width]` so the three are distinguishable when the page sets "ABC".
+    a = type1_charstring([50, 0, hsbw, 50, 0, rmoveto, 450, 700, rlineto,
+                          0, -700, rlineto, -450, 0, rlineto, closepath, endchar])
+    b = type1_charstring([50, 0, hsbw, 50, 0, rmoveto, 300, hlineto, 500, vlineto,
+                          -300, hlineto, -500, vlineto, closepath, endchar])
+    # `C` calls subr 0, which draws two sides of its rectangle.
+    subr = type1_charstring([200, 0, rlineto, 0, 300, rlineto, return_])
+    c = type1_charstring([50, 0, hsbw, 50, 0, rmoveto, 0, callsubr, closepath, endchar])
+    notdef = type1_charstring([50, 0, hsbw, 50, 0, rmoveto, 0, 700, rlineto,
+                               400, 0, rlineto, 0, -700, rlineto, closepath, endchar])
+
+    private = (
+        b"/Private 8 dict dup begin\n"
+        b"/lenIV -1 def\n"
+        b"/BlueValues [] def\n"
+        b"/password 5839 def\n"
+        b"/Subrs 1 array\ndup 0 %d RD " % len(subr)
+        + subr
+        + b" NP\ndef\n"
+        b"/CharStrings 4 dict dup begin\n"
+        b"/.notdef %d RD " % len(notdef)
+        + notdef
+        + b" ND\n/A %d RD " % len(a)
+        + a
+        + b" ND\n/B %d RD " % len(b)
+        + b
+        + b" ND\n/C %d RD " % len(c)
+        + c
+        + b" ND\nend\nend\n"
+    )
+    # eexec: the key is fixed (55665) and the first four plain bytes are random.
+    body = b"\x00\x00\x00\x00" + private
+    encrypted = type1_encrypt(body, 55665)
+    program = (
+        b"%!PS-AdobeFont-1.0: Fixture 1.0\n"
+        b"%%CreationDate: 2026-11-16\n"
+        b"11 dict begin\n"
+        b"/FontInfo 3 dict dup begin\n"
+        b"/version (1.0) def\n"
+        b"/FullName (Fixture) def\n"
+        b"/FamilyName (Fixture) def\n"
+        b"end readonly def\n"
+        b"/FontName /Fixture def\n"
+        b"/PaintType 0 def\n"
+        b"/FontType 1 def\n"
+        b"/FontMatrix [0.001 0 0 0.001 0 0] readonly def\n"
+        b"/FontBBox [0 0 600 700] readonly def\n"
+        b"/Encoding StandardEncoding def\n"
+        b"currentdict end\n"
+        b"currentfile eexec\n"
+        + encrypted.hex().encode()
+        + b"\n0000000000000000\ncleartomark\n"
+    )
+
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    writer.obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 200] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+    )
+    writer.stream(4, b"", b"BT /F1 90 Tf 40 60 Td (ABC) Tj ET")
+    writer.obj(
+        5,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Fixture /FirstChar 65 /LastChar 67"
+        b" /Widths [600 400 300] /Encoding << /Type /Encoding /BaseEncoding"
+        b" /StandardEncoding /Differences [65 /A /B /C] >> /FontDescriptor 6 0 R >>",
+    )
+    writer.obj(
+        6,
+        b"<< /Type /FontDescriptor /FontName /Fixture /Flags 4 /FontBBox [0 0 600 700]"
+        b" /ItalicAngle 0 /Ascent 700 /Descent 0 /CapHeight 700 /StemV 80"
+        b" /FontFile 7 0 R >>",
+    )
+    writer.stream(7, b"/Length1 %d /Length3 0" % len(program), program)
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("type1.pdf", bytes(writer.out))
+
+
 def make_calibration():
     """Pages whose correct pixels follow from the specification.
 
@@ -1725,3 +1858,4 @@ if __name__ == "__main__":
     make_shading()
     make_separation()
     make_cmyk_jpeg()
+    make_type1_font()
