@@ -8,7 +8,7 @@ nothing. That silence is the first thing this plan fixes, before any tile is dra
 
 ## Clause
 
-**`8.7.3` Tiling Patterns** — `.1` general (the pattern dictionary, Table 75), `.2`
+**`8.7.3` Tiling Patterns** — `.1` general (the pattern dictionary, Table 73), `.2`
 coloured tiling patterns (`/PaintType 1`), `.3` uncoloured (`/PaintType 2`, colour comes
 from `scn`'s operands). Verified against the published 2020 edition through the PDF
 Association's errata, and listed in `docs/SPEC-MAP.md`'s "verified for the deferred
@@ -38,7 +38,7 @@ Two corpus pages carry `/PatternType 1`, checked by grep, and they are **not** a
 | File | What it does with it | What its report says today |
 | --- | --- | --- |
 | `corpus/tier-a/colorkeymask.pdf` | paints with it: `/Pattern cs /p5 scn … re f`, a 200×267 cell at `/XStep 1905` (one cell), whose content is a colour-keyed image | "all operators supported" — while the fill silently paints the previous colour |
-| `corpus/tier-a/ContentStreamCycleType3insideType3.pdf` | only *has* the object (it exists for the Type-3-inside-Type-3 cycle test) | "all operators supported" — and the page does not paint with it |
+| `corpus/tier-a/ContentStreamCycleType3insideType3.pdf` | selects it from inside a **Type 3 char procedure** (`/Pattern cs /P1 scn`, corrected 2026-11-17 when the first implementation reached it) | "all operators supported" — the silence also hid a pattern fill inside a glyph |
 
 So `ContentStreamCycleType3insideType3.pdf` cannot be this plan's acceptance: a round that
 made tiling perfect would not change a pixel of it. `colorkeymask.pdf` is the corpus

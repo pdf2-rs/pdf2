@@ -1231,19 +1231,40 @@ impl Walker<'_> {
         let Some(pattern) = patterns.get(name).cloned() else {
             return Ok(());
         };
-        let Object::Dictionary(dict) = resolve(self.document, Some(&pattern))? else {
-            return Ok(());
+        // A pattern object is a stream (its content paints the cell or nothing);
+        // the type lives in its dictionary.
+        let object = resolve(self.document, Some(&pattern))?;
+        let dict = match &object {
+            Object::Stream(stream) => stream.dict().clone(),
+            Object::Dictionary(dict) => dict.clone(),
+            _ => {
+                self.report.note(b"pattern");
+                return Ok(());
+            }
         };
-        // Only shading patterns are paint this renderer has; a tiling pattern
-        // (type 1) would need the pattern's content stream flattened.
-        if dict.get(b"PatternType").and_then(Object::as_integer) != Some(2) {
-            return Ok(());
-        }
-        let Some(shading) = dict.get(b"Shading") else {
-            return Ok(());
-        };
-        if let Ok(shading) = crate::shading::Shading::from_object(self.document, shading) {
-            self.state.pattern = Some(std::rc::Rc::new(shading));
+        match dict.get(b"PatternType").and_then(Object::as_integer) {
+            Some(2) => {
+                let Some(shading) = dict.get(b"Shading") else {
+                    self.report.note(b"pattern");
+                    return Ok(());
+                };
+                if let Ok(shading) = crate::shading::Shading::from_object(self.document, shading) {
+                    self.state.pattern = Some(std::rc::Rc::new(shading));
+                } else {
+                    self.report.note(b"pattern");
+                }
+            }
+            // A tiling pattern is read — Table 73's keys, and the cell's content
+            // decoded — but the lattice that replicates it is the next round's
+            // work, so the fill reports `pattern` instead of painting the
+            // previous colour and saying nothing (8.7.3).
+            Some(1) => {
+                if let Object::Stream(stream) = &object {
+                    let _ = crate::pattern::Tile::from_stream(self.document, stream);
+                }
+                self.report.note(b"pattern");
+            }
+            _ => self.report.note(b"pattern"),
         }
         Ok(())
     }

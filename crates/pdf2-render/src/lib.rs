@@ -23,6 +23,7 @@ mod function;
 mod geom;
 mod image;
 mod path;
+mod pattern;
 mod png;
 mod raster;
 mod shading;
