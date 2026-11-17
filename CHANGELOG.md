@@ -4,6 +4,17 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] — in progress
+
+### Fixed
+
+- **A `/JBIG2Decode` image that states `/Decode [1 0]` drew as its negative** — the
+  array remaps the samples before the colour space sees them (`8.9.5.2`), and the
+  CCITT and DCT paths had always applied it while the JBIG2 path did not: a 1-bit scan
+  said "1 is black" and the page came out white-on-black. `crates/pdf2-render/tests/jbig2.rs`
+  patches the corpus page's dictionary in place and asserts the inversion
+  (`148 650` black against `10 950`).
+
 ## [1.5.0] — 2026-11-17
 
 **The image decoders arrive, and the one that disagreed was ours.** `/JPXDecode` and

@@ -210,3 +210,40 @@ fn our_raster_matches_the_reference_exactly() {
         "the raster matches pdfium's reference (busiest column x = {busiest} with {count} flips)"
     );
 }
+
+#[test]
+fn a_scan_that_states_decode_1_0_is_inverted() {
+    // `/Decode` remaps the samples before the colour space sees them (8.9.5.2), and a
+    // 1-bit scan is where a writer states `[1 0]`: 1 becomes black and 0 white. The
+    // CCITT and DCT paths applied it from the start; the JBIG2 path did not, so such
+    // a page drew as its negative — white ink on black, which is what a "black page"
+    // in a viewer usually is.
+    //
+    // The fixture is the corpus page with its colour space swapped for the array, in
+    // place: the replacement is the same length, so the xref stays valid and no file
+    // is committed for a one-line dict change.
+    let mut bytes = corpus("bitmap-composite-and-xnor.pdf");
+    let needle = b"/ColorSpace /DeviceGray";
+    let replacement = b"/Decode [1 0]          ";
+    assert_eq!(needle.len(), replacement.len());
+    let at = bytes
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .expect("the image dictionary names its colour space");
+    bytes[at..at + needle.len()].copy_from_slice(replacement);
+
+    let document = Document::open(bytes).expect("open the patched page");
+    let rendered = render_page_number(&document, 0, &RenderOptions::default()).expect("render");
+    assert_eq!(
+        rendered.report.to_string(),
+        "all operators supported",
+        "the inverted page draws: {}",
+        rendered.report
+    );
+    let (black, white) = ink(&rendered);
+    assert_eq!(
+        (black, white),
+        (148_650, 10_950),
+        "every sample is inverted, not ignored"
+    );
+}
