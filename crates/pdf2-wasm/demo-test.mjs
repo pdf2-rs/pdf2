@@ -534,6 +534,143 @@ async function main() {
       `the first span is the page's own text: ${JSON.stringify(layer.first)}`,
     );
 
+    // The glyphs have to fill the line they were painted in. The browser lays the
+    // invisible text out with its own advances, so the app scales each span to the
+    // library's line box; without that the browser hit-tests characters at advances
+    // the page never had, and a drag highlights a word somewhere else entirely.
+    const lines = await evaluate(`
+      const spans = [...document.querySelectorAll('#textLayer span')];
+      let worst = { delta: 0, text: '' };
+      let withText = 0;
+      let scaled = 0;
+      for (const span of spans) {
+        if (span.textContent.trim().length === 0) {
+          // A padded line has no glyphs to place; there is nothing to scale.
+          continue;
+        }
+        withText += 1;
+        const box = Number(span.dataset.box);
+        const rect = span.getBoundingClientRect();
+        const delta = Math.abs(rect.width - box);
+        if (delta > worst.delta) {
+          worst = { delta, text: span.textContent.slice(0, 24), box, width: rect.width };
+        }
+        if (getComputedStyle(span).transform !== 'none') {
+          scaled += 1;
+        }
+      }
+      const wide = spans.reduce(
+        (best, span) => (span.getBoundingClientRect().width > best.getBoundingClientRect().width ? span : best),
+        spans[0],
+      );
+      const rect = wide.getBoundingClientRect();
+      const node = wide.firstChild;
+      const text = wide.textContent;
+      let last = text.length - 1;
+      while (last > 0 && text[last] === ' ') {
+        last -= 1;
+      }
+      const glyph = document.createRange();
+      glyph.setStart(node, last);
+      glyph.setEnd(node, last + 1);
+      const lastGlyphRight = glyph.getBoundingClientRect().right;
+      const applied = wide.style.transform;
+      wide.style.transform = 'none';
+      const unscaledLastGlyphRight = glyph.getBoundingClientRect().right;
+      wide.style.transform = applied;
+      const caretAt = (fraction) => {
+        const x = rect.left + rect.width * fraction;
+        const y = rect.top + rect.height / 2;
+        let position = document.caretPositionFromPoint ? document.caretPositionFromPoint(x, y) : null;
+        if (!position && document.caretRangeFromPoint) {
+          const fallback = document.caretRangeFromPoint(x, y);
+          if (fallback) {
+            position = { offsetNode: fallback.startContainer, offset: fallback.startOffset };
+          }
+        }
+        if (!position) {
+          return null;
+        }
+        return {
+          inside: wide.contains(position.offsetNode),
+          offset: position.offset,
+          length: text.length,
+        };
+      };
+      return {
+        count: withText,
+        scaled,
+        worst,
+        widest: { text: text.slice(0, 40), length: text.length, right: rect.right },
+        lastGlyphRight,
+        unscaledLastGlyphRight,
+        quarter: caretAt(0.25),
+        threeQuarters: caretAt(0.8),
+      };
+    `);
+    check(
+      lines.count > 0 && lines.scaled === lines.count,
+      `every one of ${lines.count} text spans is scaled to its line box: ${lines.scaled} scaled`,
+    );
+    check(
+      lines.worst.delta <= 1,
+      `each span's rendered width is its line: worst ${lines.worst.delta.toFixed(2)}px on ${JSON.stringify(lines.worst.text)}`,
+    );
+    const glyphDelta = Math.abs(lines.lastGlyphRight - lines.widest.right);
+    check(
+      glyphDelta <= 2,
+      `the last glyph ends where the line ends: ${glyphDelta.toFixed(2)}px off on ${JSON.stringify(lines.widest.text)}`,
+    );
+    check(
+      lines.quarter !== null && lines.quarter.inside,
+      `the caret finds the span's text at a quarter of the line: ${JSON.stringify(lines.quarter)}`,
+    );
+    check(
+      lines.quarter !== null &&
+        lines.quarter.offset > 0 &&
+        lines.quarter.offset < lines.widest.length,
+      `a quarter along the line is a character inside it: offset ${lines.quarter && lines.quarter.offset} of ${lines.widest.length}`,
+    );
+    check(
+      lines.threeQuarters !== null && lines.quarter !== null &&
+        lines.threeQuarters.offset > lines.quarter.offset,
+      `further along the line is further into the text: ${lines.threeQuarters && lines.threeQuarters.offset} after ${lines.quarter && lines.quarter.offset}`,
+    );
+    console.log(
+      `note  unscaled, the same span's last glyph sat at ${lines.unscaledLastGlyphRight.toFixed(1)}px ` +
+        `against a line ending at ${lines.widest.right.toFixed(1)}px — the drift the scale removes`,
+    );
+
+    // Selecting one word of a line reads that word, not the line: the character
+    // offsets a drag produces are the ones the layer now lays out.
+    const oneWord = await evaluate(`
+      const span = [...document.querySelectorAll('#textLayer span')].find(
+        (candidate) => candidate.textContent.trim().indexOf(' ') > 0,
+      );
+      const text = span.textContent;
+      const start = text.indexOf(' ');
+      let wordStart = 0;
+      while (wordStart < start && text[wordStart] === ' ') {
+        wordStart += 1;
+      }
+      let wordEnd = wordStart;
+      while (wordEnd < text.length && text[wordEnd] !== ' ') {
+        wordEnd += 1;
+      }
+      const range = document.createRange();
+      range.setStart(span.firstChild, wordStart);
+      range.setEnd(span.firstChild, wordEnd);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      return { word: text.slice(wordStart, wordEnd), info: document.querySelector('#selectionInfo').textContent };
+    `);
+    check(
+      oneWord.word.length > 0 && oneWord.info.trim() === oneWord.word,
+      `a range over one word reads that word: ${JSON.stringify(oneWord.info)} against ${JSON.stringify(oneWord.word)}`,
+    );
+
     const selected = await evaluate(`
       const span = document.querySelector('#textLayer span');
       const range = document.createRange();
