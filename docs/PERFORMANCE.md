@@ -179,12 +179,12 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 
 **JPEG 2000 and JBIG2 are features, and the npm bundle did not move for them**
 (2026-11-17, [ADR 0007](adr/0007-decoder-features.md)): `/JPXDecode` costs
-**+76 705** gzip and `/JBIG2Decode` **+62 685** (both **+138 481**) when they are
-compiled in, against **365 705** with neither — measured on the 1.4.0 tree by the
+**+77 523** gzip and `/JBIG2Decode` **+64 145** (both **+140 747**) when they are
+compiled in, against **365 734** with neither — measured on the 1.4.0 tree by the
 commands above, with `--features jpx,jbig2` on the `cargo build` and gzip level 9.
 The default keeps its 364 KiB budget, so the npm package decodes neither; the demo
 site loads a second, decoder-enabled artefact with its own **505 KiB** budget
-(measured 506 424 gzip, 501 614 of it the module), and `crates/pdf2-oracle` enables
+(measured 506 481 gzip), and `crates/pdf2-oracle` enables
 both through its `decoders` feature because it is evidence rather than a shipped
 artefact. `check.mjs` measures both artefacts and also asserts the site's bundle is
 more than 100 KiB larger than the package's — a demo that silently fell back to the

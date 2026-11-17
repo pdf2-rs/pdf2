@@ -35,10 +35,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Compatibility
 
 - **Both decoders are non-default features** (`jpx`, `jbig2`), per
-  [ADR 0007](docs/adr/0007-decoder-features.md): +76 705 and +62 685 gzip, measured on
-  the 1.4.0 tree, so the npm bundle keeps its 364 KiB budget (365 665) and cannot
+  [ADR 0007](docs/adr/0007-decoder-features.md): +77 523 and +64 145 gzip, measured on
+  the 1.4.0 tree, so the npm bundle keeps its 364 KiB budget (365 734) and cannot
   decode either. A caller that needs them enables the feature; the demo site ships a
-  second, decoder-enabled artefact with its own 505 KiB budget (506 424).
+  second, decoder-enabled artefact with its own 505 KiB budget (506 481).
   `pdf2-oracle` turns them on through its own `decoders` feature, which keeps
   `cargo test --workspace` on the lean build.
 
