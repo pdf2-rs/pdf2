@@ -4,7 +4,16 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.0] — in progress
+## [1.5.0] — 2026-11-17
+
+**The image decoders arrive, and the one that disagreed was ours.** `/JPXDecode` and
+`/JBIG2Decode` draw — each behind a cargo feature that is off by default, because
+together they cost 140 747 gzip bytes on a wasm bundle most pages never ask for
+([ADR 0007](docs/adr/0007-decoder-features.md)). `/TilingType` 1 and 3 stop being a
+recorded question and snap to the device grid. And a chapter of the previous release's
+notes gets corrected: the JBIG2 pages that "sit 31.261 mean from the engines" were
+sitting there because of **this renderer's** row stride, found with an independent
+reference raster, not because of the decoder.
 
 ### Rendering
 
@@ -40,6 +49,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   raster sits 31.261 mean from the engines (13.53 % of pixels over), identically for
   the inline and globals encodings, so the gap is in the decoder and is recorded in
   `docs/RENDERING-QUALITY.md` rather than gated.
+
+### Fixed
+
+- **`/JBIG2Decode` images were misaligned by one bit per row** — the 31.261 mean this
+  release's predecessor recorded against poppler, mupdf and Ghostscript was ours, not
+  the decoder's: the sink packed decoded pixels as one continuous bit stream while a
+  1-bit PDF image is row-aligned to a byte, so a 399-pixel row drifted a bit further
+  each row and the last, unwritten row read as black. Every `/JBIG2Decode` image whose
+  width is not a multiple of eight was affected. pdfium's expected raster — committed
+  under `corpus/reference/` with its licence — proved it: our render differed from it
+  by 19 553 pixels while `hayro-jbig2`'s own output matched to the pixel. Both pdf.js
+  pages now join the oracle gate at a **0.243040 mean against the engines' 0.326558
+  spread**, closer to them than they are to each other.
+- **The oracle wrote a summary with no rows**, so no per-case mean was ever printed
+  and an AA ceiling could only be guessed at. The writer looped over the calibrate-only
+  vector; it now summarises every measured case.
 
 ### Compatibility
 
