@@ -63,6 +63,11 @@ gh pr merge --squash --delete-branch
 ```
 
 - Branch prefixes: `feat/`, `fix/`, `docs/`, `chore/`, `release/`.
+- **Renaming a job renames a required check.** The ruleset lists the required
+  checks by name, so a matrix rename (`Test (1.87)` → `Test (1.100)`) leaves a
+  required check that can never report again and every pull request sits
+  `BLOCKED` with all its own checks green. Update the ruleset in the same change
+  (`gh api repos/pdf2-rs/pdf2/rulesets`, edit `required_status_checks`).
 - The required checks are every job in `ci.yml`: Gate, Test (1.100), Test (beta),
   Package, both `no_std` jobs, `wasm`, `wasm package`, Licences and advisories,
   Semver and Benchmarks. A red one blocks the merge; a flaky one is re-run, not
