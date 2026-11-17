@@ -912,7 +912,11 @@ fn globals_bytes(document: &Document, dict: &Dictionary) -> Result<Option<Vec<u8
 #[cfg(feature = "jbig2")]
 struct Rows {
     packed: Vec<u8>,
-    bit: usize,
+    /// Bytes per row: a 1-bit PDF image is **row-aligned to a byte**, so a row of
+    /// 399 pixels occupies 50 bytes and leaves one bit of padding.
+    stride: usize,
+    row: usize,
+    column: usize,
 }
 
 #[cfg(feature = "jbig2")]
@@ -920,21 +924,29 @@ impl Rows {
     fn new(width: usize, height: usize) -> Self {
         Self {
             packed: vec![0; width.div_ceil(8) * height],
-            bit: 0,
+            stride: width.div_ceil(8),
+            row: 0,
+            column: 0,
         }
     }
 
-    /// Write `count` samples of one value, MSB first.
+    /// Write `count` samples of one value, MSB first, in the current row.
+    ///
+    /// The row offset is what makes this a PDF image rather than a bit stream: with
+    /// a width that is not a multiple of eight, packing the pixels contiguously
+    /// shifts every row by one bit, which is a defect this sink had — it cost
+    /// 19 553 differing pixels against pdfium's reference raster (12.25 %, mean
+    /// |Δ| 31.24) while the decoder's own output was byte-exact.
     fn run(&mut self, white: bool, count: usize) {
         for _ in 0..count {
             if white {
-                let byte = self.bit / 8;
-                let shift = 7 - self.bit % 8;
+                let byte = self.row * self.stride + self.column / 8;
+                let shift = 7 - self.column % 8;
                 if let Some(slot) = self.packed.get_mut(byte) {
                     *slot |= 1 << shift;
                 }
             }
-            self.bit += 1;
+            self.column += 1;
         }
     }
 
@@ -953,7 +965,10 @@ impl hayro_jbig2::Decoder for Rows {
         self.run(!black, 8 * chunk_count as usize);
     }
 
-    fn next_line(&mut self) {}
+    fn next_line(&mut self) {
+        self.row += 1;
+        self.column = 0;
+    }
 }
 
 #[cfg(test)]
