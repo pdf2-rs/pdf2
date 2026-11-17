@@ -58,7 +58,7 @@ file that does not exist.
 | --- | --- | --- | --- |
 | `jpx-jbig2.md` | JPEG 2000 and JBIG2 decoding (rank 9) | `7.4.9`, `7.4.7` | not written |
 | `icc.md` | ICC colour management (rank 10b) | `8.6.5.5`, `8.6.5.8`, `10.4` | not written |
-| `tiling-patterns.md` | `/PatternType 1` tiling patterns (rank 10) | `8.7.3` | not written |
+| [`tiling-patterns.md`](tiling-patterns.md) | `/PatternType 1` tiling patterns (rank 10) | `8.7.3` | written 2026-11-17 |
 | `colour-key-mask.md` | Colour-key `/Mask` (rank 10) | `8.9.6.4` | not written |
 | `tr-clipping.md` | The clipping half of `Tr` 4–7 (rank 10) | `9.3.6` | not written |
 | `editing.md` | Editing an opened document (rank 11) | `7.5.6` | not written |
