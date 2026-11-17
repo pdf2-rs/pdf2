@@ -42,7 +42,12 @@ fn ink(rendered: &RenderedPage) -> usize {
 }
 
 #[test]
-fn the_page_that_fills_with_a_tile_paints_it() {
+fn the_page_that_fills_with_a_tile_paints_it_through_its_key() {
+    // `colorkeymask.pdf` is the joint case: one 200x267 `/PatternType 1` cell
+    // (an image) filled through a `/Mask` colour key. The cell's red band is
+    // masked, so the page's own background shows there while the green and blue
+    // bands paint — the two features meeting on one page, neither of which worked
+    // before this objective.
     let rendered = render("colorkeymask.pdf");
     assert_eq!(
         rendered.report.to_string(),
@@ -50,13 +55,19 @@ fn the_page_that_fills_with_a_tile_paints_it() {
         "the tile paints: {}",
         rendered.report
     );
-    // The cell is a 200×267 image; the fill would be blank if the lattice did
-    // nothing, and the report was already clean at that point in the sequence, so
-    // the ink is the assertion that matters.
-    assert!(
-        ink(&rendered) > 10_000,
-        "the cell's content is on the page: {} painted pixels",
-        ink(&rendered)
+    let at = |x: u32, y: u32| rendered.canvas.pixel(x, y).expect("in bounds");
+    // The fill is `18 823.89 200 -267 re`, i.e. screen x 18..218, y 18..285.
+    assert_eq!(
+        at(40, 100),
+        [255, 255, 255, 255],
+        "the keyed red band is the page"
+    );
+    assert_eq!(at(100, 100), [0, 255, 0, 255], "the green band paints");
+    assert_eq!(at(170, 100), [0, 0, 255, 255], "the blue band paints");
+    assert_eq!(
+        at(5, 400),
+        [255, 255, 255, 255],
+        "and nothing leaks past the fill"
     );
 }
 
