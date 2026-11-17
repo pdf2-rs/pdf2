@@ -20,3 +20,7 @@ calibration#9	25
 calibration#10	25
 calibration#11	25
 bug_jpx#1	60
+# Measured 2026-11-17 in the run that gated them: 43.3 ms and 36.5 ms at 1x1, so
+# the budget is ~2x — these pages are a decoder, not a painter.
+bitmap-composite-and-xnor#1	80
+bitmap-p32-eof#1	80
