@@ -24,6 +24,7 @@ pub mod page;
 pub mod parser;
 pub mod writer;
 
+pub use content::TextSpan;
 pub use crypto::Encryption;
 pub use document::{DEFAULT_OBJECT_LIMIT, DEFAULT_PAGE_LIMIT, Document};
 pub use encoding::Encoding;
