@@ -5,6 +5,7 @@
 //! pages, so every inheritance rule is exercised by one file.
 
 use pdf2::{Document, Error, Object, ObjectId, Rect};
+use std::assert_matches;
 
 const PAGE_TREE: &[u8] = include_bytes!("fixtures/page-tree.pdf");
 const TWIN: &[u8] = include_bytes!("fixtures/classic-twin.pdf");
@@ -234,7 +235,7 @@ fn a_cyclic_page_tree_is_an_error() {
         (1, "<< /Type /Catalog /Pages 2 0 R >>"),
         (2, "<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
     ]);
-    assert!(matches!(document.pages(), Err(Error::Malformed { .. })));
+    assert_matches!(document.pages(), Err(Error::Malformed { .. }));
 }
 
 #[test]

@@ -11,6 +11,7 @@
 //!   adds a second xref stream whose `/Prev` reaches the first one.
 
 use pdf2::{Document, Object, ObjectId};
+use std::assert_matches;
 
 const XREF_STREAM: &[u8] = include_bytes!("fixtures/xref-stream.pdf");
 const XREF_STREAM_PREV: &[u8] = include_bytes!("fixtures/xref-stream-prev.pdf");
@@ -97,11 +98,9 @@ fn the_object_graph_matches_the_classic_twin() {
 #[test]
 fn a_hybrid_file_reads_objects_through_xref_stm() {
     let document = open(HYBRID);
-    assert!(
-        matches!(
-            document.trailer().get(b"XRefStm"),
-            Some(Object::Integer(offset)) if *offset > 0
-        ),
+    assert_matches!(
+        document.trailer().get(b"XRefStm"),
+        Some(Object::Integer(offset)) if *offset > 0,
         "the classic trailer names the hidden stream: {:?}",
         document.trailer().get(b"XRefStm")
     );

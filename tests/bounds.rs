@@ -10,6 +10,7 @@
 
 use pdf2::filter::DEFAULT_DECODE_LIMIT;
 use pdf2::{Document, Error};
+use std::assert_matches;
 
 /// A committed fixture, read as bytes.
 fn read(path: &str) -> Vec<u8> {
@@ -88,10 +89,7 @@ fn a_stream_past_the_budget_is_refused_rather_than_allocated() {
     document.set_decoded_limit(1 << 20);
     let started = std::time::Instant::now();
     let error = content_of(&document).expect_err("past the budget");
-    assert!(
-        matches!(error, Error::Limit { limit, .. } if limit == 1 << 20),
-        "{error}"
-    );
+    assert_matches!(error, Error::Limit { limit, .. } if limit == 1 << 20, "{error}");
     assert!(
         error.to_string().contains("1048576"),
         "names the budget: {error}"
@@ -181,8 +179,9 @@ fn a_stream_past_the_default_budget_is_refused() {
     let error = pdf2::filter::decode_filter(pdf2::filter::Filter::FlateDecode, &compressed, None)
         .expect_err("past the default budget");
     let elapsed = started.elapsed();
-    assert!(
-        matches!(error, Error::Limit { limit, .. } if limit == DEFAULT_DECODE_LIMIT),
+    assert_matches!(
+        error,
+        Error::Limit { limit, .. } if limit == DEFAULT_DECODE_LIMIT,
         "{error}"
     );
     assert!(

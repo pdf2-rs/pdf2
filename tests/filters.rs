@@ -6,6 +6,7 @@
 //! involved, which is the only way to prove the decoders in this environment.
 
 use pdf2::{Document, Error, Object, ObjectId};
+use std::assert_matches;
 
 fn deflate(data: &[u8]) -> Vec<u8> {
     miniz_oxide::deflate::compress_to_vec_zlib(data, 6)
@@ -249,10 +250,10 @@ fn unsupported_and_broken_filters_are_errors() {
     assert!(document.stream_data(ObjectId::new(2, 0)).is_err());
 
     let document = document_with_stream("/Filter /FlateDecode", b"definitely not deflate");
-    assert!(matches!(
+    assert_matches!(
         document.stream_data(ObjectId::new(2, 0)),
         Err(Error::Malformed { .. })
-    ));
+    );
 
     let document = document_with_stream("/Filter /ASCIIHexDecode", b"48G>");
     assert!(document.stream_data(ObjectId::new(2, 0)).is_err());
@@ -299,8 +300,8 @@ fn decoding_an_object_that_is_not_a_stream_is_an_error() {
     let document = Document::open(pdf).expect("document opens");
     assert!(document.stream(ObjectId::new(2, 0)).is_err());
     assert!(document.stream_data(ObjectId::new(2, 0)).is_err());
-    assert!(matches!(
+    assert_matches!(
         document.get_object(ObjectId::new(2, 0)),
         Ok(Object::Integer(42))
-    ));
+    );
 }

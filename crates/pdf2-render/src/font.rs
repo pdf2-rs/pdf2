@@ -448,7 +448,7 @@ fn top_dict_declares_ros(cff: &[u8]) -> bool {
         return false;
     };
     // Operator 12 30 (ROS): operands, then the two bytes, in that order.
-    dict.windows(2).any(|window| window == [12, 30])
+    dict.array_windows::<2>().any(|window| window == &[12, 30])
 }
 
 /// The CID → glyph id pairs a CID-keyed CFF charset declares.
