@@ -127,7 +127,7 @@ node --no-warnings crates/pdf2-wasm-smoke/smoke.mjs
 
 | Artifact | Raw | Gzip | Gzip budget |
 | --- | --- | --- | --- |
-| browser module (`wasm32-unknown-unknown`, release) | 410 421 B | 155 131 B | 160 KiB |
+| browser module (`wasm32-unknown-unknown`, release) | 431 939 B | 164 470 B | 162 KiB |
 | WASI binary (`wasm32-wasip1`, release) | 479 415 B | 179 922 B | 187 KiB |
 
 Measured 2026-11-15 with `rustc 1.99.1` and the release profile.
@@ -144,6 +144,13 @@ the decoded-stream budget (256 MiB, `Error::Limit`, a capped inflate) cost
 **+4 620 gzip bytes** on that artifact — 175 302 → 179 922, which is the
 security fix's price: refusing a decompression bomb instead of allocating it. The
 browser artifact stayed inside its 160 KiB.
+
+**The browser budget moved from 160 KiB to 162 KiB on 2026-11-17, for the extraction
+work**: positioned text, search and `/ActualText` live in the library, so the browser
+artifact carries them whether or not the renderer is linked — **164 470 gzip** measured
+after the `/ActualText` round, against the 160 KiB budget the module was last measured
+under at 155 131. The remaining headroom is ~1.4 KiB; the next extraction feature that
+does not fit should be a deliberate move again, not a silent one.
 
 **The browser budget moved from 150 KiB to 160 KiB on 2026-11-15, deliberately**:
 the crate now ships one predefined CMap, the Adobe-Japan1 `90ms-RKSJ-H` code →
@@ -183,8 +190,9 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 compiled in, against **365 734** with neither — measured on the 1.4.0 tree by the
 commands above, with `--features jpx,jbig2` on the `cargo build` and gzip level 9.
 The default keeps its 364 KiB budget, so the npm package decodes neither; the demo
-site loads a second, decoder-enabled artefact with its own **514 KiB** budget
-(measured 522 616 gzip after the search tables; 506 481 before them), and `crates/pdf2-oracle` enables
+site loads a second, decoder-enabled artefact with its own **516 KiB** budget
+(measured **526 482 gzip** in CI after `/ActualText`; 522 616 after the search tables,
+506 481 before them), and `crates/pdf2-oracle` enables
 both through its `decoders` feature because it is evidence rather than a shipped
 artefact. `check.mjs` measures both artefacts and also asserts the site's bundle is
 more than 100 KiB larger than the package's — a demo that silently fell back to the
