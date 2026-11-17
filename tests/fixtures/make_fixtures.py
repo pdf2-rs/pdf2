@@ -1503,6 +1503,46 @@ def make_tr_clip():
     write("tr-clip.pdf", bytes(writer.out))
 
 
+def make_tiling_type():
+    """`/TilingType` 1 against 2 at a device scale that separates them (8.7.3.1).
+
+    Both pages fill a 20x20 square with cells of `/BBox [0 0 2 2]`, `/XStep 2` and
+    `/YStep 2`, each painting a **half-unit bar** down its left edge, so the cells
+    tile the plane and what is visible is exactly where the bars land.
+
+    At 1.25 device pixels per point the lattice is 2.5 px. Page 1 declares
+    `/TilingType 1` — constant device spacing, up to a pixel of distortion — and its
+    cell origins snap to 0, 3, 5(→6), 8 …; page 2 declares `/TilingType 2` (no
+    distortion, spacing may drift) and keeps 0, 2.5, 5, 7.5 …. Device pixel 2 is the
+    one that tells them apart: white on page 1, half covered on page 2.
+    """
+    writer = Writer()
+    writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    writer.obj(2, b"<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>")
+    for page, tiling_type in enumerate((b"1", b"2")):
+        page_object = 3 + page * 3
+        content_object = page_object + 1
+        pattern_object = page_object + 2
+        writer.obj(
+            page_object,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Contents "
+            + str(content_object).encode()
+            + b" 0 R /Resources << /Pattern << /P1 "
+            + str(pattern_object).encode()
+            + b" 0 R >> >> >>",
+        )
+        writer.stream(content_object, b"", b"/Pattern cs /P1 scn 0 0 20 20 re f")
+        writer.stream(
+            pattern_object,
+            b"/Type /Pattern /PatternType 1 /PaintType 1 /TilingType "
+            + tiling_type
+            + b" /BBox [0 0 2 2] /XStep 2 /YStep 2",
+            b"0 g 0 0 0.5 2 re f",
+        )
+    classic_table(writer.out, writer.offsets, b"/Root 1 0 R", len(writer.out))
+    write("tiling-type.pdf", bytes(writer.out))
+
+
 def make_colour_key():
     """Colour-key masking (8.9.6.4): a keyed sample is not painted.
 
@@ -2052,6 +2092,7 @@ if __name__ == "__main__":
     make_shading()
     make_separation()
     make_tiling()
+    make_tiling_type()
     make_colour_key()
     make_tr_clip()
     make_tr_clip_type3()

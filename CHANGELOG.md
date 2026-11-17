@@ -16,6 +16,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Icc` space and an unnamed one are refused by name. `bug_jpx.pdf` draws, and it
   joins the oracle case list: within tolerance, and **poppler segfaults on it**, so
   mupdf and Ghostscript are its engines.
+- **`/TilingType` 1 and 3 snap to the device grid** (`8.7.3.1`): the clause's type 1
+  wants constant spacing with up to a pixel of cell distortion and type 3 wants the same
+  with more distortion for speed, so each cell's device origin is rounded to a whole
+  pixel; type 2 keeps the exact pattern-space lattice, which is its bargain. The old note
+  said no fixture could measure the difference — wrong, once the render scale is a knob:
+  `tests/fixtures/tiling-type.pdf` renders a 2-unit lattice at 1.25 px/pt and device
+  pixel 2 is white on the type-1 page against half covered on the type-2 page.
 - **`/JBIG2Decode` draws, behind a feature** (`7.4.7`): bi-level scans through
   `hayro-jbig2` 0.4.0, including `/DecodeParms /JBIG2Globals` — a separate stream whose
   segments have to be decoded first. The sink writes 1-bit rows with **1 for white**,

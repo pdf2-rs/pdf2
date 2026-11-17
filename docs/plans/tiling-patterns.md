@@ -70,13 +70,17 @@ Where it lands, in the order the rounds build it:
 4. **`/PaintType 2`**: the fill colour comes from `scn`'s operands, so the selected colour
    travels in the state and the tile's content paints with it; `/PaintType 1` ignores
    those operands.
-5. **`/TilingType` 1–3**: the clause's three values describe how spacing is adjusted to
-   avoid distortion at a device resolution — 1 constant spacing with up to a pixel of
-   cell distortion, 2 no distortion but spacing may vary by a pixel, 3 constant spacing
-   with more distortion for speed. The lattice as implemented is uniform, which is the
-   behaviour of type 2 and the limit of 1 and 3; **snapping the steps to whole device
-   pixels is recorded as a separate decision**, because no fixture here measures
-   sub-pixel spacing and untested arithmetic is not worth landing.
+5. **`/TilingType` 1–3** — *settled 2026-11-17*. The clause's three values describe how
+   spacing is adjusted to avoid distortion at a device resolution: 1 constant spacing
+   with up to a pixel of cell distortion, 2 no distortion but spacing may vary by a
+   pixel, 3 constant spacing with more distortion for speed. Type 2 keeps the exact
+   pattern-space lattice, which is what the implementation always did; **types 1 and 3
+   now snap each cell's device origin to a whole pixel**, so the spacing stays constant
+   on the device grid and a cell moves by at most half a pixel. The earlier note said no
+   fixture could measure this — that was wrong once `RenderOptions.scale` was considered:
+   `tests/fixtures/tiling-type.pdf` renders the same 2-unit lattice at 1.25 px/pt (a 2.5
+   px step) and device pixel 2 is **white** on the type-1 page against **half covered**
+   on the type-2 page (`crates/pdf2-render/tests/tiling.rs`).
 
 ## Acceptance
 

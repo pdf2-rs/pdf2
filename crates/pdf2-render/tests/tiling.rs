@@ -130,3 +130,66 @@ fn a_cell_that_sets_its_own_colour_is_reported_not_obeyed() {
         "the poured colour stands, not the cell's green"
     );
 }
+
+#[test]
+fn tiling_type_one_snaps_its_cells_to_whole_device_pixels() {
+    // `/TilingType` 1 and 3 ask for constant **device** spacing, and the only
+    // lattice that has it is the pixel grid: a cell origin is rounded to a whole
+    // device pixel, so spacing may drift by up to one pixel (8.7.3.1). Type 2 asks
+    // for the opposite trade — no distortion, spacing may drift — and keeps the
+    // exact pattern-space lattice.
+    //
+    // The fixture's cells are 2 units on a 2-unit lattice, each painting a
+    // half-unit bar down its left edge, and it is rendered at 1.25 px/pt, so the
+    // lattice is 2.5 device pixels. Page 1 (`/TilingType 1`) puts bar k at
+    // 3k px — 0, 3, 5, 8 … — and page 2 (`/TilingType 2`) at 2.5k px — 0, 2.5, 5,
+    // 7.5 …. Device pixel 2 is therefore white on page 1 and half covered on page 2,
+    // which is the whole difference between the two types made visible.
+    let path: PathBuf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tiling-type.pdf");
+    let document = Document::open(std::fs::read(&path).expect("fixture")).expect("open");
+    let options = RenderOptions {
+        scale: 1.25,
+        ..RenderOptions::default()
+    };
+
+    let snapped = render_page_number(&document, 0, &options).expect("render page 1");
+    assert_eq!(
+        snapped.report.to_string(),
+        "all operators supported",
+        "the type-1 page paints: {}",
+        snapped.report
+    );
+    // Bars on whole pixels: 0, 3, 5, 8, 10, 13 …
+    for x in [0_u32, 3, 5, 8, 10, 13] {
+        assert_ne!(
+            pixel(&snapped, x, 4),
+            [255, 255, 255, 255],
+            "a bar starts at x = {x}"
+        );
+    }
+    assert_eq!(
+        pixel(&snapped, 2, 4),
+        [255, 255, 255, 255],
+        "no bar falls in device pixel 2 on the snapped lattice"
+    );
+
+    let exact = render_page_number(&document, 1, &options).expect("render page 2");
+    assert_eq!(
+        exact.report.to_string(),
+        "all operators supported",
+        "the type-2 page paints: {}",
+        exact.report
+    );
+    // The unsnapped lattice is 2.5 px, so the second bar straddles pixels 2 and 3.
+    assert_eq!(
+        pixel(&exact, 2, 4),
+        [128, 128, 128, 255],
+        "the exact lattice half-covers device pixel 2"
+    );
+    assert_eq!(
+        pixel(&exact, 3, 4),
+        [223, 223, 223, 255],
+        "and leaves the rest of the bar in pixel 3"
+    );
+}
