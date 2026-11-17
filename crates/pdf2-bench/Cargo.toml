@@ -13,7 +13,7 @@ name = "pdf2-bench"
 path = "src/main.rs"
 
 [dependencies]
-pdf2 = { path = "../..", version = "1.4.0" }
+pdf2 = { path = "../..", version = "1.5.0" }
 
 [lints]
 workspace = true
