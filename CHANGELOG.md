@@ -4,6 +4,37 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — in progress
+
+### Rendering
+
+- **`/JPXDecode` draws, behind a feature** (`7.4.9`): JPEG 2000 images through
+  `hayro-jpeg2000` 0.5.0. The codestream header decides the width, height, colour
+  space and depth — `/ColorSpace` is optional for a JPX image and `/BitsPerComponent`
+  is ignored — and its size is checked against the decode budget **before** a pixel is
+  decoded. Grey, RGB and CMYK map onto the renderer's own spaces; an alpha channel, an
+  `Icc` space and an unnamed one are refused by name. `bug_jpx.pdf` draws, and it
+  joins the oracle case list: within tolerance, and **poppler segfaults on it**, so
+  mupdf and Ghostscript are its engines.
+- **`/JBIG2Decode` draws, behind a feature** (`7.4.7`): bi-level scans through
+  `hayro-jbig2` 0.4.0, including `/DecodeParms /JBIG2Globals` — a separate stream whose
+  segments have to be decoded first. The sink writes 1-bit rows with **1 for white**,
+  which is the sense a `/DeviceGray` sample needs; the two pdf.js pages decode to
+  identical rasters, 11 315 ink on 148 285 white. They do **not** join the oracle: our
+  raster sits 31.261 mean from the engines (13.53 % of pixels over), identically for
+  the inline and globals encodings, so the gap is in the decoder and is recorded in
+  `docs/RENDERING-QUALITY.md` rather than gated.
+
+### Compatibility
+
+- **Both decoders are non-default features** (`jpx`, `jbig2`), per
+  [ADR 0007](docs/adr/0007-decoder-features.md): +76 705 and +62 685 gzip, measured on
+  the 1.4.0 tree, so the npm bundle keeps its 364 KiB budget (365 665) and cannot
+  decode either. A caller that needs them enables the feature; the demo site ships a
+  second, decoder-enabled artefact with its own 505 KiB budget (506 424).
+  `pdf2-oracle` turns them on through its own `decoders` feature, which keeps
+  `cargo test --workspace` on the lean build.
+
 ## [1.4.0] — 2026-11-17
 
 **The renderer finishes the painting vocabulary it started in 1.3.** Three of the plans

@@ -131,8 +131,8 @@ and to wasm; the size report is recorded.
 
 Scope for 1.0 (agreed): **paths, clipping, transforms, images and text
 outlines**. Type 3 fonts are limited to their glyph procedures; ICC colour
-management and JPEG/JPX decoding stay out of scope unless a later minor adds
-them behind features.
+management stays out of scope. JPEG, JPX and JBIG2 decoding did land, each behind
+a feature ([ADR 0007](adr/0007-decoder-features.md)).
 
 - `pdf2-render` 0.1.0 (no_std-friendly core, `std` for I/O conveniences):
   - graphics state: CTM stack, clipping paths, fill/stroke, line joins/caps,
@@ -222,9 +222,10 @@ public surface, no open P1 bugs.
 ## Out of scope for 1.0
 
 Rendering fidelity matching Acrobat, PDF/A conformance, forms, JavaScript, XFA,
-digital signatures, encryption *writing*, JPEG/JPX/CCITT/JBIG2 decoding and ICC
-colour management. Each would be a later minor version with its own feature
-flag, and none of them blocks 1.0.
+digital signatures, encryption *writing* and ICC colour management. Each would be
+a later minor version with its own feature flag, and none of them blocks 1.0.
+JPEG, JPX and JBIG2 decoding are **not** on this list: they shipped behind
+features in 1.4 (`dct`) and 1.5 (`jpx`, `jbig2`).
 
 ## Risks
 
