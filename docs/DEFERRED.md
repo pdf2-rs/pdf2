@@ -31,8 +31,8 @@ oversight.
 | **The clipping half of `Tr` modes 4–7** | Clipping text to its glyph outlines needs the path as a clip *without* painting; no corpus page asks for it, so nothing would prove it | `crates/pdf2-render/src/walk.rs` honours the fill and stroke halves (modes 0–3) and reports the rest | A generated fixture with `Tr 7` around an image — a hand-built page, not something the corpus offers | [plan](plans/tr-clipping.md) |
 
 Mesh shadings (`/ShadingType` 4–7) are deferred by name in the renderer
-(`crates/pdf2-render/src/shading.rs:127`) rather than by a row in this table, and are
-planned in the same index: [`docs/plans/README.md`](plans/README.md).
+(`crates/pdf2-render/src/shading.rs:127`) rather than by a row in this table:
+[plan](plans/mesh-shadings.md).
 
 ## 2. Refused by design
 
@@ -45,7 +45,7 @@ not gaps. They will not be scheduled.
 | A C or C++ core, `unsafe`, or a bundled wasm decoder | non-goal 2 | `#![forbid(unsafe_code)]`, `no_std` and the wasm size budgets are the shape of the crate | — |
 | JavaScript actions and scripting | non-goal 3 | A viewer's job, and a security surface | — |
 | PDF/A conversion, rewriting a document into a profile | non-goal 4 | Validation is item 13 above; conversion is editing | — |
-| Rendering with system fonts for standard-14 text | measured, not decided | There is no font in the crate to draw with; `docs/RENDERING-QUALITY.md` records what that costs (the standard-14 page measures 21.271 mean against the oracles' 1.400) and it is why such a page is proven by its report and ink, not by a pixel comparison | [index](plans/README.md) |
+| Rendering with system fonts for standard-14 text | measured, not decided | There is no font in the crate to draw with; `docs/RENDERING-QUALITY.md` records what that costs (the standard-14 page measures 21.271 mean against the oracles' 1.400) and it is why such a page is proven by its report and ink, not by a pixel comparison | [verdict](plans/standard-14-fonts.md) |
 
 ## 3. Reported, not drawn wrong
 
