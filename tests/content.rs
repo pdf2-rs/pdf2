@@ -288,7 +288,49 @@ fn lines_come_out_in_reading_order_not_paint_order() {
     let page = document.page(0).expect("page");
     assert_eq!(
         document.extract_text(&page).expect("text"),
-        "first line\nsecond line\nthird line"
+        "first line\nsecond line\nthird line\nscaled line"
+    );
+    // `ADR 0008`: the same accumulator carries the geometry. The three lines are
+    // placed by `Tm` with an identity CTM, so their page-space origins are the
+    // numbers in the content stream; the fourth is painted under `q 2 0 0 2 20 100
+    // cm`, so its origin moves to (20, 100) and its box doubles.
+    let spans = document.spans(&page).expect("spans");
+    let texts: Vec<&str> = spans.iter().map(|span| span.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        ["first line", "second line", "third line", "scaled line"]
+    );
+    let bounds = |index: usize| spans[index].bounds;
+    for (index, expected) in [(0, 400.0), (1, 350.0), (2, 300.0)] {
+        let rect = bounds(index);
+        assert!(
+            (rect.x0 - 50.0).abs() < 0.01 && (rect.y0 - expected).abs() < 0.01,
+            "line {index} starts at (50, {expected}), got ({}, {})",
+            rect.x0,
+            rect.y0
+        );
+        assert!(
+            rect.width() > 10.0,
+            "line {index} has a real width: {}",
+            rect.width()
+        );
+        assert!(
+            (rect.height() - 12.0).abs() < 0.01,
+            "line {index} is one em tall, got {}",
+            rect.height()
+        );
+    }
+    let scaled = bounds(3);
+    assert!(
+        (scaled.x0 - 20.0).abs() < 0.01 && (scaled.y0 - 100.0).abs() < 0.01,
+        "the scaled line starts at (20, 100), got ({}, {})",
+        scaled.x0,
+        scaled.y0
+    );
+    assert!(
+        (scaled.height() - 24.0).abs() < 0.01,
+        "the CTM doubles the em, got {}",
+        scaled.height()
     );
 }
 

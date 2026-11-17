@@ -982,7 +982,10 @@ def make_reading_order():
         b"1 0 0 1 50 300 Tm (third line) Tj\n"
         b"1 0 0 1 50 400 Tm [(first) -400 (line)] TJ\n"
         b"1 0 0 1 50 350 Tm (second line) Tj\n"
-        b"ET"
+        b"ET\n"
+        # A fourth line under a scaled `cm`: page-space bounds must double and shift,
+        # which is the CTM case `ADR 0008` exists for.
+        b"q 2 0 0 2 20 100 cm BT /F1 12 Tf 1 0 0 1 0 0 Tm (scaled line) Tj ET Q"
     )
     writer = Writer()
     writer.obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")

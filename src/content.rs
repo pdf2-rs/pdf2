@@ -32,6 +32,7 @@ use crate::error::{Error, Result};
 use crate::lexer::Token;
 use crate::object::{Dictionary, Object};
 use crate::page::Page;
+use crate::page::Rect;
 use crate::parser::Parser;
 
 /// A `TJ` adjustment larger than this (in thousandths of an em) is treated as
@@ -48,6 +49,54 @@ struct Line {
     x: f64,
     y: f64,
     text: String,
+    /// The text matrix composed with the CTM when the line was started, so the
+    /// reader gets page space and the writer's transforms alike (`ADR 0008`).
+    matrix: Matrix,
+    /// Font size in effect, which is the box's height in text space.
+    size: f64,
+    /// How far the pen advanced on this line, in text space.
+    advance: f64,
+}
+
+/// A 2-D affine transform, the six numbers `cm` and `Tm` take.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+struct Matrix {
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    e: f64,
+    f: f64,
+}
+
+impl Matrix {
+    const IDENTITY: Self = Self {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        e: 0.0,
+        f: 0.0,
+    };
+
+    /// `self × other`: `other` is applied first, as PDF's matrix product is.
+    fn multiply(self, other: Self) -> Self {
+        Self {
+            a: self.a * other.a + self.b * other.c,
+            b: self.a * other.b + self.b * other.d,
+            c: self.c * other.a + self.d * other.c,
+            d: self.c * other.b + self.d * other.d,
+            e: self.e * other.a + self.f * other.c + other.e,
+            f: self.e * other.b + self.f * other.d + other.f,
+        }
+    }
+
+    fn apply(self, x: f64, y: f64) -> (f64, f64) {
+        (
+            self.a * x + self.c * y + self.e,
+            self.b * x + self.d * y + self.f,
+        )
+    }
 }
 
 /// How a composite font's codes become text.
@@ -228,6 +277,12 @@ struct TextInterpreter<'a> {
     pen_tracked: bool,
     /// Lines in the order they were painted; sorted for the result.
     lines: Vec<Line>,
+    /// Current transform matrix, saved and restored by `q`/`Q` (`8.4.4`, `8.4.2`).
+    ctm: Matrix,
+    /// The `q` stack.
+    ctm_stack: Vec<Matrix>,
+    /// The text matrix, which `BT` resets and `Tm`/`Td`/`TD`/`T*` move (`9.4.2`).
+    text_matrix: Matrix,
 }
 
 impl<'a> TextInterpreter<'a> {
@@ -244,10 +299,13 @@ impl<'a> TextInterpreter<'a> {
             pen_x: 0.0,
             pen_tracked: false,
             lines: Vec::new(),
+            ctm: Matrix::IDENTITY,
+            ctm_stack: Vec::new(),
+            text_matrix: Matrix::IDENTITY,
         }
     }
 
-    fn run(mut self, content: &[u8]) -> Result<String> {
+    fn run(mut self, content: &[u8]) -> Result<Vec<Line>> {
         let mut parser = Parser::new(content);
         let mut operands: Vec<Object> = Vec::new();
         loop {
@@ -267,7 +325,7 @@ impl<'a> TextInterpreter<'a> {
                 }
             }
         }
-        Ok(self.reading_order())
+        Ok(self.ordered_lines())
     }
 
     /// The painted lines, ordered for a reader rather than for the painter.
@@ -276,7 +334,7 @@ impl<'a> TextInterpreter<'a> {
     /// that a line's fragments stay left to right. A page with several columns
     /// sorts left-to-right within a band — an approximation this crate states in
     /// the ADR rather than guesses at with a layout engine.
-    fn reading_order(mut self) -> String {
+    fn ordered_lines(mut self) -> Vec<Line> {
         self.lines.retain(|line| !line.text.is_empty());
         self.lines.sort_by(|left, right| {
             right
@@ -289,14 +347,7 @@ impl<'a> TextInterpreter<'a> {
                         .unwrap_or(core::cmp::Ordering::Equal),
                 )
         });
-        let mut output = String::new();
-        for line in &self.lines {
-            if !output.is_empty() {
-                output.push('\n');
-            }
-            output.push_str(&line.text);
-        }
-        output
+        self.lines
     }
 
     /// The line at the current text position, created on first use.
@@ -312,6 +363,9 @@ impl<'a> TextInterpreter<'a> {
             x: self.line_x,
             y: self.line_y,
             text: String::new(),
+            matrix: self.text_matrix.multiply(self.ctm),
+            size: self.size,
+            advance: 0.0,
         });
         #[allow(clippy::unwrap_used)]
         self.lines.last_mut().unwrap()
@@ -345,6 +399,11 @@ impl<'a> TextInterpreter<'a> {
                 let previous_y = self.line_y;
                 self.line_x += tx;
                 self.line_y += ty;
+                self.text_matrix = Matrix {
+                    e: self.text_matrix.e + tx * self.text_matrix.a + ty * self.text_matrix.c,
+                    f: self.text_matrix.f + tx * self.text_matrix.b + ty * self.text_matrix.d,
+                    ..self.text_matrix
+                };
                 // A move along the line leaves the pen where the text stopped,
                 // which is what lets a gap become a space; a move down starts a
                 // new line, so the pen starts there.
@@ -358,12 +417,45 @@ impl<'a> TextInterpreter<'a> {
             b"T*" => {
                 self.line_y -= self.leading;
                 self.pen_x = self.line_x;
+                self.text_matrix = Matrix {
+                    e: self.text_matrix.e - self.leading * self.text_matrix.c,
+                    f: self.text_matrix.f - self.leading * self.text_matrix.d,
+                    ..self.text_matrix
+                };
             }
             b"TL" => {
                 self.leading = number(operands.first());
             }
+            b"q" => self.ctm_stack.push(self.ctm),
+            b"Q" => {
+                if let Some(saved) = self.ctm_stack.pop() {
+                    self.ctm = saved;
+                }
+            }
+            b"cm" => {
+                let matrix = Matrix {
+                    a: number(operands.first()),
+                    b: number(operands.get(1)),
+                    c: number(operands.get(2)),
+                    d: number(operands.get(3)),
+                    e: number(operands.get(4)),
+                    f: number(operands.get(5)),
+                };
+                // `8.4.4`: the new matrix is concatenated to the current one, so it
+                // is applied to the coordinates *before* it.
+                self.ctm = self.ctm.multiply(matrix);
+            }
             b"Tm" => {
-                // Only the translation part matters for text extraction.
+                // The translation is what places the line; the linear part is what
+                // sizes it, and `spans()` needs both (`ADR 0008`).
+                self.text_matrix = Matrix {
+                    a: number(operands.first()),
+                    b: number(operands.get(1)),
+                    c: number(operands.get(2)),
+                    d: number(operands.get(3)),
+                    e: number(operands.get(4)),
+                    f: number(operands.get(5)),
+                };
                 let previous_y = self.line_y;
                 self.line_x = number(operands.get(4));
                 self.line_y = number(operands.get(5));
@@ -448,8 +540,13 @@ impl<'a> TextInterpreter<'a> {
             line.text.push(' ');
         }
         line.text.push_str(&run);
-        if self.pen_tracked {
+        let tracked = self.pen_tracked;
+        if tracked {
             self.pen_x = self.line_x + advance * self.size;
+            let start = self.line_x;
+            if let Some(line) = self.lines.last_mut() {
+                line.advance = self.pen_x - start;
+            }
         }
     }
 
@@ -718,6 +815,44 @@ fn number(operand: Option<&Object>) -> f64 {
     }
 }
 
+/// One line of text with the rectangle it occupies, in page space.
+///
+/// A *line* box, not a glyph box ([ADR 0008](../docs/adr/0008-positioned-text.md)):
+/// selection highlights and search hits are unions of these, and a caller that
+/// needs per-character rectangles can split `text` by its advances.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextSpan {
+    /// The line's text, exactly as [`Document::extract_text`] reports it.
+    pub text: String,
+    /// Where the line sits on the page, after the CTM and the text matrix.
+    pub bounds: Rect,
+}
+
+impl Line {
+    /// The line's box in page space, or `None` when it cannot be placed.
+    fn bounds(&self) -> Rect {
+        let matrix = self.matrix;
+        let (x0, y0) = matrix.apply(0.0, 0.0);
+        // A font that reports no advances leaves the pen where it started; half an
+        // em per character is the estimate the built-in alphabet uses, and it is
+        // stated here rather than hidden in a caller.
+        let advance = if self.advance > 0.0 {
+            self.advance
+        } else {
+            self.size * 0.5 * self.text.chars().count() as f64
+        };
+        let (x1, y1) = matrix.apply(advance, 0.0);
+        let (x2, y2) = matrix.apply(0.0, self.size);
+        let (x3, y3) = matrix.apply(advance, self.size);
+        Rect::new(
+            x0.min(x1).min(x2).min(x3),
+            y0.min(y1).min(y2).min(y3),
+            x0.max(x1).max(x2).max(x3),
+            y0.max(y1).max(y2).max(y3),
+        )
+    }
+}
+
 impl Document {
     /// Extract the text of a page's content streams.
     pub fn extract_text(&self, page: &Page) -> Result<String> {
@@ -731,7 +866,35 @@ impl Document {
         content: &[u8],
         resources: Option<&Dictionary>,
     ) -> Result<String> {
-        TextInterpreter::new(self, resources.cloned()).run(content)
+        let lines = TextInterpreter::new(self, resources.cloned()).run(content)?;
+        Ok(lines
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n"))
+    }
+
+    /// The page's lines with their rectangles, in the same order `extract_text`
+    /// reports the text ([ADR 0008](../docs/adr/0008-positioned-text.md)).
+    pub fn spans(&self, page: &Page) -> Result<Vec<TextSpan>> {
+        let content = self.page_content(page)?;
+        self.spans_from(&content, page.resources.as_ref())
+    }
+
+    /// Spans of a decoded content stream and its resource dictionary.
+    pub fn spans_from(
+        &self,
+        content: &[u8],
+        resources: Option<&Dictionary>,
+    ) -> Result<Vec<TextSpan>> {
+        let lines = TextInterpreter::new(self, resources.cloned()).run(content)?;
+        Ok(lines
+            .into_iter()
+            .map(|line| TextSpan {
+                bounds: line.bounds(),
+                text: line.text,
+            })
+            .collect())
     }
 }
 
