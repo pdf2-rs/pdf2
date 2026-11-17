@@ -92,7 +92,8 @@ real bugs:
 | `/Type0` + `/Identity-H` + `CIDFontType2` with `/FontFile2` | two-byte codes, `/CIDToGIDMap` (identity or stream) to glyph ids, `/W`/`/DW` advances — proven by pages 10 and 11, where the same codes draw different glyphs once the map is swapped |
 | `/ExtGState` (`8.4.5`): `/ca`, `/CA`, `/BM` (all sixteen), `/LW`, `/LC`, `/LJ`, `/ML`, `/D`, `/SMask` `/Luminosity` | **honoured**, and carried by `q`/`Q`. A luminosity soft mask is rendered from its `/G` onto black and multiplied into the coverage mask; `/SMask /None` is not a mask; an `/S /Alpha` mask is reported as `gs`. The sixteen blend modes follow the CSS formulae the standard refers to, `(1-a)·Cb + a·B(Cb, Cs)` over an opaque backdrop |
 | `sh`: shadings types 1 (function), 2 (axial) and 3 (radial) | **drawn** per pixel inside the current clip, with the fill alpha and blend mode; colour spaces `DeviceGray`, `DeviceRGB`, `DeviceCMYK`. Mesh shadings (types 4–7) are reported by name — no corpus page uses one |
-| `cs`/`CS`, `sc`/`SC`, `scn`/`SCN` (`8.6.8`) | **honoured** for tint spaces (`/Separation`, `/DeviceN`) and for a `/Pattern` space whose `scn` names a **`/PatternType 2`** shading pattern, which fills the path with the gradient. Tiling patterns (`/PatternType 1`) are still reported |
+| `cs`/`CS`, `sc`/`SC`, `scn`/`SCN` (`8.6.8`) | **honoured** for tint spaces (`/Separation`, `/DeviceN`), for a `/Pattern` space whose `scn` names a **`/PatternType 2`** shading pattern, and for one naming a **`/PatternType 1`** cell, which tiles the path |
+| `/PatternType 1` tiling patterns (`8.7.3`, Table 73) | **drawn**: the cell's `/BBox` clips each copy, `/XStep`/`/YStep` are the lattice (a zero step is reported, not divided), `/PaintType 1` paints the cell's own content and `/PaintType 2` is a stencil poured with the colour `scn` gave (`[/Pattern /DeviceRGB]` names the space), and `MAX_TILE_CELLS` bounds a lattice the clause leaves unbounded. The cell runs with the **parent stream's initial state** and its own `/Resources` |
 | `/Separation` and `/DeviceN` colour spaces (`8.6.6.4`, `8.6.6.5`) | **read** wherever a shading or an image names one: the tint runs through the space's own `/Function` into the alternate space. `/Pattern` colour spaces are still reported |
 | `/Function` objects (`7.10`, types 0, 2, 3, 4) | **read**: `function.rs` parses and evaluates them, type 4 through a bounded PostScript-calculator stack machine. Not yet consumed by painting — `sh` is the next step |
 | `/CCITTFaxDecode` images, one-dimensional (`/K` 0) | **drawn**: `src/fax.rs` decodes the run-length lines into one-bit rows, honouring `/Columns`, `/Rows`, `/EndOfLine`, `/EncodedByteAlign`, `/EndOfBlock` and `/BlackIs1`, and the image path widens 1-bit samples |
@@ -110,7 +111,8 @@ real bugs:
 | simple-font `/FontFile3` CFF programs | **drawn**: a bare CFF has no `cmap`, so the charset's glyph **names** are the route — each name is read back to a character and a code finds its glyph through the encoding. `ShowText-ShadingPattern.pdf` stopped reporting `font:FontFile3` and set its text in the embedded Arial subset |
 | Type 3 fonts (`9.6.5`): `/CharProcs`, `/Encoding` `/Differences`, `/FontMatrix` | **drawn**: each glyph's content stream runs in glyph space — the font matrix first, then the text rendering matrix — with the font's own `/Resources`, `d0`/`d1` read for the width the `/Widths` array supplies, and the recursion limited by the same depth cap as a form. `Type3WordSpacing.pdf` and `ContentStreamCycleType3insideType3.pdf` draw, both reporting every operator supported |
 | `/FontFile` (Type 1) programs | **drawn**: `crates/pdf2-render/src/type1.rs` reads the program in PFA or PFB form, decrypts the `eexec` section with the format's fixed key (`R = 55665`, and `4330` for the charstrings unless `/lenIV` is `-1`), reads `/Subrs` and `/CharStrings` from the binary-token form, and interprets the drawing operators — `hsbw`, `sbw`, `rmoveto`, `hmoveto`, `vmoveto`, `rlineto`, `hlineto`, `vlineto`, `rrcurveto`, `closepath`, `callsubr`, `callgsubr`, `return`, `endchar`, `div`, the flex group — with hints popped and ignored. `seac` (accent composition) and `callothersubr` are refused by name, so a glyph that needs them draws nothing rather than something wrong. `tests/fixtures/type1.pdf` is a generated font (three glyphs, one through `callsubr`) and `crates/pdf2-render/tests/type1.rs` checks three ink bands. It cannot join the oracle list yet: FreeType rejects the generated program ("Couldn't create a font for 'Fixture'"), so the engines substitute a font and a comparison would measure the substitution |
-| Text render modes other than fill (`Tr`), vertical writing | not implemented |
+| `Tr` text rendering modes 0–7 (`9.3.6`, Table 104) and the clipping half of 4–7 | **drawn**: 0 fill, 1 stroke, 2 both, 3 nothing, and 4–7 add the glyph's polygons to the current clip under the non-zero winding rule — the clip accumulates glyph by glyph and `q`/`Q` restores it. A **Type 3** glyph has no outline to clip to, so modes 4–7 report `text-clip` rather than clipping to an empty mask |
+| Vertical writing mode | not implemented |
 
 The report is the honest part: a page that used a font this renderer cannot draw
 says so, rather than looking like a page of boxes with no explanation.
@@ -131,12 +133,14 @@ The renderer does not implement these, so no fixture can prove them and content
 using them is reported rather than silently guessed:
 
 - shadings (`sh`), mesh gradients and axial/radial gradient fills;
-- patterns (`PatternType 1` and 2), tiling and `/PaintType`;
+- patterns: tiling (`/PatternType 1`) is drawn, but a **`/TilingType` 1 or 3**
+  device-pixel spacing snap is not implemented (recorded in
+  `docs/plans/tiling-patterns.md`);
 - transparency groups, soft masks (`/SMask`), `/ca`/`/CA`, blend modes — the
   `gs` operator is counted as unsupported;
-- text render modes other than fill (`Tr`), Type 3 fonts, and `TJ` kerning
+- vertical writing, `/Mask` as a stencil image, and `TJ` kerning
   beyond the per-element adjustment;
-- images above 8 bits per component, `/Mask`, and `/Interpolate` as anything
+- images above 8 bits per component and `/Interpolate` as anything
   other than bilinear sampling.
 
 Those are the next coverage candidates: each needs an implementation first, then

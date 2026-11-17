@@ -1939,8 +1939,14 @@ impl Walker<'_> {
             self.report.note(b"Tj");
             return Ok(());
         }
-        // Text rendering mode 3 and 7 paint nothing (9.3).
-        if matches!(self.state.text_mode, 3 | 7) {
+        // Text rendering mode 3 paints nothing (9.3.6); modes 4–7 also *clip* to
+        // the glyph outline, and a Type 3 glyph has no outline — it is a content
+        // stream — so the clip is reported by name instead of silently empty.
+        if matches!(self.state.text_mode, 4..=7) {
+            self.report.note(b"text-clip");
+            return Ok(());
+        }
+        if self.state.text_mode == 3 {
             return Ok(());
         }
 

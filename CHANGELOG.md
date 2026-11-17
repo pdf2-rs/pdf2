@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.4.0] — in progress
 
+### Rendering
+
+- **Tiling patterns draw** (`8.7.3`, Table 73): `/PatternType 1` cells are parsed and
+  replicated over the filled path — `/BBox` clips each copy, `/XStep`/`/YStep` are the
+  lattice (a zero step is reported rather than divided), `/PaintType 1` paints the cell's
+  own content and `/PaintType 2` is a stencil poured with the colour `scn` gave it (a
+  colour operator inside such a cell is reported, not obeyed). The cell runs with the
+  **parent stream's initial graphics state** and its own `/Resources`, and `MAX_TILE_CELLS`
+  bounds a lattice the clause leaves unbounded. `colorkeymask.pdf` and
+  `ContentStreamCycleType3insideType3.pdf` paint their tiles where both were ignored in
+  silence; `/TilingType` 1/3 device-pixel spacing is recorded as a later decision.
+- **Colour-key `/Mask` hides its samples** (`8.9.6.4`): the key is tested on the raw
+  samples **before** `/Decode` and masked pixels are skipped, so the background shows
+  through; the ranges are inclusive, which the corpus's own `min == max` key requires.
+  `/DCTDecode` with a key and a stream `/Mask` (a stencil image) are refused by name.
+- **`Tr` modes 4–7 clip to the glyph outlines** (`9.3.6`, Table 104): the polygons join the
+  current clip under the non-zero winding rule and `q`/`Q` restores it. Mode 7 used to
+  share mode 3's early return, so it neither painted nor clipped. A Type 3 glyph has no
+  outline, so modes 4–7 report `text-clip` rather than clipping to an empty mask.
+
 ### Compatibility
 
 - **The MSRV is now 1.100** (raised from 1.87). The reason is the one the previous
