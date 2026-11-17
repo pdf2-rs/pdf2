@@ -681,6 +681,36 @@ async function main() {
     const cjk = await evaluate(`return document.querySelector('#text').textContent;`);
     check(cjk.includes('日本語テスト'), `the CJK sample extracts its text: ${cjk.slice(0, 40)}`);
 
+    // --- 1.3's samples -------------------------------------------------
+    //
+    // The painting family: a gradient drawn by a `/Shading` through its
+    // `/Function`, the sixteen blend modes, and a Type 1 program. Each one is a
+    // page of colour, so a blank canvas is the failure the check has to catch.
+
+    await pick('/Gradients/');
+    await waitFor(`document.querySelector('#factName').textContent === 'shading.pdf'`, 'the shading sample');
+    await new Promise((done) => setTimeout(done, 400));
+    const shadingInk = await ink();
+    check(shadingInk > 20_000, `the shading sample fills its page: ${shadingInk} pixels`);
+    const shadingStatus = await evaluate(`return document.querySelector('#status').textContent;`);
+    check(
+      !/sh×|unsupported/i.test(shadingStatus),
+      `the shading sample reports no skipped \`sh\`: ${shadingStatus}`,
+    );
+
+    await pick('/blend modes/');
+    await waitFor(
+      `document.querySelector('#factName').textContent === 'blend-modes.pdf'`,
+      'the blend-modes sample',
+    );
+    await new Promise((done) => setTimeout(done, 400));
+    check((await ink()) > 10_000, 'the blend-modes sample draws its strips');
+
+    await pick('/Type 1/');
+    await waitFor(`document.querySelector('#factName').textContent === 'type1.pdf'`, 'the Type 1 sample');
+    await new Promise((done) => setTimeout(done, 400));
+    check((await ink()) > 3_000, 'the Type 1 sample draws its glyphs');
+
     // Nothing above should have thrown or logged an error.
     const errors = [];
     for (const event of cdp.events) {
