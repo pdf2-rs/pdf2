@@ -45,6 +45,31 @@ expect(pixels instanceof Uint8ClampedArray, 'renderPage returns a Uint8ClampedAr
 expect(pixels.length === 612 * 792 * 4, `renderPage length: ${pixels.length}`);
 expect(pixels[0] === 255, 'renderPage starts on the white background');
 
+// The text geometry the demo's text layer and find box read: four numbers per
+// span in a Float64Array, with the strings parallel to it, so no JavaScript type
+// of its own (the wasm bundle pays for every bit of engine glue).
+const spans = text.spans(0);
+const spanTexts = text.spanTexts(0);
+expect(spans instanceof Float64Array, 'spans(0) is a Float64Array');
+expect(spans.length > 0 && spans.length === spanTexts.length * 4, `spans: ${spans.length} numbers, ${spanTexts.length} texts`);
+expect(
+  typeof spanTexts[0] === 'string' && text.text(0).includes(spanTexts[0]),
+  `the first span's text is the page's text: ${spanTexts[0]}`,
+);
+const [sx0, sy0, sx1, sy1] = Array.from(spans.slice(0, 4));
+expect(
+  sx0 >= 0 && sy0 >= 0 && sx1 > sx0 && sy1 > sy0 && sx1 <= 612 && sy1 <= 792,
+  `the box is inside the page: ${sx0}, ${sy0}, ${sx1}, ${sy1}`,
+);
+
+const hits = text.search('hello');
+const hitTexts = text.searchTexts('hello');
+expect(hits instanceof Float64Array && hits.length === 5, `one hit is page + four numbers: ${hits.length}`);
+expect(hitTexts.length === 1 && hitTexts[0].toLowerCase() === 'hello', `the hit's text: ${hitTexts[0]}`);
+expect(hits[0] === 0, 'the hit is on page 0');
+expect(text.search('').length === 0, 'an empty needle matches nothing');
+expect(text.search('nothing on this page').length === 0, 'a missing phrase matches nothing');
+
 const tree = wasm.open(readFileSync(join(fixtures, 'page-tree.pdf')), undefined);
 expect(tree.pageCount() === 3, 'page-tree.pdf: page count');
 const metadata = tree.metadata();
@@ -99,8 +124,8 @@ expect(rejected, 'a wrong password throws');
 // site ships one with the image decoders compiled in (ADR 0007 — they cost about
 // 138 KiB gzip, which is why they are not in the default). Budgets are documented
 // in docs/PERFORMANCE.md; change both together.
-const BUDGET_GZIP = 368 * 1024;
-const DEMO_BUDGET_GZIP = 505 * 1024;
+const BUDGET_GZIP = 378 * 1024;
+const DEMO_BUDGET_GZIP = 514 * 1024;
 
 /// Measure one artefact: the wasm module plus its JS glue, gzipped.
 const measure = (directory, budget, name) => {

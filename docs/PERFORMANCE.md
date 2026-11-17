@@ -183,8 +183,8 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 compiled in, against **365 734** with neither — measured on the 1.4.0 tree by the
 commands above, with `--features jpx,jbig2` on the `cargo build` and gzip level 9.
 The default keeps its 364 KiB budget, so the npm package decodes neither; the demo
-site loads a second, decoder-enabled artefact with its own **505 KiB** budget
-(measured 506 481 gzip), and `crates/pdf2-oracle` enables
+site loads a second, decoder-enabled artefact with its own **514 KiB** budget
+(measured 522 616 gzip after the search tables; 506 481 before them), and `crates/pdf2-oracle` enables
 both through its `decoders` feature because it is evidence rather than a shipped
 artefact. `check.mjs` measures both artefacts and also asserts the site's bundle is
 more than 100 KiB larger than the package's — a demo that silently fell back to the
@@ -199,6 +199,13 @@ what its pixels drag in, so the number has to come from a build that decodes.
 `sh` plus the `/Function` evaluator cost **+7 465 gzip bytes** (327 567 →
 335 032) — a gradient is a function evaluated per pixel, and the calculator's
 operators are the bulk of it.
+
+**The npm bundle budget moved from 368 KiB to 378 KiB on 2026-11-17, for search**:
+`Document::search` is case-insensitive, and Unicode case folding brings its tables
+with it — **+11 661 gzip bytes** on the npm bundle (370 258 → 381 919, measured
+locally; the 368 KiB budget was set from CI's number, which runs ~3 KB higher). The
+alternative was an ASCII-only fold, which would report "case-insensitive" and mean
+"for English"; the tables are the price of the claim being true.
 
 **The npm bundle budget moved from 364 KiB to 368 KiB on 2026-11-17, for positioned
 text**: the extractor learned `q`/`Q`/`cm` and the text matrix so `Document::spans`

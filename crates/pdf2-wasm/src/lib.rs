@@ -104,6 +104,86 @@ impl PdfDocument {
             .map_err(|error| JsError::new(&error.to_string()))
     }
 
+    /// The page's lines as page-space boxes, four numbers per span in reading
+    /// order: `[x0, y0, x1, y1, …]`.
+    ///
+    /// A `Float64Array` rather than a JavaScript type of its own: the text layer
+    /// over the canvas wants numbers, and the engine costs kilobytes in the wasm
+    /// bundle. `spanTexts(index)` returns the parallel strings.
+    #[wasm_bindgen(js_name = spans)]
+    pub fn spans(&self, index: usize) -> Result<Vec<f64>, JsError> {
+        let spans = self.spans_of(index)?;
+        let mut out = Vec::with_capacity(spans.len() * 4);
+        for span in spans {
+            out.extend_from_slice(&[
+                span.bounds.x0,
+                span.bounds.y0,
+                span.bounds.x1,
+                span.bounds.y1,
+            ]);
+        }
+        Ok(out)
+    }
+
+    /// The page's span texts, parallel to `spans(index)`.
+    #[wasm_bindgen(js_name = spanTexts)]
+    pub fn span_texts(&self, index: usize) -> Result<Vec<String>, JsError> {
+        Ok(self
+            .spans_of(index)?
+            .into_iter()
+            .map(|span| span.text)
+            .collect())
+    }
+
+    /// Every search hit in the document as `[page, x0, y0, x1, y1, …]`, four box
+    /// numbers after each page index, case-insensitively.
+    ///
+    /// `searchTexts(needle)` returns the matched strings in the same order.
+    #[wasm_bindgen(js_name = search)]
+    pub fn search(&self, needle: &str) -> Result<Vec<f64>, JsError> {
+        let mut out = Vec::new();
+        for hits in self
+            .document
+            .search(needle)
+            .map_err(|error| JsError::new(&error.to_string()))?
+        {
+            for hit in hits.hits {
+                out.extend_from_slice(&[
+                    hits.page as f64,
+                    hit.bounds.x0,
+                    hit.bounds.y0,
+                    hit.bounds.x1,
+                    hit.bounds.y1,
+                ]);
+            }
+        }
+        Ok(out)
+    }
+
+    /// The matched strings, parallel to `search(needle)`.
+    #[wasm_bindgen(js_name = searchTexts)]
+    pub fn search_texts(&self, needle: &str) -> Result<Vec<String>, JsError> {
+        let pages = self
+            .document
+            .search(needle)
+            .map_err(|error| JsError::new(&error.to_string()))?;
+        Ok(pages
+            .into_iter()
+            .flat_map(|hits| hits.hits.into_iter().map(|hit| hit.text))
+            .collect())
+    }
+
+    /// The spans of one page, shared by the two accessors above.
+    fn spans_of(&self, index: usize) -> Result<Vec<pdf2::TextSpan>, JsError> {
+        let page = self
+            .document
+            .page(index)
+            .map_err(|error| JsError::new(&error.to_string()))?;
+        self.document
+            .spans(&page)
+            .map_err(|error| JsError::new(&error.to_string()))
+    }
+
     /// The XMP metadata packet as text, when the document has one.
     #[wasm_bindgen(js_name = metadata)]
     pub fn metadata(&self) -> Option<String> {
