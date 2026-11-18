@@ -5,33 +5,62 @@ objective is cut from. It is generated from the repository, not from memory: eve
 `file:line` it came from, every demand number a command, and the counts are quoted beside the command
 that produced them so a later round can diff them instead of re-reading the whole backlog.
 
-Regenerate the sources with:
+Regenerate and verify the sources with:
 
 ```sh
-cargo run -q -p xtask -- ledger      # 114 rows, 21 roadmap items
+cargo run -q -p xtask -- ledger      # 114 rows, 21 roadmap items, 28 citations, every count
+cargo run -q -p xtask -- objective   # the counts block below, recomputed
 grep -c '^|' docs/FEATURES.md        # 161 table lines (117 status rows once headers and separators are out)
 ls docs/plans/*.md                   # 11 files: 10 plans + README
 ```
 
+Neither command is advice: `cargo gate` runs both, and fails when this document disagrees
+with the tree. What is checked, in one list —
+
+- every citation here is `path#snippet` and the file must contain the snippet (28 of them);
+- every `line` in the open-rows table is not checked (it is a reader's jump target), but every
+  backticked path in `docs/FEATURES.md`'s evidence must exist (163 of them);
+- the counts block below is compared line for line with `objective`'s output;
+- no `docs/FEATURES.md` row may be `scheduled` under a rank `docs/ROADMAP-NEXT.md` marks ✓.
+
+The CI Gate job runs `cargo gate`, so all of it runs on every pull request.
+
 ## Counts, as of this round
 
-`cargo run -q -p xtask -- ledger` prints:
+The numbers below come from one command, and `cargo gate` fails when this block and the recount
+disagree — `cargo run -q -p xtask -- objective` prints exactly this:
 
 ```text
-ledger: 114 rows, 21 roadmap items, every item owned and every shipped row evidenced
+status rows: 117
+  shipped              51
+  shipped (partial)    15
+  partial              2
+  not applicable       5
+  deferred             1
+  refused              8
+  scheduled            11
+  unplanned            24
+open rows: 35 (11 scheduled, 24 unplanned)
+roadmap ranks: 21, open: 7
+deferred open: 3, refusals: 5
+plans: 10
 ```
 
-`docs/FEATURES.md` holds **117 status rows**: 51 `shipped`, 15 `shipped (partial)`, 2 partly-shipped rows
-with a bare `partial`, 5 `not applicable`, 1 `deferred`, 8 `refused`, **11 `scheduled`** and **24
-`unplanned`** — the 35 open ones are listed below. `docs/ROADMAP-NEXT.md` carries 21 ranks, of which **7 are
-open** (`5, 9, 10, 10b, 10c, 12, 13`) and 14 are marked shipped. `docs/DEFERRED.md` holds **4 open items**
-(ICC, mesh shadings, forms filling, validation) and 5 refusals with an ADR line; the three rows that used to
-read as deferred although the code shipped them (tiling patterns, colour-key `/Mask`, the `Tr` 4-7 clipping
-half) are struck through with their tests named, as the JPX and JBIG2 row already was. `docs/plans/` holds
-10 plans and a template readme.
+Read it as: **117 status rows** in `docs/FEATURES.md` (51 `shipped`, 15 `shipped (partial)`, 2 bare
+`partial`, 5 `not applicable`, 1 `deferred`, 8 `refused`, 11 `scheduled`, 24 `unplanned`), of which the
+**35 open** ones are listed below; **21 roadmap ranks, 7 open** (`5, 9, 10, 10b, 10c, 12, 13`); **3 deferred
+rows still open** in `docs/DEFERRED.md` (ICC, forms filling, validation — mesh shadings is a paragraph there,
+not a row) beside **5 refusals** with an ADR line; and **10 plans** in `docs/plans/`.
 
-The ten contradictions this inventory started with were corrected in PR #160 (`bc9b72e`), which also made
-`crates/xtask/src/main.rs`'s usage text name invocations that exist — see "Corrections applied" at the end.
+`cargo run -q -p xtask -- ledger` adds its own line:
+
+```text
+ledger: 114 rows, 21 roadmap items, 28 citations, every item owned, every shipped row evidenced, every citation resolvable and every count matching
+```
+
+The three rows that used to read as deferred although the code shipped them (tiling patterns, colour-key
+`/Mask`, the `Tr` 4-7 clipping half) are struck through with their tests named, as the JPX and JBIG2 row
+already was. The ten contradictions this inventory started with were corrected in PR #160 (`bc9b72e`).
 
 ## Open rows in `docs/FEATURES.md` (35)
 
@@ -76,17 +105,19 @@ The ten contradictions this inventory started with were corrected in PR #160 (`b
 ## Open ranks in `docs/ROADMAP-NEXT.md` (7)
 
 The roadmap's own columns are kept, so an objective's effort and its proof strategy can be read without
-opening the file. Ranks marked **✓** there are shipped and are not repeated here.
+opening the file. Ranks marked **✓** there are shipped and are not repeated here. **No line numbers**: the
+rank is the key, because the six line numbers this table used to carry were already wrong (a rank that says
+`5` does not move when the roadmap gains a paragraph above it).
 
-| line | rank | what remains | effort | proof (done when) | depends on |
-| --- | --- | --- | --- | --- | --- |
-| 39 | 5 | Predefined CMaps and CJK text — one CMap (90ms-RKSJ-H) shipped 2026-11-15, the rest data work | 2 | The CJK sample extracts its text; the shipped data is measured against the wasm budget | 2, and the licence first: Adobe's CMaps are BSD-3-Clause and deny.toml allows no BSD licence (docs/FEATURES.md §Outside facts), so the allow-list entry and notice — or a home outside the crate — come before the data |
-| 45 | 9 | Image decoders behind features — DCT (RGB and CMYK) and CCITT 1-D/2-D shipped; JPEG 2000 and JBIG2 unblocked 2026-11-17 by the 1.100 floor and now a s | 3 | Those four pages have ink and pass the oracle check, with the budget decision recorded — raise the npm budget to ~499 KiB, or ship behind a non-defaul | 1 (to verify) |
-| 46 | 10 | Painting completeness — shadings, functions, /Separation, /DeviceN, /PatternType 2, cs/scn, Type 3 and CFF fonts shipped 2026-11-16; tiling patterns a | 7 | Oracle diff on those corpus pages; docs/RENDERING.md's "still unproven" list shrinks to /UserUnit and >8-bit images | 1 |
-| 47 | 10b | Colour management (ICC) — deferred: a fidelity decision, and since 2026-11-17 no longer a dependency one — moxcms 0.9.2 (MSRV 1.89, BSD-3-Clause OR Ap | 4 | Our distance to the median oracle on the colour page drops toward the inter-oracle spread, with the before/after measured | 1, 10 |
-| 52 | 10c | Renderer performance budget — a per-page time budget gates the oracle job and a glyph cache exists; no 200-page document is timed yet | 2 | The oracle job records render time per page and fails above a committed budget; a 200-page document stays within it | 1 |
-| 54 | 12 | Annotations and forms — reading and rendering appearance streams shipped (12b); filling and authoring scheduled 2026-11-17 ([plan](plans/forms.md)) (r | 5 | An annotated corpus page renders its appearance streams; a form field can be set and re-read | 11 for filling |
-| 55 | 13 | Conformance validation — scheduled 2026-11-17, PDF/A included: check --strict for the structural facts, then the profile clauses per part, with veraPD | 4 | A damaged fixture per structural check, and a veraPDF corpus subset where both validators agree case by case | 11 (the writer edits what it validates) |
+| rank | what remains | effort | proof (done when) | depends on |
+| --- | --- | --- | --- | --- |
+| 5 | Predefined CMaps and CJK text — one CMap (90ms-RKSJ-H) shipped 2026-11-15, the rest data work | 2 | The CJK sample extracts its text; the shipped data is measured against the wasm budget | 2, and the licence first: Adobe's CMaps are BSD-3-Clause and deny.toml allows no BSD licence (docs/FEATURES.md §Outside facts), so the allow-list entry and notice — or a home outside the crate — come before the data |
+| 9 | Image decoders behind features — DCT (RGB and CMYK) and CCITT 1-D/2-D shipped; JPEG 2000 and JBIG2 unblocked 2026-11-17 by the 1.100 floor and now a s | 3 | Those four pages have ink and pass the oracle check, with the budget decision recorded — raise the npm budget to ~499 KiB, or ship behind a non-defaul | 1 (to verify) |
+| 10 | Painting completeness — shadings, functions, /Separation, /DeviceN, /PatternType 2, cs/scn, Type 3 and CFF fonts shipped 2026-11-16; tiling patterns a | 7 | Oracle diff on those corpus pages; docs/RENDERING.md's "still unproven" list shrinks to /UserUnit and >8-bit images | 1 |
+| 10b | Colour management (ICC) — deferred: a fidelity decision, and since 2026-11-17 no longer a dependency one — moxcms 0.9.2 (MSRV 1.89, BSD-3-Clause OR Ap | 4 | Our distance to the median oracle on the colour page drops toward the inter-oracle spread, with the before/after measured | 1, 10 |
+| 10c | Renderer performance budget — a per-page time budget gates the oracle job and a glyph cache exists; no 200-page document is timed yet | 2 | The oracle job records render time per page and fails above a committed budget; a 200-page document stays within it | 1 |
+| 12 | Annotations and forms — reading and rendering appearance streams shipped (12b); filling and authoring scheduled 2026-11-17 ([plan](plans/forms.md)) (r | 5 | An annotated corpus page renders its appearance streams; a form field can be set and re-read | 11 for filling |
+| 13 | Conformance validation — scheduled 2026-11-17, PDF/A included: check --strict for the structural facts, then the profile clauses per part, with veraPD | 4 | A damaged fixture per structural check, and a veraPDF corpus subset where both validators agree case by case | 11 (the writer edits what it validates) |
 
 ## `docs/DEFERRED.md`: open items and refusals
 
@@ -94,9 +125,9 @@ opening the file. Ranks marked **✓** there are shipped and are not repeated he
 | --- | --- | --- | --- |
 | 37 | ICC colour management (`10b`) | open | [plan](plans/icc.md) |
 | 38 | Tiling patterns (`/PatternType 1`) | **shipped 1.4.0**, row struck through in Q2 | `tests/tiling.rs`, `tests/pattern.rs` |
-| 39 | Colour-key `/Mask` | **shipped 1.4.0**, row struck through in Q2 | `tests/colour_key.rs`; a stream `/Mask` stencil is still refused (`crates/pdf2-render/src/image.rs:89`) |
+| 39 | Colour-key `/Mask` | **shipped 1.4.0**, row struck through in Q2 | `tests/colour_key.rs`; a stream `/Mask` stencil is still refused (`crates/pdf2-render/src/image.rs#a /Mask image stencil`) |
 | 40 | The clipping half of `Tr` modes 4-7 | **shipped 1.5.0**, row struck through in Q2 | `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` |
-| (mesh) | Mesh shadings `/ShadingType` 4-7 | open | [plan](plans/mesh-shadings.md), refused by name at `crates/pdf2-render/src/shading.rs:125-129` |
+| (mesh) | Mesh shadings `/ShadingType` 4-7 | open | [plan](plans/mesh-shadings.md), refused by name at `crates/pdf2-render/src/shading.rs#mesh shadings (types 4 to 7)` |
 | 24 | Editing an opened document | **shipped 1.6.0** | `src/edit.rs`, `tests/edit.rs` |
 | 25 | Forms filling and annotation authoring | open | [plan](plans/forms.md) |
 | 26 | Conformance validation, PDF/A included | open | [plan](plans/validation.md), veraPDF as CI oracle |
@@ -170,16 +201,17 @@ tree. They are corrected, each with the file and the test that proves it:
 
 | where | was | now |
 | --- | --- | --- |
-| `docs/FEATURES.md:71` | 65k-object document "scheduled 8" | `shipped` — `crates/pdf2-bench/src/corpus.rs:91,195`, `objects-65000` in `docs/PERFORMANCE.md`, `DEFAULT_OBJECT_LIMIT` at `src/document.rs:37` |
-| `docs/FEATURES.md:127` | Type 1 "scheduled 4 / Not parsed" | `shipped` — `crates/pdf2-render/src/type1.rs`, `tests/type1.rs`, `tests/fixtures/type1.pdf` |
-| `docs/FEATURES.md:150` | `8.10` Form XObjects "not drawn at all" | `shipped` — `crates/pdf2-render/src/walk.rs:1152`, `MAX_FORM_DEPTH` |
-| `docs/FEATURES.md:160` | render-time budget "shipped" | `shipped (partial)` — the budget shipped, a page-count timing did not |
-| `docs/FEATURES.md:210` | `/ID` "not read or written" | `shipped (partial)` — read and carried by an incremental save (`src/edit.rs:373-378`, ADR 0006 §5); `Document::new` emits none |
-| `docs/FEATURES.md:212` | `/ActualText` "never replaces what extraction returns" | `shipped (partial)` — it does (`src/content.rs:400-738`); `/Artifact` is still extracted as text |
-| `docs/FEATURES.md:242` | "encryption on write: unplanned" | `shipped (partial)` — updates are re-encrypted with the base's handler; a new document is not |
-| `docs/FEATURES.md:256` | wasm API growth "unplanned" | `shipped (partial)` — `spans`, `span_texts`, `glyphs`, `glyph_texts`, `page_size`, `search*`, `metadata` exist; errors are still strings |
-| `docs/ROADMAP-NEXT.md:38` | rank 4 "Type 1 still scheduled" | `4 ✓`, shipped 2026-11-16 |
-| `docs/DEFERRED.md:38,39,40` | tiling patterns, colour-key `/Mask`, `Tr` 4-7 "deferred" | struck through as shipped, with `tests/tiling.rs`, `tests/pattern.rs`, `tests/colour_key.rs`, `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` named |
+| `docs/FEATURES.md#Object streams at scale` | 65k-object document "scheduled 8" | `shipped` — `crates/pdf2-bench/src/corpus.rs#fn document_with_objects` and
+  `crates/pdf2-bench/src/corpus.rs#the_budget_document_holds_sixty_five_thousand_objects`, `objects-65000` in `docs/PERFORMANCE.md`, `DEFAULT_OBJECT_LIMIT` at `src/document.rs#DEFAULT_OBJECT_LIMIT` |
+| `docs/FEATURES.md#Type 1 (PFB/PFA) programs` | Type 1 "scheduled 4 / Not parsed" | `shipped` — `crates/pdf2-render/src/type1.rs`, `tests/type1.rs`, `tests/fixtures/type1.pdf` |
+| `docs/FEATURES.md#**Form XObjects**` | `8.10` Form XObjects "not drawn at all" | `shipped` — `crates/pdf2-render/src/walk.rs#nested content stream (8.10)`, `MAX_FORM_DEPTH` |
+| `docs/FEATURES.md#Render-time budget in the oracle job` | render-time budget "shipped" | `shipped (partial)` — the budget shipped, a page-count timing did not |
+| `docs/FEATURES.md#File identifiers` | `/ID` "not read or written" | `shipped (partial)` — read and carried by an incremental save (`src/edit.rs#b"ID"`, ADR 0006 §5); `Document::new` emits none |
+| `docs/FEATURES.md#Marked content` | `/ActualText` "never replaces what extraction returns" | `shipped (partial)` — it does (`src/content.rs#The open marked-content sequences`); `/Artifact` is still extracted as text |
+| `docs/FEATURES.md#Encryption on write` | "encryption on write: unplanned" | `shipped (partial)` — updates are re-encrypted with the base's handler; a new document is not |
+| `docs/FEATURES.md#wasm/npm API growth` | wasm API growth "unplanned" | `shipped (partial)` — `spans`, `span_texts`, `glyphs`, `glyph_texts`, `page_size`, `search*`, `metadata` exist; errors are still strings |
+| `docs/ROADMAP-NEXT.md#CFF / Type 1 outlines` | rank 4 "Type 1 still scheduled" | `4 ✓`, shipped 2026-11-16 |
+| `docs/DEFERRED.md#Tiling patterns`, `docs/DEFERRED.md#Colour-key`, `docs/DEFERRED.md#clipping half` | tiling patterns, colour-key `/Mask`, `Tr` 4-7 "deferred" | struck through as shipped, with `tests/tiling.rs`, `tests/pattern.rs`, `tests/colour_key.rs`, `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` named |
 
 `crates/xtask/src/main.rs`'s usage text also advertised `cargo xtask <chore>`, which is not a command — only
 `gate`, `fixtures` and `bless` have an alias in `.cargo/config.toml`. It now names the three aliases and
@@ -241,7 +273,7 @@ can come in lower — but not by an order of magnitude, and this is the figure t
 | --- | --- | --- |
 | `90ms-RKSJ-H` (vendored) | 6 070 | 19 967 (`src/data/japan1_90ms_rksj.bin`) |
 | `UniJIS-UCS2-H` (vendored) | 168 597 | 9 294 (`src/data/japan1_unijis_ucs2.bin`) |
-| `UniGB-UCS2-H` (Adobe `Adobe-GB1-6/CMap`) | **274 383** | not measurable yet — `cargo run -q -p xtask -- cmaps` hardcodes the Japan1 pair (`crates/xtask/src/main.rs:1092-1101`) |
+| `UniGB-UCS2-H` (Adobe `Adobe-GB1-6/CMap`) | **274 383** | not measurable yet — `cargo run -q -p xtask -- cmaps` hardcodes the Japan1 pair (`crates/xtask/src/main.rs#fn cmaps`) |
 | `UniCNS-UCS2-H` (Adobe `Adobe-CNS1-7/CMap`) | **326 349** | as above |
 
 A *coverage* table (both Chinese CMaps are Unicode→CID like `UniJIS-UCS2-H`) compresses to a fraction of
@@ -259,13 +291,14 @@ next objective.**
 
 | # | objective (one sentence) | demand, measured here | exit criterion | effort | depends on | plan |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | **Extraction quality: ligatures, `TJ` kerning and `/Artifact`** — make `text()` return what a reader would copy, including the parts a writer marked as decoration | the Tier B histogram's largest class: **6 of 16** failures in 200 pdf.js files are composite fonts without `/ToUnicode`; `/Artifact` is still extracted as text (`docs/FEATURES.md:212`) | `cargo test -p pdf2 --test content` | 2 | — | none yet |
+| 1 | **Extraction quality: ligatures, `TJ` kerning and `/Artifact`** — make `text()` return what a reader would copy, including the parts a writer marked as decoration | the Tier B histogram's largest class: **6 of 16** failures in 200 pdf.js files are composite fonts without `/ToUnicode`; `/Artifact` is still extracted as text (`docs/FEATURES.md#Marked content`) | `cargo test -p pdf2 --test content` | 2 | — | none yet |
 | 2 | **Render speed at page count** — a 200-page document timed page by page, with the budget tightened to what the measurement allows | **4.3 ms** per page on `book.pdf` against a **900 ms** budget (`corpus/render-budget.tsv`); nothing times a document by page count | `cargo run -q -p xtask -- bench` | 1 | — | none yet |
 | 3 | **Chinese and Korean CMaps** — Generalise `cmaps()` past the Japan1 pair and ship `UniGB-UCS2-H`, `UniCNS-UCS2-H`, `UniKS-UCS2-H` under the existing BSD-3-Clause notice | one CMap family ships today; the two Chinese sources are **274 383 B** and **326 349 B** (5.5 % of a coverage table survives packing — 168 597 → 9 294 B) | `cargo run -q -p xtask -- corpus` | 2 | — | none yet |
-| 4 | **The reader's document model: outlines, destinations, link actions, embedded files** — a page list is not a document | `/Outlines` **2**, `/URI` **2**, `/EmbeddedFiles` **1** of the 64 scanned files; nothing is modelled (`docs/FEATURES.md:79,181,184`) | `cargo test -p pdf2 --test document` | 2 | — | none yet |
+| 4 | **The reader's document model: outlines, destinations, link actions, embedded files** — a page list is not a document | `/Outlines` **2**, `/URI` **2**, `/EmbeddedFiles` **1** of the 64 scanned files; nothing is modelled (`docs/FEATURES.md#Embedded files and file specifications`,
+-      `docs/FEATURES.md#Document-level navigation`, `docs/FEATURES.md#Actions — `) | `cargo test -p pdf2 --test document` | 2 | — | none yet |
 | 5 | **Repair a damaged file instead of stopping at the first error** — rebuild what can be rebuilt, report what cannot | Tier B: **2** missing `startxref`, **1** page-tree cycle, **1** malformed xref subsection out of 16 failures in 200 files | `cargo test -p pdf2 --test robustness` | 2 | — | none yet |
-| 6 | **ICC colour management behind a non-default `icc` feature** — a `/DeviceCMYK` page converted through the profile it names | `cmykjpeg.pdf` sits **8.455 mean** from the engines' **2.000** (`docs/RENDERING-QUALITY.md:10-20`); `/ICCBased` in **2** of 64 files; the feature costs **+88 441 gzip** scalar, **+121 404** with `moxcms`' defaults | `cargo test -p pdf2-render --test quality` | 4 | — | [icc.md](plans/icc.md) |
-| 7 | **Optional content: layers and their default configuration** — draw the configuration a reader would show, not every layer | `/OCProperties` in **2** of 64 files (`cmykjpeg.pdf`, `cid_cff.pdf`); nothing is modelled (`docs/FEATURES.md:153`) | `cargo test -p pdf2-render --test golden` | 2 | 4 | none yet |
+| 6 | **ICC colour management behind a non-default `icc` feature** — a `/DeviceCMYK` page converted through the profile it names | `cmykjpeg.pdf` sits **8.455 mean** from the engines' **2.000** (`docs/RENDERING-QUALITY.md#CMYK images are a colour-management gap`); `/ICCBased` in **2** of 64 files; the feature costs **+88 441 gzip** scalar, **+121 404** with `moxcms`' defaults | `cargo test -p pdf2-render --test quality` | 4 | — | [icc.md](plans/icc.md) |
+| 7 | **Optional content: layers and their default configuration** — draw the configuration a reader would show, not every layer | `/OCProperties` in **2** of 64 files (`cmykjpeg.pdf`, `cid_cff.pdf`); nothing is modelled (`docs/FEATURES.md#Optional content`) | `cargo test -p pdf2-render --test golden` | 2 | 4 | none yet |
 | 8 | **Forms filling and annotation authoring** — set a field and keep it when the file is saved | `/AcroForm` **0** of 64 files, so the evidence is the competitor: `pdfium-render` **4 079 913** downloads serves exactly this; the write side exists ([ADR 0006](adr/0006-editing-mutation-model.md)) | `cargo test -p pdf2 --test edit` | 3 | 4 | [forms.md](plans/forms.md) |
 | 9 | **Tagged PDF: structure tree, marked content and `/Artifact`** — the model PDF/UA-2 is written against | `/StructTreeRoot` **0**, `/MarkInfo` **0** of 64 files: no corpus page exists, so the evidence must come from `veraPDF-corpus` (CC BY 4.0, UA1/UA2) and generated fixtures | `cargo test -p pdf2 --test pages` | 3 | 4 | none yet |
 | 10 | **Conformance validation: PDF/A-4** — `check --strict` over the structural facts, then the part's clauses | ISO 19005-4:2020 (`pdf-issues.pdfa.org/19005-4-2020/`); veraPDF **1.30.4** is the CI oracle (GPL-3.0, so a binary, never a dependency); the corpus is CC BY 4.0 | `cargo run -q -p pdf2-cli -- check tests/fixtures/book.pdf` | 4 | 9 | [validation.md](plans/validation.md) |
@@ -335,7 +368,7 @@ Two numbers the ranking wants cannot be taken from here without work this object
 - **the packaged cost of the Chinese CMaps** — the two source files are 274 383 B (`UniGB-UCS2-H`) and
   326 349 B (`UniCNS-UCS2-H`), and the two `.bin`s already in `src/data/` were 19 967 B and 9 294 B from
   6 070 B and 168 597 B of CMap text; the packaged figure needs `cargo run -q -p xtask -- cmaps`
-  generalised past its hardcoded Japan1 pair (`crates/xtask/src/main.rs:1092-1101`), which is the CMap
+  generalised past its hardcoded Japan1 pair (`crates/xtask/src/main.rs#fn cmaps`), which is the CMap
   objective's first task;
 - **a page-count render time** — `book.pdf` page 1 renders in 4.3 ms against a 900 ms
   `corpus/render-budget.tsv` entry, and nothing times a document by page count; writing that harness is the

@@ -39,6 +39,7 @@ fn main() -> ExitCode {
         "test" => step("test"),
         "docs" => step("docs"),
         "ledger" => ledger(),
+        "objective" => objective(),
         "versions" => versions(),
         "no-std" => no_std(),
         "wasm" => wasm(),
@@ -91,6 +92,7 @@ Usage:
   tier-b <dir>...
               measure a Tier B tree and write a failure histogram
   ledger      check that docs/FEATURES.md and the roadmap agree
+  objective   print the counts docs/OBJECTIVES.md quotes, from the documents
   versions    check the one version the whole shipped group carries
   bench       measure and compare with docs/performance-baseline.json
   cmaps       rebuild the generated CMap tables from vendor/adobe-cmaps
@@ -585,14 +587,24 @@ fn ledger() -> Result<(), String> {
         .map_err(|error| format!("docs/FEATURES.md: {error}"))?;
     let roadmap = std::fs::read_to_string("docs/ROADMAP-NEXT.md")
         .map_err(|error| format!("docs/ROADMAP-NEXT.md: {error}"))?;
+    let objectives = std::fs::read_to_string("docs/OBJECTIVES.md")
+        .map_err(|error| format!("docs/OBJECTIVES.md: {error}"))?;
     let items = ledger::roadmap_items(&roadmap);
     let rows = ledger::rows(&ledger);
-    let problems = ledger::problems(&rows, &items);
+    let citations = citations::parse(&objectives);
+    let report = objective_report()?;
+    let mut problems = ledger::problems(&rows, &items, |path| std::path::Path::new(path).exists());
+    problems.extend(citations::problems(&citations, |path| {
+        std::fs::read_to_string(path).map_err(|error| error.to_string())
+    }));
+    problems.extend(counts_problems(&objectives, &report));
     if problems.is_empty() {
         println!(
-            "ledger: {} rows, {} roadmap items, every item owned and every shipped row evidenced",
+            "ledger: {} rows, {} roadmap items, {} citations, every item owned, every shipped row \
+             evidenced, every citation resolvable and every count matching",
             rows.len(),
-            items.len()
+            items.len(),
+            citations.len()
         );
         return Ok(());
     }
@@ -604,6 +616,13 @@ fn ledger() -> Result<(), String> {
 
 /// Parsing and checks for the feature ledger, kept apart so they can be tested.
 mod ledger {
+    /// One rank of the roadmap: its number and whether the roadmap marks it ✓.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Item {
+        pub rank: String,
+        pub shipped: bool,
+    }
+
     /// One table row: its first cell, its status, and the rest of the row.
     #[derive(Debug, Clone, PartialEq)]
     pub struct Row {
@@ -614,18 +633,25 @@ mod ledger {
     }
 
     /// The roadmap's ranks, in the order the table lists them.
-    pub fn roadmap_items(roadmap: &str) -> Vec<String> {
+    pub fn roadmap_items(roadmap: &str) -> Vec<Item> {
         roadmap
             .lines()
             .filter_map(|line| {
                 let rest = line.strip_prefix("| ")?;
                 let rank = rest.split(' ').next()?;
                 let numeric = rank.trim_end_matches(|c: char| c.is_ascii_alphabetic());
-                if !numeric.is_empty() && numeric.bytes().all(|b| b.is_ascii_digit()) {
-                    Some(rank.to_owned())
-                } else {
-                    None
+                if numeric.is_empty() || !numeric.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
                 }
+                // `| 4 ✓ |` is a shipped rank; `| 5 (half) |` and `| 13 |` are open.
+                let shipped = rest
+                    .split('|')
+                    .next()
+                    .is_some_and(|cell| cell.contains('✓'));
+                Some(Item {
+                    rank: rank.to_owned(),
+                    shipped,
+                })
             })
             .collect()
     }
@@ -701,9 +727,63 @@ mod ledger {
     }
 
     /// Everything wrong with the ledger against the plan.
-    pub fn problems(rows: &[Row], items: &[String]) -> Vec<String> {
+    /// The roots a backticked span can name and still be a repository path.
+    const PATH_ROOTS: [&str; 9] = [
+        "docs/",
+        "src/",
+        "crates/",
+        "tests/",
+        "corpus/",
+        "vendor/",
+        "examples/",
+        "fuzz/",
+        "scripts/",
+    ];
+
+    /// The repository paths a row's evidence cites.
+    ///
+    /// A span counts when it starts at one of the roots and is not a command: a
+    /// `:373` or `:373-378` suffix and a `#snippet` anchor are stripped first, and
+    /// `MutableDocument::save_incremental` is not a path at all.
+    pub fn cited_paths(row: &Row) -> Vec<String> {
+        let mut paths = Vec::new();
+        let mut rest = row.evidence.as_str();
+        while let Some(open) = rest.find('`') {
+            let after = &rest[open + 1..];
+            let Some(close) = after.find('`') else {
+                break;
+            };
+            let span = &after[..close];
+            let path = span.split('#').next().unwrap_or(span);
+            let path = path
+                .rsplit_once(':')
+                .filter(|(_, suffix)| {
+                    !suffix.is_empty()
+                        && suffix
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || b == b'-' || b == b',')
+                })
+                .map(|(path, _)| path)
+                .unwrap_or(path);
+            if PATH_ROOTS.iter().any(|root| path.starts_with(root)) {
+                paths.push(path.to_owned());
+            }
+            rest = &after[close + 1..];
+        }
+        paths
+    }
+
+    pub fn problems(rows: &[Row], items: &[Item], exists: impl Fn(&str) -> bool) -> Vec<String> {
         let mut problems = Vec::new();
         for row in rows {
+            for path in cited_paths(row) {
+                if !exists(&path) {
+                    problems.push(format!(
+                        "line {}: `{}` cites `{path}`, which does not exist",
+                        row.line, row.name
+                    ));
+                }
+            }
             if row.status.starts_with("shipped") && row.evidence.trim().is_empty() {
                 problems.push(format!(
                     "line {}: `{}` is shipped but has no evidence cell",
@@ -711,20 +791,34 @@ mod ledger {
                 ));
             }
             for item in named_items(row) {
-                if !items.contains(&item) {
+                if !items.iter().any(|known| known.rank == item) {
                     problems.push(format!(
                         "line {}: `{}` names roadmap item {item}, which does not exist",
                         row.line, row.name
                     ));
                 }
             }
+            // The roadmap says whether a rank is finished; a row scheduling work
+            // under a finished rank is the contradiction PR #160 fixed by hand
+            // (rows 71 and 150 were `scheduled 8` and `scheduled 10d`).
+            if let Some(range) = row.status.strip_prefix("scheduled ") {
+                let rank = range.split_whitespace().next().unwrap_or("");
+                if items.iter().any(|item| item.rank == rank && item.shipped) {
+                    problems.push(format!(
+                        "line {}: `{}` is scheduled under roadmap item {rank}, which the roadmap marks \
+                         shipped",
+                        row.line, row.name
+                    ));
+                }
+            }
         }
         for item in items {
-            let owned = rows
-                .iter()
-                .any(|row| named_items(row).iter().any(|named| named == item));
+            let owned = rows.iter().any(|row| named_items(row).contains(&item.rank));
             if !owned {
-                problems.push(format!("roadmap item {item} has no row in the ledger"));
+                problems.push(format!(
+                    "roadmap item {} has no row in the ledger",
+                    item.rank
+                ));
             }
         }
         problems
@@ -732,13 +826,14 @@ mod ledger {
 
     #[cfg(test)]
     mod tests {
-        use super::{problems, roadmap_items, rows};
+        use super::{Row, cited_paths, problems, roadmap_items, rows};
 
         const ROADMAP: &str = "\
 | Rank | Item |
 | --- | --- |
 | 1 | oracle |
 | 2b | quality |
+| 3 ✓ | shipped rank |
 ";
 
         const GOOD: &str = "\
@@ -746,18 +841,102 @@ mod ledger {
 | --- | --- | --- |
 | Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
 | Quality | scheduled 2b | `src/content.rs` |
+| Shipped rank | shipped | `src/x.rs`, owner: item 3 |
 ";
 
         #[test]
-        fn the_roadmap_ranks_are_read_in_order() {
-            assert_eq!(roadmap_items(ROADMAP), vec!["1", "2b"]);
+        fn the_roadmap_ranks_are_read_in_order_and_know_which_shipped() {
+            let items = roadmap_items(ROADMAP);
+            let ranks: Vec<&str> = items.iter().map(|item| item.rank.as_str()).collect();
+            assert_eq!(ranks, vec!["1", "2b", "3"]);
+            assert_eq!(
+                items.iter().map(|item| item.shipped).collect::<Vec<_>>(),
+                vec![false, false, true]
+            );
+        }
+
+        #[test]
+        fn a_cited_path_is_taken_apart_but_a_symbol_is_not_one() {
+            let row = Row {
+                name: "Shadings".to_owned(),
+                status: "shipped".to_owned(),
+                evidence: "`crates/pdf2-render/tests/shading.rs:1-9`, `src/edit.rs#b\"ID\"`, \
+                           `MutableDocument::save_incremental`, `cargo gate`"
+                    .to_owned(),
+                line: 7,
+            };
+            assert_eq!(
+                cited_paths(&row),
+                vec![
+                    "crates/pdf2-render/tests/shading.rs".to_owned(),
+                    "src/edit.rs".to_owned()
+                ]
+            );
+        }
+
+        #[test]
+        fn a_cited_path_that_does_not_exist_is_reported() {
+            let wrong = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `tests/shading.rs` |
+| Shipped rank | shipped | `src/x.rs`, owner: item 3 |
+";
+            let problems = problems(&rows(wrong), &roadmap_items(ROADMAP), |path| {
+                path != "tests/shading.rs"
+            });
+            assert!(
+                problems.iter().any(|problem| problem
+                    .contains("line 4: `Quality` cites `tests/shading.rs`, which does not exist")),
+                "{problems:?}"
+            );
+        }
+
+        #[test]
+        fn a_scheduled_row_under_a_shipped_rank_is_a_contradiction() {
+            let drifted = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `src/content.rs` |
+| Ghost | scheduled 3 | `src/ghost.rs` |
+";
+            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP), |_| true);
+            assert!(
+                problems.iter().any(|problem| problem.contains(
+                    "`Ghost` is scheduled under roadmap item 3, which the roadmap marks shipped"
+                )),
+                "{problems:?}"
+            );
+        }
+
+        #[test]
+        fn a_scheduled_row_under_an_open_rank_is_fine() {
+            let planned = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `src/content.rs` |
+| Only | scheduled 3 | `src/x.rs` |
+";
+            let problems = problems(&rows(planned), &roadmap_items(ROADMAP), |_| true);
+            // `3` is shipped, so this row *is* a contradiction; 2b is open and is not.
+            assert_eq!(
+                problems
+                    .iter()
+                    .filter(|problem| problem.contains("roadmap marks shipped"))
+                    .count(),
+                1,
+                "{problems:?}"
+            );
         }
 
         #[test]
         fn a_consistent_ledger_has_no_problems() {
             let rows = rows(GOOD);
-            assert_eq!(rows.len(), 2, "{rows:?}");
-            assert!(problems(&rows, &roadmap_items(ROADMAP)).is_empty());
+            assert_eq!(rows.len(), 3, "{rows:?}");
+            assert!(problems(&rows, &roadmap_items(ROADMAP), |_| true).is_empty());
         }
 
         #[test]
@@ -769,7 +948,7 @@ mod ledger {
 | Quality | scheduled 2b | `src/content.rs` |
 | Ghost | scheduled 99 | nothing |
 ";
-            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP), |_| true);
             assert!(
                 problems.iter().any(|problem| problem.contains("item 99")),
                 "{problems:?}"
@@ -783,7 +962,7 @@ mod ledger {
 | --- | --- | --- |
 | Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
 ";
-            let problems = problems(&rows(missing), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(missing), &roadmap_items(ROADMAP), |_| true);
             assert!(
                 problems.iter().any(|problem| problem.contains("item 2b")),
                 "{problems:?}"
@@ -798,13 +977,727 @@ mod ledger {
 | Oracle | shipped |  |
 | Quality | scheduled 2b | `src/content.rs` |
 ";
-            let problems = problems(&rows(bare), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(bare), &roadmap_items(ROADMAP), |_| true);
             assert!(
                 problems
                     .iter()
                     .any(|problem| problem.contains("no evidence")),
                 "{problems:?}"
             );
+        }
+    }
+}
+
+/// The counts `docs/OBJECTIVES.md` quotes, recomputed from the documents.
+///
+/// The document states a status histogram, an open-row count, open ranks, deferred
+/// items and the number of plans; before this chore those numbers were typed once and
+/// trusted, which is the class of drift the whole objective is about. Print-only and
+/// read-only: the *comparison* with the prose is the next step, so the two can be
+/// proven apart.
+fn objective() -> Result<(), String> {
+    print!("{}", objective_report()?);
+    Ok(())
+}
+
+/// The report the objective document quotes, recomputed from the documents.
+fn objective_report() -> Result<String, String> {
+    let features = std::fs::read_to_string("docs/FEATURES.md")
+        .map_err(|error| format!("docs/FEATURES.md: {error}"))?;
+    let roadmap = std::fs::read_to_string("docs/ROADMAP-NEXT.md")
+        .map_err(|error| format!("docs/ROADMAP-NEXT.md: {error}"))?;
+    let deferred = std::fs::read_to_string("docs/DEFERRED.md")
+        .map_err(|error| format!("docs/DEFERRED.md: {error}"))?;
+    let plans = std::fs::read_dir("docs/plans")
+        .map_err(|error| format!("docs/plans: {error}"))?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.ends_with(".md") && name != "README.md"
+        })
+        .count();
+    Ok(objective_counts(&features, &roadmap, &deferred, plans).report())
+}
+
+/// The `text` block the document quotes the counts in: the one after its
+/// "## Counts" heading that starts with `status rows:`, since that section also
+/// quotes the ledger's own one-line summary.
+fn counts_block(document: &str) -> Option<&str> {
+    let after = document.split("## Counts").nth(1)?;
+    let mut rest = after;
+    while let Some(open) = rest.find("```text") {
+        let body = &rest[open + "```text".len()..];
+        let start = body.find('\n')? + 1;
+        let end = body[start..].find("```")? + start;
+        let block = &body[start..end];
+        if block.starts_with("status rows:") {
+            return Some(block);
+        }
+        rest = &body[end..];
+    }
+    None
+}
+
+/// Everything wrong with the numbers the document quotes.
+///
+/// The block is compared line for line, so a number that drifts says which line and
+/// what both sides believe.
+fn counts_problems(document: &str, report: &str) -> Vec<String> {
+    let Some(block) = counts_block(document) else {
+        return vec!["docs/OBJECTIVES.md has no ```text block under ## Counts".to_owned()];
+    };
+    let mut problems = Vec::new();
+    let quoted: Vec<&str> = block.lines().collect();
+    let counted: Vec<&str> = report.lines().collect();
+    for (index, counted) in counted.iter().enumerate() {
+        match quoted.get(index) {
+            Some(quoted) if quoted == counted => {}
+            Some(quoted) => problems.push(format!(
+                "counts line {}: the document says `{quoted}`, the recount says `{counted}`",
+                index + 1
+            )),
+            None => problems.push(format!(
+                "counts line {}: the document stops early, the recount says `{counted}`",
+                index + 1
+            )),
+        }
+    }
+    for (index, quoted) in quoted.iter().enumerate().skip(counted.len()) {
+        problems.push(format!(
+            "counts line {}: the document has `{quoted}`, which the recount does not",
+            index + 1
+        ));
+    }
+    problems
+}
+
+/// One count per line of the report, so a diff reads as a diff.
+#[derive(Debug, PartialEq)]
+struct ObjectiveCounts {
+    /// `(status, rows)` in a fixed order, so the output is stable.
+    statuses: Vec<(String, usize)>,
+    /// Rows whose status is `scheduled` or `unplanned`.
+    open: usize,
+    /// Ranks the roadmap lists.
+    ranks: usize,
+    /// Ranks the roadmap does not mark ✓.
+    open_ranks: usize,
+    /// Deferred items still open.
+    deferred: usize,
+    /// Refusals with an ADR line.
+    refusals: usize,
+    /// Plan files, the README excluded.
+    plans: usize,
+}
+
+impl ObjectiveCounts {
+    fn rows(&self) -> usize {
+        self.statuses.iter().map(|(_, count)| count).sum()
+    }
+
+    fn report(&self) -> String {
+        let mut out = format!("status rows: {}\n", self.rows());
+        for (status, count) in &self.statuses {
+            out.push_str(&format!("  {status:<20} {count}\n"));
+        }
+        out.push_str(&format!(
+            "open rows: {} ({} scheduled, {} unplanned)\n",
+            self.open,
+            self.statuses
+                .iter()
+                .find(|(status, _)| status == "scheduled")
+                .map(|(_, count)| *count)
+                .unwrap_or(0),
+            self.statuses
+                .iter()
+                .find(|(status, _)| status == "unplanned")
+                .map(|(_, count)| *count)
+                .unwrap_or(0),
+        ));
+        out.push_str(&format!(
+            "roadmap ranks: {}, open: {}\n",
+            self.ranks, self.open_ranks
+        ));
+        out.push_str(&format!(
+            "deferred open: {}, refusals: {}\n",
+            self.deferred, self.refusals
+        ));
+        out.push_str(&format!("plans: {}\n", self.plans));
+        out
+    }
+}
+
+/// The statuses the histogram knows, in the order it prints them.
+const STATUSES: [&str; 8] = [
+    "shipped",
+    "shipped (partial)",
+    "partial",
+    "not applicable",
+    "deferred",
+    "refused",
+    "scheduled",
+    "unplanned",
+];
+
+fn objective_counts(
+    features: &str,
+    roadmap: &str,
+    deferred: &str,
+    plans: usize,
+) -> ObjectiveCounts {
+    let mut histogram: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for line in features.lines() {
+        let Some(rest) = line.strip_prefix("| ") else {
+            continue;
+        };
+        if rest.starts_with("---") {
+            continue;
+        }
+        let cells: Vec<&str> = rest.split('|').map(str::trim).collect();
+        if cells.len() < 3 {
+            continue;
+        }
+        let status = cells[1];
+        // The longest match wins: `shipped (partial)` before `shipped`.
+        let key = STATUSES
+            .iter()
+            .filter(|known| {
+                status == **known
+                    || (status.starts_with(**known)
+                        && status[known.len()..].starts_with([' ', '(']))
+            })
+            .max_by_key(|known| known.len());
+        if let Some(key) = key {
+            *histogram.entry(key).or_default() += 1;
+        }
+    }
+    let statuses: Vec<(String, usize)> = STATUSES
+        .iter()
+        .map(|status| {
+            (
+                (*status).to_owned(),
+                histogram.get(status).copied().unwrap_or(0),
+            )
+        })
+        .filter(|(_, count)| *count > 0)
+        .collect();
+    let open: usize = statuses
+        .iter()
+        .filter(|(status, _)| status == "scheduled" || status == "unplanned")
+        .map(|(_, count)| count)
+        .sum();
+
+    let mut ranks = 0;
+    let mut open_ranks = 0;
+    for line in roadmap.lines() {
+        let Some(rest) = line.strip_prefix("| ") else {
+            continue;
+        };
+        let rank = rest.split(' ').next().unwrap_or("");
+        let numeric = rank.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+        if numeric.is_empty() || !numeric.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        ranks += 1;
+        if !rest.split('|').next().unwrap_or("").contains('✓') {
+            open_ranks += 1;
+        }
+    }
+
+    // `docs/DEFERRED.md`: a row is still open unless it is struck through (shipped)
+    // or names a rank the roadmap marks ✓ (the "reinstated" table names one).
+    // Section 2 is the refusals, one row each.
+    let shipped: std::collections::BTreeSet<&str> = roadmap
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("| ")?;
+            let rank = rest.split(' ').next()?;
+            let numeric = rank.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+            if numeric.is_empty() || !numeric.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            rest.split('|').next().filter(|cell| cell.contains('✓'))?;
+            Some(rank)
+        })
+        .collect();
+    let mut deferred_open = 0;
+    let mut refusals = 0;
+    let mut section = 0;
+    for line in deferred.lines() {
+        if line.starts_with("## 1.") {
+            section = 1;
+            continue;
+        }
+        if line.starts_with("## 2.") {
+            section = 2;
+            continue;
+        }
+        if line.starts_with("## 3.") {
+            section = 3;
+            continue;
+        }
+        if !line.starts_with("| ") || line.starts_with("| ---") || line.starts_with("| Item") {
+            continue;
+        }
+        let cells: Vec<&str> = line
+            .trim_start_matches("| ")
+            .split('|')
+            .map(str::trim)
+            .collect();
+        let first = cells.first().copied().unwrap_or("");
+        match section {
+            2 if !first.is_empty() => refusals += 1,
+            1 | 0 if !first.starts_with("~~") => {
+                // A row that names a shipped rank has shipped, whatever the table.
+                let shipped_row = cells.iter().any(|cell| {
+                    shipped.contains(cell.trim_matches(|c: char| !c.is_ascii_alphanumeric()))
+                });
+                if !shipped_row {
+                    deferred_open += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    ObjectiveCounts {
+        statuses,
+        open,
+        ranks,
+        open_ranks,
+        deferred: deferred_open,
+        refusals,
+        plans,
+    }
+}
+
+#[cfg(test)]
+mod counts_tests {
+    use super::{counts_block, counts_problems};
+
+    const DOC: &str = "\
+## Counts
+
+`ledger` prints:
+
+```text
+ledger: 114 rows
+```
+
+and the recount is:
+
+```text
+status rows: 2
+  shipped              2
+```
+";
+
+    #[test]
+    fn the_block_is_the_one_that_starts_with_the_histogram() {
+        let block = counts_block(DOC).expect("a block");
+        assert!(block.starts_with("status rows: 2"), "{block:?}");
+    }
+
+    #[test]
+    fn a_matching_recount_has_no_problems() {
+        let report = "status rows: 2\n  shipped              2\n";
+        assert!(counts_problems(DOC, report).is_empty());
+    }
+
+    #[test]
+    fn a_drifted_number_names_the_line_and_both_sides() {
+        let report = "status rows: 3\n  shipped              2\n";
+        let problems = counts_problems(DOC, report);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("the document says `status rows: 2`"),
+            "{problems:?}"
+        );
+        assert!(
+            problems[0].contains("the recount says `status rows: 3`"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_block_that_stops_early_and_one_that_runs_long_are_both_reported() {
+        // The recount shorter than the block: the document claims a line that is gone.
+        let short_report = "status rows: 2\n";
+        let problems = counts_problems(DOC, short_report);
+        assert!(
+            problems[0].contains("which the recount does not"),
+            "{problems:?}"
+        );
+        // The recount longer than the block: the document stops early.
+        let long_report = "status rows: 2\n  shipped              2\nplans: 9\n";
+        let problems = counts_problems(DOC, long_report);
+        assert!(
+            problems[0].contains("the document stops early"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_document_without_the_block_is_reported() {
+        let problems = counts_problems("no counts here", "status rows: 1\n");
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("no ```text block under ## Counts"),
+            "{problems:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod objective_tests {
+    use super::objective_counts;
+
+    const FEATURES: &str = "\
+| Feature | Status | Evidence |
+| --- | --- | --- |
+| a | shipped | `src/a.rs` |
+| b | shipped (partial) | `src/b.rs` |
+| c | scheduled 10 | `src/c.rs` |
+| d | unplanned | |
+| e | refused | ADR 1 |
+";
+
+    const ROADMAP: &str = "\
+| Rank | Item |
+| --- | --- |
+| 10 | open one |
+| 11 ✓ | shipped one |
+";
+
+    const DEFERRED: &str = "\
+## Reinstated
+
+| Item | Rank | Plan |
+| --- | --- | --- |
+| Editing | 11 | [plan](plans/editing.md) |
+| Forms | 12 | [plan](plans/forms.md) |
+
+## 1. Out of scope
+
+| Item | Why |
+| --- | --- |
+| ~~Shipped~~ | done |
+| ICC | a decision |
+
+## 2. Refused by design
+
+| Item | ADR |
+| --- | --- |
+| Racing | ADR 0001 |
+";
+
+    #[test]
+    fn the_histogram_counts_every_status_in_a_fixed_order() {
+        let counts = objective_counts(FEATURES, ROADMAP, DEFERRED, 3);
+        assert_eq!(counts.rows(), 5, "{counts:?}");
+        assert_eq!(counts.open, 2, "{counts:?}");
+        assert_eq!(
+            counts.statuses,
+            vec![
+                ("shipped".to_owned(), 1),
+                ("shipped (partial)".to_owned(), 1),
+                ("refused".to_owned(), 1),
+                ("scheduled".to_owned(), 1),
+                ("unplanned".to_owned(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn ranks_are_counted_with_the_ones_the_roadmap_marks_shipped() {
+        let counts = objective_counts(FEATURES, ROADMAP, DEFERRED, 0);
+        assert_eq!((counts.ranks, counts.open_ranks), (2, 1), "{counts:?}");
+    }
+
+    #[test]
+    fn a_deferred_row_ships_when_struck_through_or_naming_a_shipped_rank() {
+        let counts = objective_counts(FEATURES, ROADMAP, DEFERRED, 0);
+        // `Editing` names rank 11 (✓) and `~~Shipped~~` is struck; `Forms` (12) and
+        // `ICC` (no rank cell) are open.
+        assert_eq!(counts.deferred, 2, "{counts:?}");
+        assert_eq!(counts.refusals, 1, "{counts:?}");
+    }
+
+    #[test]
+    fn the_report_prints_one_line_per_number() {
+        let report = objective_counts(FEATURES, ROADMAP, DEFERRED, 3).report();
+        assert!(report.starts_with("status rows: 5\n"), "{report}");
+        assert!(
+            report.contains("open rows: 2 (1 scheduled, 1 unplanned)"),
+            "{report}"
+        );
+        assert!(report.contains("roadmap ranks: 2, open: 1"), "{report}");
+        assert!(report.contains("deferred open: 2, refusals: 1"), "{report}");
+        assert!(report.contains("plans: 3"), "{report}");
+    }
+}
+
+/// The citation contract with `docs/OBJECTIVES.md`: every `` `path:line` `` that
+/// document cites must land inside a file that exists.
+///
+/// This is the half the ledger cannot do for itself — `ledger::problems` reads
+/// statuses and ranks, not prose — and it is deliberately narrow: existence, not
+/// meaning. A citation that lands on the wrong line is only catchable once the
+/// document cites an anchor instead of a number (the objective's next step), so
+/// this check is the floor that stops a citation rotting into a missing file or a
+/// line past the end.
+mod citations {
+    /// One `` `path:line` `` found in a document.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Citation {
+        /// The line of the document the citation appears on, 1-based.
+        pub at: usize,
+        /// The repository-relative path it names.
+        pub path: String,
+        /// The snippet the citation is about, when it cites an anchor rather than
+        /// a line: `path#snippet`. Absent for the `path:line` form.
+        pub anchor: Option<String>,
+        /// The first line it names, 1-based; `0` for the anchor form.
+        pub start: usize,
+        /// The last line it names, 1-based; `0` for the anchor form.
+        pub end: usize,
+    }
+
+    /// The prefixes a citation may name. A backticked `https://…` or a crate name
+    /// is not a citation, and neither is `` `src/data/` `` without a line.
+    const ROOTS: [&str; 5] = ["docs/", "src/", "crates/", "tests/", "corpus/"];
+
+    /// Every citation in `text`, in document order.
+    pub fn parse(text: &str) -> Vec<Citation> {
+        let mut found = Vec::new();
+        for (index, line) in text.lines().enumerate() {
+            let mut rest = line;
+            while let Some(open) = rest.find('`') {
+                let after = &rest[open + 1..];
+                let Some(close) = after.find('`') else {
+                    break;
+                };
+                found.extend(one(&after[..close], index + 1));
+                rest = &after[close + 1..];
+            }
+        }
+        found
+    }
+
+    /// The citations in one backticked span — empty when it is not a citation.
+    ///
+    /// A span may list several lines: the document writes `docs/DEFERRED.md:38,39,40`
+    /// for three rows in one table and `crates/pdf2-bench/src/corpus.rs:91,195` for
+    /// two functions, so a comma list is as many citations as it has elements.
+    fn one(inner: &str, at: usize) -> Vec<Citation> {
+        // The anchor form: `path#snippet`, where the snippet is what the file is
+        // expected to contain. It survives an edit above it, which a line number
+        // does not — the reason `fn cmaps` moved from 1092 to 1154 to 1344 while
+        // this document cited it.
+        if let Some((path, anchor)) = inner.split_once('#') {
+            let anchor = anchor.trim();
+            if !ROOTS.iter().any(|root| path.starts_with(root)) || anchor.is_empty() {
+                return Vec::new();
+            }
+            return vec![Citation {
+                at,
+                path: path.to_owned(),
+                anchor: Some(anchor.to_owned()),
+                start: 0,
+                end: 0,
+            }];
+        }
+        let Some((path, spec)) = inner.rsplit_once(':') else {
+            return Vec::new();
+        };
+        if !ROOTS.iter().any(|root| path.starts_with(root)) {
+            return Vec::new();
+        }
+        let mut found = Vec::new();
+        for element in spec.split(',') {
+            let (start, end) = match element.split_once('-') {
+                Some((start, end)) => (start, end),
+                None => (element, element),
+            };
+            let (Ok(start), Ok(end)) = (start.parse::<usize>(), end.parse::<usize>()) else {
+                return Vec::new();
+            };
+            // `0` is not a line, and a backwards range names nothing.
+            if start == 0 || end < start {
+                return Vec::new();
+            }
+            found.push(Citation {
+                at,
+                path: path.to_owned(),
+                anchor: None,
+                start,
+                end,
+            });
+        }
+        found
+    }
+
+    /// Everything wrong with the citations, given a way to read a path.
+    ///
+    /// The reader is a parameter so the check is testable without a working
+    /// directory or a fixture tree: production passes `std::fs::read_to_string`.
+    pub fn problems(
+        citations: &[Citation],
+        read: impl Fn(&str) -> Result<String, String>,
+    ) -> Vec<String> {
+        let mut problems = Vec::new();
+        for citation in citations {
+            let text = match read(&citation.path) {
+                Ok(text) => text,
+                Err(error) => {
+                    problems.push(format!(
+                        "line {}: `{}` cannot be read ({error})",
+                        citation.at, citation.path
+                    ));
+                    continue;
+                }
+            };
+            if let Some(anchor) = &citation.anchor {
+                if !text.contains(anchor.as_str()) {
+                    problems.push(format!(
+                        "line {}: `{}` no longer contains `{anchor}`",
+                        citation.at, citation.path
+                    ));
+                }
+                continue;
+            }
+            let lines = text.lines().count();
+            if citation.end > lines {
+                problems.push(format!(
+                    "line {}: `{}:{}` is past the end of a file with {lines} line(s)",
+                    citation.at, citation.path, citation.end
+                ));
+            }
+        }
+        problems
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Citation, parse, problems};
+
+        const DOC: &str = "\
+The gate runs (`cargo gate`); the parser lives at `crates/xtask/src/main.rs:17`,
+the range form at `docs/FEATURES.md:71-79`, and a URL at `https://example.com:8080/x`.
+";
+
+        #[test]
+        fn a_backticked_path_and_line_is_a_citation() {
+            let found = parse(DOC);
+            assert_eq!(found.len(), 2, "{found:?}");
+            assert_eq!(found[0].path, "crates/xtask/src/main.rs");
+            assert_eq!((found[0].at, found[0].start, found[0].end), (1, 17, 17));
+            assert_eq!((found[1].at, found[1].start, found[1].end), (2, 71, 79));
+        }
+
+        #[test]
+        fn a_url_or_a_bare_command_is_not_a_citation() {
+            // The URL is skipped by its prefix; `cargo gate` has no line at all.
+            assert!(parse("see `https://example.com:8080/x`").is_empty());
+            assert!(parse("run `cargo gate`").is_empty());
+        }
+
+        #[test]
+        fn a_citation_inside_its_file_has_no_problems() {
+            let found = parse("`docs/FEATURES.md:2`");
+            let reported = problems(&found, |_| Ok("one\ntwo\n".to_owned()));
+            assert!(reported.is_empty(), "{reported:?}");
+        }
+
+        #[test]
+        fn a_missing_file_is_reported_with_the_document_line() {
+            let found = parse("text\n`docs/GONE.md:1`");
+            let reported = problems(&found, |_| Err("no such file".to_owned()));
+            assert_eq!(reported.len(), 1, "{reported:?}");
+            assert!(
+                reported[0].starts_with("line 2: `docs/GONE.md`"),
+                "{reported:?}"
+            );
+        }
+
+        #[test]
+        fn a_line_past_the_end_is_reported() {
+            let found = parse("`src/edit.rs:373`");
+            let reported = problems(&found, |_| Ok("one\ntwo\n".to_owned()));
+            assert_eq!(reported.len(), 1, "{reported:?}");
+            assert!(
+                reported[0].contains("past the end of a file with 2 line(s)"),
+                "{reported:?}"
+            );
+        }
+
+        #[test]
+        fn an_anchor_survives_the_file_growing_above_it() {
+            let found = parse("`crates/xtask/src/main.rs#fn cmaps`");
+            assert_eq!(found.len(), 1, "{found:?}");
+            assert_eq!(found[0].anchor.as_deref(), Some("fn cmaps"));
+            assert_eq!((found[0].start, found[0].end), (0, 0));
+            // Two different files, the snippet found in the one cited.
+            let reported = problems(&found, |_| {
+                Ok("// moved 200 lines down\nfn cmaps() {}\n".to_owned())
+            });
+            assert!(reported.is_empty(), "{reported:?}");
+        }
+
+        #[test]
+        fn an_anchor_the_file_lost_is_reported() {
+            let found = parse("word `docs/FEATURES.md#a row that was renamed`");
+            let reported = problems(&found, |_| Ok("| a row | shipped |\n".to_owned()));
+            assert_eq!(reported.len(), 1, "{reported:?}");
+            assert!(
+                reported[0].contains("no longer contains `a row that was renamed`"),
+                "{reported:?}"
+            );
+        }
+
+        #[test]
+        fn both_forms_coexist_and_are_told_apart() {
+            let found = parse("`src/edit.rs#Object::Array` then `src/edit.rs:373`");
+            assert_eq!(found.len(), 2, "{found:?}");
+            assert!(found[0].anchor.is_some());
+            assert_eq!(found[1].anchor, None);
+            assert_eq!((found[1].start, found[1].end), (373, 373));
+        }
+
+        #[test]
+        fn an_empty_anchor_is_not_a_citation() {
+            assert!(parse("`docs/FEATURES.md#`").is_empty());
+            assert!(parse("`docs/FEATURES.md#   `").is_empty());
+        }
+
+        #[test]
+        fn a_comma_list_is_one_citation_per_element() {
+            let found = parse("`docs/DEFERRED.md:38,39,40`");
+            assert_eq!(found.len(), 3, "{found:?}");
+            assert_eq!(
+                found.iter().map(|c| c.start).collect::<Vec<_>>(),
+                vec![38, 39, 40]
+            );
+            assert!(
+                found
+                    .iter()
+                    .all(|c| c.at == 1 && c.path == "docs/DEFERRED.md")
+            );
+        }
+
+        #[test]
+        fn a_range_is_checked_at_its_end() {
+            let found = parse("`docs/FEATURES.md:1-3`");
+            assert!(problems(&found, |_| Ok("one\ntwo\nthree\n".to_owned())).is_empty());
+            let reported = problems(&found, |_| Ok("one\ntwo\n".to_owned()));
+            assert!(reported[0].contains(":3`"), "{reported:?}");
+        }
+
+        #[test]
+        fn the_parsed_citation_carries_its_document_line() {
+            let found: Vec<Citation> = parse("`src/edit.rs:1`\n\n`src/edit.rs:2`");
+            assert_eq!(found.iter().map(|c| c.at).collect::<Vec<_>>(), vec![1, 3]);
         }
     }
 }
