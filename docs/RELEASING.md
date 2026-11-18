@@ -45,14 +45,14 @@ for a crate that already exists.
    publish order and per-crate tags into `publish.yml` is Q10 in
    `rounds/ROADMAP.md`.
 
-Current state (2026-11-18):
+Current state (2026-11-18), read back from the registries rather than from the logs:
 
 | Crate | Version | Published by | Tag |
 | --- | --- | --- | --- |
-| `pdf2` | `1.6.0` | trusted publishing | `pdf2-v1.6.0` |
-| `pdf2-render` | `1.6.0` | trusted publishing | `render-v1.6.0` |
-| `pdf2-cli` | `1.6.0` | trusted publishing | `cli-v1.6.0` |
-| `pdf2-wasm` | `1.6.0` (crate and npm) | trusted publishing | `wasm-v1.6.0`, `npm-v1.6.0` |
+| `pdf2` | `1.8.0` | trusted publishing | `pdf2-v1.8.0` |
+| `pdf2-render` | `1.8.0` | trusted publishing | `render-v1.8.0` |
+| `pdf2-cli` | `1.8.0` | trusted publishing | `cli-v1.8.0` |
+| `pdf2-wasm` | `1.8.0` (crate and npm) | trusted publishing | `wasm-v1.8.0`, `npm-v1.8.0` |
 
 Every crate has a trusted publisher on crates.io now (same repository, workflow
 `publish.yml`, environment `release`), so no token is stored anywhere; npm
