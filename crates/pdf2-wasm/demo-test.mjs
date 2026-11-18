@@ -1099,8 +1099,8 @@ async function main() {
       await new Promise((done) => setTimeout(done, 200));
       return {
         info: document.querySelector('#findInfo').textContent,
-        marks: document.querySelectorAll('#textLayer .find-mark').length,
-        active: [...document.querySelectorAll('#textLayer .find-mark')].findIndex((mark) => mark.classList.contains('active')),
+        marks: document.querySelectorAll('#selectionLayer i.find').length,
+        active: [...document.querySelectorAll('#selectionLayer i.find')].findIndex((mark) => mark.classList.contains('active')),
       };
     `);
     check(/^\d+ \/ \d+$/.test(found.info), `the find box counts its hits: ${found.info}`);
@@ -1118,6 +1118,248 @@ async function main() {
       `next moves to another hit: ${found.info} then ${nextInfo}`,
     );
 
+    // The mark sits on the word, not on the line the word is part of: a hit's
+    // box is its line's (`src/content.rs:1036`), so the mark is built from the
+    // painted glyphs instead -- measured against the canvas's own ink here.
+    const hitMark = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = 'line';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 300));
+      const mark = document.querySelector('#selectionLayer i.find');
+      if (!mark) return { mark: null };
+      const canvas = document.querySelector('#canvas');
+      const context = canvas.getContext('2d');
+      const canvasRect = canvas.getBoundingClientRect();
+      const toBitmap = canvas.width / canvasRect.width;
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const rect = mark.getBoundingClientRect();
+      const x0 = Math.floor((rect.left - canvasRect.left) * toBitmap);
+      const x1 = Math.ceil((rect.right - canvasRect.left) * toBitmap);
+      const y0 = Math.max(0, Math.floor((rect.top - canvasRect.top) * toBitmap));
+      const y1 = Math.min(canvas.height, Math.ceil((rect.bottom - canvasRect.top) * toBitmap));
+      let firstInk = null;
+      let lastInk = null;
+      for (let x = x0; x < x1; x += 1) {
+        let ink = false;
+        for (let y = y0; y < y1 && !ink; y += 1) {
+          const offset = (y * canvas.width + x) * 4;
+          ink = image.data[offset] + image.data[offset + 1] + image.data[offset + 2] < 600;
+        }
+        if (ink) { if (firstInk === null) firstInk = x; lastInk = x; }
+      }
+      return {
+        info: document.querySelector('#findInfo').textContent,
+        mark: [rect.left, rect.right],
+        ink: firstInk === null ? null : [firstInk / toBitmap + canvasRect.left, (lastInk + 1) / toBitmap + canvasRect.left],
+      };
+    `);
+    check(hitMark.mark !== null, `"line" draws one mark: ${hitMark.info}`);
+    check(hitMark.ink !== null, 'the word "line" is painted under its mark');
+    if (hitMark.mark && hitMark.ink) {
+      const leftGap = Math.abs(hitMark.ink[0] - hitMark.mark[0]);
+      const overflow = Math.max(hitMark.mark[0] - hitMark.ink[0], hitMark.ink[1] - hitMark.mark[1], 0);
+      check(
+        leftGap <= 2 && overflow <= 2,
+        `the mark is on the word, not the line: ink ${hitMark.ink.map((v) => v.toFixed(1))} ` +
+          `inside mark ${hitMark.mark.map((v) => v.toFixed(1))} (left gap ${leftGap.toFixed(1)}, overflow ${overflow.toFixed(1)})`,
+      );
+    }
+
+    // The two painters share one overlay and must not erase each other: a
+    // selection change cannot wipe the find mark, nor a find the selection.
+    const coexist = await evaluate(`
+      const count = (selector) => document.querySelectorAll(selector).length;
+      const spans = [...document.querySelectorAll('#textLayer span')];
+      const select = () => {
+        const range = document.createRange();
+        range.setStartBefore(spans[0]);
+        range.setEndAfter(spans[0]);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new Event('selectionchange'));
+      };
+      select();
+      await new Promise((done) => requestAnimationFrame(done));
+      const selectionAlone = count('#selectionLayer i.selection');
+      const findBefore = count('#selectionLayer i.find');
+      const find = document.querySelector('#find');
+      find.value = 'line';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 300));
+      const selectionAfterFind = count('#selectionLayer i.selection');
+      select();
+      await new Promise((done) => requestAnimationFrame(done));
+      return {
+        selectionAlone,
+        findBefore,
+        selectionAfterFind,
+        findAfterSelect: count('#selectionLayer i.find'),
+      };
+    `);
+    check(
+      coexist.selectionAlone > 0 && coexist.selectionAfterFind === coexist.selectionAlone,
+      `a find does not wipe the selection: ${coexist.selectionAlone} then ${coexist.selectionAfterFind} mark(s)`,
+    );
+    check(
+      coexist.findAfterSelect === 1,
+      `a selection change does not wipe the find mark: ${coexist.findAfterSelect}`,
+    );
+
+    // Two hits, two words: stepping must move the mark to the second "line" and
+    // not paint the first one again (`search` returns hits in reading order, so
+    // occurrences are consumed in that order).
+    const hitInk = async () =>
+      evaluate(`
+        const mark = document.querySelector('#selectionLayer i.find');
+        if (!mark) return { mark: null };
+        const canvas = document.querySelector('#canvas');
+        const context = canvas.getContext('2d');
+        const canvasRect = canvas.getBoundingClientRect();
+        const toBitmap = canvas.width / canvasRect.width;
+        const image = context.getImageData(0, 0, canvas.width, canvas.height);
+        const rect = mark.getBoundingClientRect();
+        const x0 = Math.floor((rect.left - canvasRect.left) * toBitmap);
+        const x1 = Math.ceil((rect.right - canvasRect.left) * toBitmap);
+        const y0 = Math.max(0, Math.floor((rect.top - canvasRect.top) * toBitmap));
+        const y1 = Math.min(canvas.height, Math.ceil((rect.bottom - canvasRect.top) * toBitmap));
+        let firstInk = null;
+        let lastInk = null;
+        for (let x = x0; x < x1; x += 1) {
+          let ink = false;
+          for (let y = y0; y < y1 && !ink; y += 1) {
+            const offset = (y * canvas.width + x) * 4;
+            ink = image.data[offset] + image.data[offset + 1] + image.data[offset + 2] < 600;
+          }
+          if (ink) { if (firstInk === null) firstInk = x; lastInk = x; }
+        }
+        return {
+          info: document.querySelector('#findInfo').textContent,
+          mark: [rect.left, rect.right, rect.top],
+          ink: firstInk === null ? null : [firstInk / toBitmap + canvasRect.left, (lastInk + 1) / toBitmap + canvasRect.left],
+          fallback: document.querySelectorAll('#selectionLayer i.find.fallback').length,
+        };
+      `);
+    const firstHit = await hitInk();
+    await evaluate(`
+      document.querySelector('#findNext').click();
+      await new Promise((done) => setTimeout(done, 300));
+    `);
+    const secondHit = await hitInk();
+
+    // Both "line" words start at the same x, so the *vertical* move is what tells
+    // the two occurrences apart.
+    check(
+      firstHit.mark && secondHit.mark &&
+        (Math.abs(firstHit.mark[0] - secondHit.mark[0]) > 1 ||
+          Math.abs(firstHit.mark[2] - secondHit.mark[2]) > 1),
+      `stepping moves the mark to the next occurrence: ` +
+        `${firstHit.mark?.slice(0, 2).map((v) => v.toFixed(1))} at ${firstHit.mark?.[2]?.toFixed(1)} then ` +
+        `${secondHit.mark?.slice(0, 2).map((v) => v.toFixed(1))} at ${secondHit.mark?.[2]?.toFixed(1)}`,
+    );
+    check(
+      secondHit.ink !== null &&
+        Math.abs(secondHit.ink[0] - secondHit.mark[0]) <= 2 &&
+        secondHit.ink[1] <= secondHit.mark[1] + 2,
+      `the second hit's mark is on its own word too: ink ${secondHit.ink?.map((v) => v.toFixed(1))} ` +
+        `inside ${secondHit.mark?.slice(0, 2).map((v) => v.toFixed(1))}`,
+    );
+    check(
+      firstHit.fallback === 0 && secondHit.fallback === 0,
+      `no mark fell back to the line box: ${firstHit.fallback} and ${secondHit.fallback}`,
+    );
+
+    // The same on the embedded serif, where the advances are proportional, and
+    // with a zoom: the mark's scale is derived at paint time, so a zoom must keep
+    // the counter and the word.
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      select.value = [...select.options].find((o) => /book/.test(o.textContent)).value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(`document.querySelector('#factName').textContent === 'book.pdf'`, 'the book sample');
+    await new Promise((done) => setTimeout(done, 300));
+    const bookHit = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = 'the';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 400));
+      const mark = document.querySelector('#selectionLayer i.find');
+      const info = document.querySelector('#findInfo').textContent;
+      if (!mark) return { mark: null, info, fallback: 0 };
+      const canvas = document.querySelector('#canvas');
+      const context = canvas.getContext('2d');
+      const canvasRect = canvas.getBoundingClientRect();
+      const toBitmap = canvas.width / canvasRect.width;
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const rect = mark.getBoundingClientRect();
+      const x0 = Math.floor((rect.left - canvasRect.left) * toBitmap);
+      const x1 = Math.ceil((rect.right - canvasRect.left) * toBitmap);
+      const y0 = Math.max(0, Math.floor((rect.top - canvasRect.top) * toBitmap));
+      const y1 = Math.min(canvas.height, Math.ceil((rect.bottom - canvasRect.top) * toBitmap));
+      let firstInk = null;
+      let lastInk = null;
+      for (let x = x0; x < x1; x += 1) {
+        let ink = false;
+        for (let y = y0; y < y1 && !ink; y += 1) {
+          const offset = (y * canvas.width + x) * 4;
+          ink = image.data[offset] + image.data[offset + 1] + image.data[offset + 2] < 600;
+        }
+        if (ink) { if (firstInk === null) firstInk = x; lastInk = x; }
+      }
+      return {
+        mark: [rect.left, rect.right],
+        ink: firstInk === null ? null : [firstInk / toBitmap + canvasRect.left, (lastInk + 1) / toBitmap + canvasRect.left],
+        info,
+        fallback: document.querySelectorAll('#selectionLayer i.find.fallback').length,
+      };
+    `);
+    check(
+      bookHit.mark !== null && bookHit.ink !== null &&
+        bookHit.mark[0] - bookHit.ink[0] <= 2 && bookHit.ink[1] - bookHit.mark[1] <= 2,
+      `the serif's hit is on its word: ink ${bookHit.ink?.map((v) => v.toFixed(1))} inside ` +
+        `${bookHit.mark?.map((v) => v.toFixed(1))} (${bookHit.info})`,
+    );
+    check(bookHit.fallback === 0, `the serif's hit did not fall back: ${bookHit.fallback}`);
+
+    // A zoom repaints at the new scale: the counter stays and the mark stays on
+    // its word -- the scale is derived at paint time, not remembered.
+    await evaluate(`document.querySelector('#zoomIn').click();`);
+    await new Promise((done) => setTimeout(done, 500));
+    const zoomed = await evaluate(`
+      const mark = document.querySelector('#selectionLayer i.find');
+      const canvas = document.querySelector('#canvas');
+      const context = canvas.getContext('2d');
+      const canvasRect = canvas.getBoundingClientRect();
+      const toBitmap = canvas.width / canvasRect.width;
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const rect = mark ? mark.getBoundingClientRect() : null;
+      if (!rect) return { mark: null, info: document.querySelector('#findInfo').textContent };
+      const x0 = Math.floor((rect.left - canvasRect.left) * toBitmap);
+      const x1 = Math.ceil((rect.right - canvasRect.left) * toBitmap);
+      const y0 = Math.max(0, Math.floor((rect.top - canvasRect.top) * toBitmap));
+      const y1 = Math.min(canvas.height, Math.ceil((rect.bottom - canvasRect.top) * toBitmap));
+      let inked = 0;
+      for (let x = x0; x < x1; x += 1) {
+        let ink = false;
+        for (let y = y0; y < y1 && !ink; y += 1) {
+          const offset = (y * canvas.width + x) * 4;
+          ink = image.data[offset] + image.data[offset + 1] + image.data[offset + 2] < 600;
+        }
+        if (ink) inked += 1;
+      }
+      return { mark: [rect.left, rect.right, rect.width], inked, info: document.querySelector('#findInfo').textContent };
+    `);
+    check(
+      zoomed.mark !== null && zoomed.info === bookHit.info,
+      `a zoom keeps the counter: ${bookHit.info} then ${zoomed.info}`,
+    );
+    check(
+      zoomed.mark !== null && zoomed.mark[2] > 20 && zoomed.inked > 0,
+      `the mark follows the zoom: ${zoomed.mark?.map((v) => v.toFixed(1))} with ${zoomed.inked} inked column(s) inside`,
+    );
+
     // An empty box clears the counter rather than leaving the last result behind.
     const cleared = await evaluate(`
       const find = document.querySelector('#find');
@@ -1126,7 +1368,7 @@ async function main() {
       await new Promise((done) => setTimeout(done, 100));
       return {
         info: document.querySelector('#findInfo').textContent,
-        marks: document.querySelectorAll('#textLayer .find-mark').length,
+        marks: document.querySelectorAll('#selectionLayer i.find').length,
       };
     `);
     check(cleared.info === '–' && cleared.marks === 0, `an empty needle clears: ${cleared.info}`);

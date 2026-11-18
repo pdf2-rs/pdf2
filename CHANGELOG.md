@@ -4,6 +4,35 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.2] — 2026-11-18
+
+**The find mark lands on the word.** A `SearchHit` carries its *line's* box
+(`src/content.rs`), so the demo's mark covered the whole line: for "line" on `text.pdf` it ran
+143.0..258.5 px while the painted word sat at 241.0..297.0 — 98 px early and 38.5 px short. The hit's
+text is now mapped onto the page's painted glyphs and drawn through the same welded-cell overlay as
+the selection, so the mark covers the word itself.
+
+### Fixed
+
+- **A search hit highlights the word it found, not the line around it** — `paintHits` builds the mark
+  from the renderer's glyph cells, welding the matched characters into one rectangle per run and
+  painting it as an inverted `<i class="find">` in the selection overlay. Measured by
+  `demo-test.mjs`: the mark now spans 241.0..297.0 against ink at 241.0..295.0, on `text.pdf` and on
+  `book.pdf`'s embedded serif alike (151.0..182.0 against 150.8..182.6).
+
+### Changed
+
+- The find mark moved out of the text layer into the overlay, so the two painters clear only their own
+  marks: a selection change no longer wipes a find mark, nor a find a selection.
+- **A hit's text is matched to a line by text first, position second**: the extractor and the renderer
+  disagree about where a line sits on `text.pdf` (14 px on "fourth line", exactly on the one above), so
+  matching by vertical overlap alone missed and fell back to the line box.
+- **A zoom keeps the find result**: the hit list belongs to the needle rather than the page, the mark is
+  repainted by the render path, and its scale is derived at paint time instead of remembered.
+
+Every crate moves with the group ([ADR 0009](docs/adr/0009-one-version-per-group.md)); only the demo
+changed, so this is a patch.
+
 ## [1.7.1] — 2026-11-18
 
 **The selection looks like a selection.** The previous release put the highlight on the painted
