@@ -55,8 +55,8 @@ Working today:
   `/R 5` is refused: it is the deprecated draft of revision 6.
 
 - PDF 1.x as well as 2.0: the header gate accepts both (`%PDF-1.4`–`%PDF-2.x`),
-  and a committed corpus of 23 real files measures what that means:
-  **23 parse and render, 21 are fully readable** (`cargo xtask corpus`,
+  and a committed corpus of 25 real files measures what that means:
+  **25 parse and render, 24 are fully readable** (`cargo run -q -p xtask -- corpus`,
   [`docs/CORPUS.md`](docs/CORPUS.md)).
 
 ## Compared with
@@ -65,18 +65,19 @@ The honest version, including the column where we lose. Detail, sources and
 check dates: [`docs/COMPETITORS.md`](docs/COMPETITORS.md); what each gap would
 cost: [`docs/GAPS.md`](docs/GAPS.md); how claims are checked:
 [`docs/PROOF.md`](docs/PROOF.md); what is shipped, scheduled, refused or
-unplanned, feature by feature: [`docs/FEATURES.md`](docs/FEATURES.md).
+unplanned, feature by feature: [`docs/FEATURES.md`](docs/FEATURES.md); what comes
+next and what each piece would cost: [`docs/OBJECTIVES.md`](docs/OBJECTIVES.md).
 
 | | this crate | [hayro](https://github.com/LaurenzV/hayro) | [pdfium-render](https://github.com/ajrcarey/pdfium-render) | [lopdf](https://github.com/J-F-Liu/lopdf) |
 | --- | --- | --- | --- | --- |
-| Shape | one crate and one model: read, extract, render in the sibling crate, write new | read + render, read-only by design | C library wrapped in Rust: read, edit, render, extract | edit and rewrite; no rendering or extraction |
+| Shape | one crate and one model: read, extract, render in the sibling crate, edit and write | read + render, plus page copies through `hayro-write` | C library wrapped in Rust: read, edit, render, extract | edit and rewrite; no rendering or extraction |
 | PDF 1.x and 2.0 | 1.x and 2.x | 1.x–2.0 in practice | 1.x–2.0 | 1.x–2.0 |
 | Text extraction | simple and `/ToUnicode` composite fonts, reading order | not offered | yes, through pdfium | not offered |
-| Rendering | paths, curves, fills, strokes, clips, transforms, text, images; **no image codecs, shadings, transparency** | the strongest pure-Rust renderer: image codecs, shadings, transparency, 1 600+ visual tests | the strongest overall, being Chromium's engine | none |
-| Editing an opened file | no: `save()` builds new documents only | no, by design | yes | yes |
+| Rendering | paths, curves, fills, strokes, clips, transforms, text, images, shadings, patterns, transparency, form XObjects, annotations; DCT and CCITT by default, JPEG 2000 and JBIG2 behind features | the strongest pure-Rust renderer: 1 600+ visual tests | the strongest overall, being Chromium's engine | none |
+| Editing an opened file | yes: `MutableDocument` overlays a file and saves incrementally, encryption carried | page copies only | yes | yes |
 | No C, no `unsafe`, `no_std`, wasm | yes, with size budgets in CI | no | no | no |
 | Licence | Unlicense OR MIT | Apache-2.0 | MIT/Apache-2.0 | MIT |
-| Adoption (2026-11-14) | 1 664 downloads | 5 384 557 | 3 954 648 | 30 289 120 |
+| Adoption (2026-11-18) | 2 246 downloads | 5 628 585 | 4 079 913 | 31 170 028 |
 
 If you need the best possible rendering today, use hayro or pdfium. If you need
 to edit a document, use lopdf. If you need the same model to read a file, say
@@ -87,11 +88,13 @@ and [`docs/ROADMAP-NEXT.md`](docs/ROADMAP-NEXT.md) says how it closes.
 ## Limits
 
 Deliberately out of scope for the `pdf2` library: rasterising (that is
-`crates/pdf2-render`, which shares the same model), PDF/A conformance, RC4 and
-AES-128, the `Info` dictionary, form filling, JavaScript, XFA and image codecs
-(DCT, JPX, CCITT, JBIG2). A file that needs one of these is reported as an error
-rather than silently misread, and [`docs/CORPUS.md`](docs/CORPUS.md) counts how
-often that happens on real files.
+`crates/pdf2-render`, which shares the same model), PDF/A validation, form
+filling, JavaScript and XFA. Image codecs are the renderer's: DCT and CCITT are
+on by default, JPEG 2000 and JBIG2 are cargo features off by default, and the
+size decision is [ADR 0007](docs/adr/0007-decoder-features.md). What is still
+missing is ranked in [`docs/OBJECTIVES.md`](docs/OBJECTIVES.md), and a file that
+needs something unsupported is reported by name rather than silently misread —
+[`docs/CORPUS.md`](docs/CORPUS.md) counts how often that happens on real files.
 
 Known limits inside the supported surface:
 
@@ -102,20 +105,26 @@ Known limits inside the supported surface:
 
 - Text extraction: composite (Type0) fonts with a `/ToUnicode` map and an
   Identity encoding are read (codes split by the CMap's code space, CID widths
-  from `/W` and `/DW`); one predefined CJK CMap ships as data (Adobe-Japan1
-  `90ms-RKSJ-H`), so those pages extract their text, while any other
-  CMap-encoded font is reported by the CMap name it needs — the data is
-  generated (`cargo xtask cmaps`) and its size is recorded against the wasm
-  budget; the upper half of `MacRomanEncoding` is not decoded; glyph
+  from `/W` and `/DW`); two predefined CJK CMaps ship as data (Adobe-Japan1
+  `90ms-RKSJ-H` and `UniJIS-UCS2-H`), so those pages extract their text, while
+  any other CMap-encoded font is reported by the CMap name it needs — the data is
+  generated (`cargo run -q -p xtask -- cmaps`) and its size is recorded against
+  the wasm budget; the upper half of `MacRomanEncoding` is not decoded; glyph
   names outside the built-in table are skipped rather than guessed. Spaces are
-  recognised from the text itself and from wide `TJ` adjustments, not from glyph
-  advance widths.
-- Encryption is read-only and revision 6 only; the writer always produces
-  unencrypted files.
+  recognised from the text itself and from wide `TJ` adjustments; a line box's
+  width comes from the `/Widths` the font states, with `0.5 em` as the documented
+  fallback.
+- Encryption is read for revisions 2–6 (RC4, AES-128 and AES-256, with
+  `/V 1/2/4/5`); an incremental save re-encrypts every appended object with the
+  base's handler, while a document built with `Document::new` is written
+  unencrypted. `/ID`'s first string is frozen and the second is derived from what
+  the save appended ([ADR 0006](docs/adr/0006-editing-mutation-model.md) §5).
 - `/Count` in a page tree is treated as a hint and never trusted; pages are
   counted by walking.
-- No external validator (`qpdf`, `verapdf`, `mutool`, `gs`) exists in the
-  environment this was built in. Proof rests on committed fixtures, byte-exact
+- The environment this was built in has no `qpdf` or `verapdf`; the `oracle` CI
+  job installs poppler, mupdf and Ghostscript and gates every push against their
+  spread, so a rendering claim is checked by two independent engines rather than
+  by this machine. Proof rests on committed fixtures, byte-exact
   round-trips and cross-checks against independent implementations (NIST
   SP 800-38A for AES-256-CBC, `base64.a85encode` for ASCII85, a separate
   encoder for LZW, Python for the PNG predictors).

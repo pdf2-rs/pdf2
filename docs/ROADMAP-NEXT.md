@@ -5,6 +5,11 @@ scorecard (`docs/GAPS.md`), and the measured corpus (`docs/CORPUS.md`). No new
 external numbers appear here — every value below is a fact already recorded in
 those three files.
 
+**This file ranked the work that became 1.2, 1.3 and 1.4, and its ranks are statuses
+now** (thirteen shipped, seven open). What comes *after* them is ranked in
+[`docs/OBJECTIVES.md`](OBJECTIVES.md), which quotes these ranks, measures each open item
+in the tree, and gives every objective one command as its exit criterion.
+
 [`docs/FEATURES.md`](FEATURES.md) is the completeness check on this ranking: every
 feature area of ISO 32000-2, the API and the tooling is marked shipped,
 scheduled (with the item number below), refused (with the ADR line), or
