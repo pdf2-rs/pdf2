@@ -12,13 +12,20 @@ paths and 1.0's layout depend on them.
 
 | Crate | Version line | Published to |
 | --- | --- | --- |
-| `pdf2` (root) | library semver, currently 1.x | crates.io |
-| `crates/pdf2-render` | independent, currently 1.2.x | crates.io |
-| `crates/pdf2-cli` | independent, currently 1.2.x | crates.io |
-| `crates/pdf2-wasm` | independent, currently 1.1.x | crates.io (crate `pdf2-wasm`) **and** npm (package `pdf2-wasm`, versioned separately) |
+| `pdf2` (root) | the group version | crates.io |
+| `crates/pdf2-render` | the group version | crates.io |
+| `crates/pdf2-cli` | the group version | crates.io |
+| `crates/pdf2-wasm` | the group version | crates.io (crate `pdf2-wasm`) **and** npm (package `pdf2-wasm`, same number) |
 | `crates/pdf2-bench` | `publish = false` | nothing |
 | `crates/pdf2-wasm-smoke` | `publish = false` | nothing |
 | `crates/xtask` | `publish = false` | nothing |
+
+**One version for the whole shipped group** ([ADR 0009](docs/adr/0009-one-version-per-group.md)):
+`[workspace.package] version` is the only Rust copy and every published crate says
+`version.workspace = true`, so a bump cannot miss one. `crates/pdf2-wasm/package.json` is
+the one copy Cargo cannot reach, and `cargo run -q -p xtask -- versions` — a gate step —
+fails when it, the newest `CHANGELOG.md` heading, or any shipped crate disagrees. Every
+tag of a release carries the same number, and every release publishes all five artefacts.
 
 ## Non-negotiables
 
@@ -176,8 +183,10 @@ demo from `crates/pdf2-wasm/demo`.
 
 ## The dual publish model
 
-Two registries, two tag namespaces, two workflows. They are independent: a
-release may publish either, both, or only one.
+Two registries, two tag namespaces, two workflows: **one version** publishes all
+five artefacts ([ADR 0009](docs/adr/0009-one-version-per-group.md)). A crates.io
+release or an npm release can be re-run on its own if one registry failed, but a
+version is only ever a version of the whole group.
 
 ### crates.io
 
@@ -232,7 +241,7 @@ Two traps this design has already met:
 `crates/pdf2-wasm/package.json` publishes as the npm package `pdf2-wasm`, from
 `.github/workflows/npm.yml`, also with trusted publishing (OIDC) — provenance is
 generated automatically. Tags are **`npm-v<version>`**, where the version is
-`package.json`'s and may differ from the crate's.
+`package.json`'s — which is the group's version, because the two move together.
 
 - The workflow builds the wasm, runs `check.mjs` (API smoke test plus the size
   budget), refuses a tag that disagrees with `package.json` or is off `main`,
@@ -255,8 +264,9 @@ generated automatically. Tags are **`npm-v<version>`**, where the version is
 
 ### Release checklist
 
-1. Bump the version(s) — library semver for `pdf2`, independent for tools; keep
-   path-dependency `version` pins in step.
+1. Bump `[workspace.package] version` once, `crates/pdf2-wasm/package.json` to match,
+   and the path-dependency `version` pins; `cargo run -q -p xtask -- versions` proves
+   the group agrees ([ADR 0009](docs/adr/0009-one-version-per-group.md)).
 2. Add the `CHANGELOG.md` entry; state breaking changes, fixes and the reason.
 3. `cargo gate --full` (and `cargo package -p <crate> --list` for what ships).
 4. Land the version bump and CHANGELOG through a pull request (the parity of the

@@ -15,6 +15,16 @@ original stays valid. Deletions are free rows rather than byte edits, an encrypt
 appended to *encrypted* (RC4, AES-128 and AES-256), and a save that would write more
 objects than the document's `object_limit` is refused before it produces a byte.
 
+### Changed
+
+- **One version for the whole shipped group** ([ADR 0009](docs/adr/0009-one-version-per-group.md)):
+  `pdf2`, `pdf2-render`, `pdf2-cli` and the `pdf2-wasm` crate and npm package now carry the
+  same number, bumped together. `[workspace.package] version` is the only Rust copy and
+  `cargo run -q -p xtask -- versions` — a gate step — fails when `package.json`, the
+  CHANGELOG heading or any shipped crate disagrees. `pdf2-wasm` moves 1.4.0 → 1.6.0 to rejoin
+  the line: its API does not break, and the package finally contains this release's library,
+  editing included, instead of 1.5.0's.
+
 ### Added
 
 - `MutableDocument`: `new`, `base`, `changes`, `deleted`, `next_object`, `get_object`,

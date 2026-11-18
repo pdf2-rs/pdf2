@@ -52,13 +52,15 @@ Current state (2026-11-18):
 | `pdf2` | `1.6.0` | trusted publishing | `pdf2-v1.6.0` |
 | `pdf2-render` | `1.6.0` | trusted publishing | `render-v1.6.0` |
 | `pdf2-cli` | `1.6.0` | trusted publishing | `cli-v1.6.0` |
-| `pdf2-wasm` | `1.4.0` (crate and npm) | trusted publishing | `wasm-v1.4.0`, `npm-v1.4.0` |
+| `pdf2-wasm` | `1.6.0` (crate and npm) | trusted publishing | `wasm-v1.6.0`, `npm-v1.6.0` |
 
 Every crate has a trusted publisher on crates.io now (same repository, workflow
 `publish.yml`, environment `release`), so no token is stored anywhere; npm
-publishes the same way from `npm.yml`. Versions move independently: a change to
-the library alone bumps `pdf2` and the tools that repackage it, and `pdf2-wasm`
-or the npm package is republished only when its own API or its wasm build moves.
+publishes the same way from `npm.yml`. **One version covers all of it**
+([ADR 0009](adr/0009-one-version-per-group.md)): `[workspace.package] version` is the
+only Rust copy, `crates/pdf2-wasm/package.json` carries it for npm, and
+`cargo run -q -p xtask -- versions` — part of the gate — fails when they disagree.
+Every release therefore publishes all five artefacts at the same number.
 
 ### Order matters
 
@@ -122,7 +124,7 @@ the Pages demo). Its four files are the wasm-bindgen
 
 Releases run on an `npm-v*` tag whose version matches `package.json` and which
 is on `main` (`wasm-v*` stays reserved for the crates.io release of the same
-crate, and the two versions may differ); a manual dispatch defaults to
+crate, at the same version); a manual dispatch defaults to
 `dry_run`, and a version already on npm is skipped.
 
 The npm version tracks the crate version, but a packaging-only change (manifest

@@ -1,6 +1,10 @@
 [package]
 name = "pdf2"
-version = "1.6.0"
+# The one version for the whole shipped group: every published crate inherits
+# it, so the library, the renderer, the CLI and the wasm package cannot drift
+# apart. `crates/pdf2-wasm/package.json` is the one copy Cargo cannot reach; the
+# `versions` chore in the gate keeps it honest.
+version.workspace = true
 authors = ["Alexander Korolev <alexander.korolev.germany@gmail.com>"]
 edition = "2024"
 categories = ["parser-implementations", "text-processing"]
@@ -63,6 +67,12 @@ members = [
 # inferred: `Cargo.lock` is git-ignored, so the setting is the only thing that
 # tells the next person why resolution behaves this way.
 resolver = "3"
+
+[workspace.package]
+# Bumped for every release of the group — library, renderer, CLI, wasm crate and
+# npm package all carry this number. `cargo run -q -p xtask -- versions` proves
+# nothing has drifted; the gate runs it.
+version = "1.6.0"
 
 # Lint policy for every crate, so it holds in `cargo build` and `cargo test`
 # too, not only when someone remembers the flags CI uses. Keep this equal to
