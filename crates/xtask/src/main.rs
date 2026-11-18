@@ -592,14 +592,16 @@ fn ledger() -> Result<(), String> {
     let items = ledger::roadmap_items(&roadmap);
     let rows = ledger::rows(&ledger);
     let citations = citations::parse(&objectives);
+    let report = objective_report()?;
     let mut problems = ledger::problems(&rows, &items);
     problems.extend(citations::problems(&citations, |path| {
         std::fs::read_to_string(path).map_err(|error| error.to_string())
     }));
+    problems.extend(counts_problems(&objectives, &report));
     if problems.is_empty() {
         println!(
             "ledger: {} rows, {} roadmap items, {} citations, every item owned, every shipped row \
-             evidenced and every citation resolvable",
+             evidenced, every citation resolvable and every count matching",
             rows.len(),
             items.len(),
             citations.len()
@@ -902,6 +904,12 @@ mod ledger {
 /// read-only: the *comparison* with the prose is the next step, so the two can be
 /// proven apart.
 fn objective() -> Result<(), String> {
+    print!("{}", objective_report()?);
+    Ok(())
+}
+
+/// The report the objective document quotes, recomputed from the documents.
+fn objective_report() -> Result<String, String> {
     let features = std::fs::read_to_string("docs/FEATURES.md")
         .map_err(|error| format!("docs/FEATURES.md: {error}"))?;
     let roadmap = std::fs::read_to_string("docs/ROADMAP-NEXT.md")
@@ -917,9 +925,59 @@ fn objective() -> Result<(), String> {
             name.ends_with(".md") && name != "README.md"
         })
         .count();
-    let counts = objective_counts(&features, &roadmap, &deferred, plans);
-    print!("{}", counts.report());
-    Ok(())
+    Ok(objective_counts(&features, &roadmap, &deferred, plans).report())
+}
+
+/// The `text` block the document quotes the counts in: the one after its
+/// "## Counts" heading that starts with `status rows:`, since that section also
+/// quotes the ledger's own one-line summary.
+fn counts_block(document: &str) -> Option<&str> {
+    let after = document.split("## Counts").nth(1)?;
+    let mut rest = after;
+    while let Some(open) = rest.find("```text") {
+        let body = &rest[open + "```text".len()..];
+        let start = body.find('\n')? + 1;
+        let end = body[start..].find("```")? + start;
+        let block = &body[start..end];
+        if block.starts_with("status rows:") {
+            return Some(block);
+        }
+        rest = &body[end..];
+    }
+    None
+}
+
+/// Everything wrong with the numbers the document quotes.
+///
+/// The block is compared line for line, so a number that drifts says which line and
+/// what both sides believe.
+fn counts_problems(document: &str, report: &str) -> Vec<String> {
+    let Some(block) = counts_block(document) else {
+        return vec!["docs/OBJECTIVES.md has no ```text block under ## Counts".to_owned()];
+    };
+    let mut problems = Vec::new();
+    let quoted: Vec<&str> = block.lines().collect();
+    let counted: Vec<&str> = report.lines().collect();
+    for (index, counted) in counted.iter().enumerate() {
+        match quoted.get(index) {
+            Some(quoted) if quoted == counted => {}
+            Some(quoted) => problems.push(format!(
+                "counts line {}: the document says `{quoted}`, the recount says `{counted}`",
+                index + 1
+            )),
+            None => problems.push(format!(
+                "counts line {}: the document stops early, the recount says `{counted}`",
+                index + 1
+            )),
+        }
+    }
+    for (index, quoted) in quoted.iter().enumerate().skip(counted.len()) {
+        problems.push(format!(
+            "counts line {}: the document has `{quoted}`, which the recount does not",
+            index + 1
+        ));
+    }
+    problems
 }
 
 /// One count per line of the report, so a diff reads as a diff.
@@ -1119,6 +1177,83 @@ fn objective_counts(
         deferred: deferred_open,
         refusals,
         plans,
+    }
+}
+
+#[cfg(test)]
+mod counts_tests {
+    use super::{counts_block, counts_problems};
+
+    const DOC: &str = "\
+## Counts
+
+`ledger` prints:
+
+```text
+ledger: 114 rows
+```
+
+and the recount is:
+
+```text
+status rows: 2
+  shipped              2
+```
+";
+
+    #[test]
+    fn the_block_is_the_one_that_starts_with_the_histogram() {
+        let block = counts_block(DOC).expect("a block");
+        assert!(block.starts_with("status rows: 2"), "{block:?}");
+    }
+
+    #[test]
+    fn a_matching_recount_has_no_problems() {
+        let report = "status rows: 2\n  shipped              2\n";
+        assert!(counts_problems(DOC, report).is_empty());
+    }
+
+    #[test]
+    fn a_drifted_number_names_the_line_and_both_sides() {
+        let report = "status rows: 3\n  shipped              2\n";
+        let problems = counts_problems(DOC, report);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("the document says `status rows: 2`"),
+            "{problems:?}"
+        );
+        assert!(
+            problems[0].contains("the recount says `status rows: 3`"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_block_that_stops_early_and_one_that_runs_long_are_both_reported() {
+        // The recount shorter than the block: the document claims a line that is gone.
+        let short_report = "status rows: 2\n";
+        let problems = counts_problems(DOC, short_report);
+        assert!(
+            problems[0].contains("which the recount does not"),
+            "{problems:?}"
+        );
+        // The recount longer than the block: the document stops early.
+        let long_report = "status rows: 2\n  shipped              2\nplans: 9\n";
+        let problems = counts_problems(DOC, long_report);
+        assert!(
+            problems[0].contains("the document stops early"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_document_without_the_block_is_reported() {
+        let problems = counts_problems("no counts here", "status rows: 1\n");
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("no ```text block under ## Counts"),
+            "{problems:?}"
+        );
     }
 }
 

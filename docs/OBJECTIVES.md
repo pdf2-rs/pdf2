@@ -15,23 +15,40 @@ ls docs/plans/*.md                   # 11 files: 10 plans + README
 
 ## Counts, as of this round
 
-`cargo run -q -p xtask -- ledger` prints:
+The numbers below come from one command, and `cargo gate` fails when this block and the recount
+disagree — `cargo run -q -p xtask -- objective` prints exactly this:
 
 ```text
-ledger: 114 rows, 21 roadmap items, every item owned and every shipped row evidenced
+status rows: 117
+  shipped              51
+  shipped (partial)    15
+  partial              2
+  not applicable       5
+  deferred             1
+  refused              8
+  scheduled            11
+  unplanned            24
+open rows: 35 (11 scheduled, 24 unplanned)
+roadmap ranks: 21, open: 7
+deferred open: 3, refusals: 5
+plans: 10
 ```
 
-`docs/FEATURES.md` holds **117 status rows**: 51 `shipped`, 15 `shipped (partial)`, 2 partly-shipped rows
-with a bare `partial`, 5 `not applicable`, 1 `deferred`, 8 `refused`, **11 `scheduled`** and **24
-`unplanned`** — the 35 open ones are listed below. `docs/ROADMAP-NEXT.md` carries 21 ranks, of which **7 are
-open** (`5, 9, 10, 10b, 10c, 12, 13`) and 14 are marked shipped. `docs/DEFERRED.md` holds **4 open items**
-(ICC, mesh shadings, forms filling, validation) and 5 refusals with an ADR line; the three rows that used to
-read as deferred although the code shipped them (tiling patterns, colour-key `/Mask`, the `Tr` 4-7 clipping
-half) are struck through with their tests named, as the JPX and JBIG2 row already was. `docs/plans/` holds
-10 plans and a template readme.
+Read it as: **117 status rows** in `docs/FEATURES.md` (51 `shipped`, 15 `shipped (partial)`, 2 bare
+`partial`, 5 `not applicable`, 1 `deferred`, 8 `refused`, 11 `scheduled`, 24 `unplanned`), of which the
+**35 open** ones are listed below; **21 roadmap ranks, 7 open** (`5, 9, 10, 10b, 10c, 12, 13`); **3 deferred
+rows still open** in `docs/DEFERRED.md` (ICC, forms filling, validation — mesh shadings is a paragraph there,
+not a row) beside **5 refusals** with an ADR line; and **10 plans** in `docs/plans/`.
 
-The ten contradictions this inventory started with were corrected in PR #160 (`bc9b72e`), which also made
-`crates/xtask/src/main.rs`'s usage text name invocations that exist — see "Corrections applied" at the end.
+`cargo run -q -p xtask -- ledger` adds its own line:
+
+```text
+ledger: 114 rows, 21 roadmap items, 28 citations, every item owned, every shipped row evidenced, every citation resolvable and every count matching
+```
+
+The three rows that used to read as deferred although the code shipped them (tiling patterns, colour-key
+`/Mask`, the `Tr` 4-7 clipping half) are struck through with their tests named, as the JPX and JBIG2 row
+already was. The ten contradictions this inventory started with were corrected in PR #160 (`bc9b72e`).
 
 ## Open rows in `docs/FEATURES.md` (35)
 
