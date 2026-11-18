@@ -12,9 +12,9 @@
 
 The 1.6.0 release published three crates and left `pdf2-wasm` two minors behind. The
 crate's published tarball is a **compiled snapshot**: `pdf2-wasm 1.4.0` on crates.io
-declares `pdf2 ^1.5.0` and its `.wasm` contains 1.5.0's code, so editing —
-`MutableDocument`, `save_incremental` — is unreachable from the npm package even
-though `cargo add pdf2-wasm` resolves `pdf2 1.6.0` alongside it. The version broke
+declared `pdf2 ^1.5.0` and its `.wasm` contained 1.5.0's code, so web users were handed
+an older library than the version number suggested — and `cargo add pdf2-wasm` quietly
+resolved `pdf2 1.6.0` beside it, which reads as if they had matched. The version broke
 away from the pair it used to keep (`wasm-v1.1.0` shipped library 1.2.0,
 `wasm-v1.2.0` → 1.3.0, `wasm-v1.3.0` → 1.4.0, `wasm-v1.4.0` → 1.5.0, then nothing),
 and nothing in the tree made that visible: four manifests and a `package.json` held

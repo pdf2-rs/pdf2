@@ -21,9 +21,10 @@ objects than the document's `object_limit` is refused before it produces a byte.
   `pdf2`, `pdf2-render`, `pdf2-cli` and the `pdf2-wasm` crate and npm package now carry the
   same number, bumped together. `[workspace.package] version` is the only Rust copy and
   `cargo run -q -p xtask -- versions` — a gate step — fails when `package.json`, the
-  CHANGELOG heading or any shipped crate disagrees. `pdf2-wasm` moves 1.4.0 → 1.6.0 to rejoin
-  the line: its API does not break, and the package finally contains this release's library,
-  editing included, instead of 1.5.0's.
+  CHANGELOG heading or any shipped crate disagrees. `pdf2-wasm` (crate and npm) moves 1.4.0 →
+  1.6.0 to rejoin the line. Its binding's API is unchanged, and this release's library work is
+  library-only — the wasm surface does not expose editing — so the republished package is a
+  number catch-up that bundles the 1.6.0 library, not a new feature for web users.
 
 ### Added
 
