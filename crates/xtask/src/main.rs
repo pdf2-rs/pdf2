@@ -39,6 +39,7 @@ fn main() -> ExitCode {
         "test" => step("test"),
         "docs" => step("docs"),
         "ledger" => ledger(),
+        "objective" => objective(),
         "versions" => versions(),
         "no-std" => no_std(),
         "wasm" => wasm(),
@@ -91,6 +92,7 @@ Usage:
   tier-b <dir>...
               measure a Tier B tree and write a failure histogram
   ledger      check that docs/FEATURES.md and the roadmap agree
+  objective   print the counts docs/OBJECTIVES.md quotes, from the documents
   versions    check the one version the whole shipped group carries
   bench       measure and compare with docs/performance-baseline.json
   cmaps       rebuild the generated CMap tables from vendor/adobe-cmaps
@@ -889,6 +891,323 @@ mod ledger {
                 "{problems:?}"
             );
         }
+    }
+}
+
+/// The counts `docs/OBJECTIVES.md` quotes, recomputed from the documents.
+///
+/// The document states a status histogram, an open-row count, open ranks, deferred
+/// items and the number of plans; before this chore those numbers were typed once and
+/// trusted, which is the class of drift the whole objective is about. Print-only and
+/// read-only: the *comparison* with the prose is the next step, so the two can be
+/// proven apart.
+fn objective() -> Result<(), String> {
+    let features = std::fs::read_to_string("docs/FEATURES.md")
+        .map_err(|error| format!("docs/FEATURES.md: {error}"))?;
+    let roadmap = std::fs::read_to_string("docs/ROADMAP-NEXT.md")
+        .map_err(|error| format!("docs/ROADMAP-NEXT.md: {error}"))?;
+    let deferred = std::fs::read_to_string("docs/DEFERRED.md")
+        .map_err(|error| format!("docs/DEFERRED.md: {error}"))?;
+    let plans = std::fs::read_dir("docs/plans")
+        .map_err(|error| format!("docs/plans: {error}"))?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.ends_with(".md") && name != "README.md"
+        })
+        .count();
+    let counts = objective_counts(&features, &roadmap, &deferred, plans);
+    print!("{}", counts.report());
+    Ok(())
+}
+
+/// One count per line of the report, so a diff reads as a diff.
+#[derive(Debug, PartialEq)]
+struct ObjectiveCounts {
+    /// `(status, rows)` in a fixed order, so the output is stable.
+    statuses: Vec<(String, usize)>,
+    /// Rows whose status is `scheduled` or `unplanned`.
+    open: usize,
+    /// Ranks the roadmap lists.
+    ranks: usize,
+    /// Ranks the roadmap does not mark ✓.
+    open_ranks: usize,
+    /// Deferred items still open.
+    deferred: usize,
+    /// Refusals with an ADR line.
+    refusals: usize,
+    /// Plan files, the README excluded.
+    plans: usize,
+}
+
+impl ObjectiveCounts {
+    fn rows(&self) -> usize {
+        self.statuses.iter().map(|(_, count)| count).sum()
+    }
+
+    fn report(&self) -> String {
+        let mut out = format!("status rows: {}\n", self.rows());
+        for (status, count) in &self.statuses {
+            out.push_str(&format!("  {status:<20} {count}\n"));
+        }
+        out.push_str(&format!(
+            "open rows: {} ({} scheduled, {} unplanned)\n",
+            self.open,
+            self.statuses
+                .iter()
+                .find(|(status, _)| status == "scheduled")
+                .map(|(_, count)| *count)
+                .unwrap_or(0),
+            self.statuses
+                .iter()
+                .find(|(status, _)| status == "unplanned")
+                .map(|(_, count)| *count)
+                .unwrap_or(0),
+        ));
+        out.push_str(&format!(
+            "roadmap ranks: {}, open: {}\n",
+            self.ranks, self.open_ranks
+        ));
+        out.push_str(&format!(
+            "deferred open: {}, refusals: {}\n",
+            self.deferred, self.refusals
+        ));
+        out.push_str(&format!("plans: {}\n", self.plans));
+        out
+    }
+}
+
+/// The statuses the histogram knows, in the order it prints them.
+const STATUSES: [&str; 8] = [
+    "shipped",
+    "shipped (partial)",
+    "partial",
+    "not applicable",
+    "deferred",
+    "refused",
+    "scheduled",
+    "unplanned",
+];
+
+fn objective_counts(
+    features: &str,
+    roadmap: &str,
+    deferred: &str,
+    plans: usize,
+) -> ObjectiveCounts {
+    let mut histogram: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for line in features.lines() {
+        let Some(rest) = line.strip_prefix("| ") else {
+            continue;
+        };
+        if rest.starts_with("---") {
+            continue;
+        }
+        let cells: Vec<&str> = rest.split('|').map(str::trim).collect();
+        if cells.len() < 3 {
+            continue;
+        }
+        let status = cells[1];
+        // The longest match wins: `shipped (partial)` before `shipped`.
+        let key = STATUSES
+            .iter()
+            .filter(|known| {
+                status == **known
+                    || (status.starts_with(**known)
+                        && status[known.len()..].starts_with([' ', '(']))
+            })
+            .max_by_key(|known| known.len());
+        if let Some(key) = key {
+            *histogram.entry(key).or_default() += 1;
+        }
+    }
+    let statuses: Vec<(String, usize)> = STATUSES
+        .iter()
+        .map(|status| {
+            (
+                (*status).to_owned(),
+                histogram.get(status).copied().unwrap_or(0),
+            )
+        })
+        .filter(|(_, count)| *count > 0)
+        .collect();
+    let open: usize = statuses
+        .iter()
+        .filter(|(status, _)| status == "scheduled" || status == "unplanned")
+        .map(|(_, count)| count)
+        .sum();
+
+    let mut ranks = 0;
+    let mut open_ranks = 0;
+    for line in roadmap.lines() {
+        let Some(rest) = line.strip_prefix("| ") else {
+            continue;
+        };
+        let rank = rest.split(' ').next().unwrap_or("");
+        let numeric = rank.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+        if numeric.is_empty() || !numeric.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        ranks += 1;
+        if !rest.split('|').next().unwrap_or("").contains('✓') {
+            open_ranks += 1;
+        }
+    }
+
+    // `docs/DEFERRED.md`: a row is still open unless it is struck through (shipped)
+    // or names a rank the roadmap marks ✓ (the "reinstated" table names one).
+    // Section 2 is the refusals, one row each.
+    let shipped: std::collections::BTreeSet<&str> = roadmap
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("| ")?;
+            let rank = rest.split(' ').next()?;
+            let numeric = rank.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+            if numeric.is_empty() || !numeric.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            rest.split('|').next().filter(|cell| cell.contains('✓'))?;
+            Some(rank)
+        })
+        .collect();
+    let mut deferred_open = 0;
+    let mut refusals = 0;
+    let mut section = 0;
+    for line in deferred.lines() {
+        if line.starts_with("## 1.") {
+            section = 1;
+            continue;
+        }
+        if line.starts_with("## 2.") {
+            section = 2;
+            continue;
+        }
+        if line.starts_with("## 3.") {
+            section = 3;
+            continue;
+        }
+        if !line.starts_with("| ") || line.starts_with("| ---") || line.starts_with("| Item") {
+            continue;
+        }
+        let cells: Vec<&str> = line
+            .trim_start_matches("| ")
+            .split('|')
+            .map(str::trim)
+            .collect();
+        let first = cells.first().copied().unwrap_or("");
+        match section {
+            2 if !first.is_empty() => refusals += 1,
+            1 | 0 if !first.starts_with("~~") => {
+                // A row that names a shipped rank has shipped, whatever the table.
+                let shipped_row = cells.iter().any(|cell| {
+                    shipped.contains(cell.trim_matches(|c: char| !c.is_ascii_alphanumeric()))
+                });
+                if !shipped_row {
+                    deferred_open += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    ObjectiveCounts {
+        statuses,
+        open,
+        ranks,
+        open_ranks,
+        deferred: deferred_open,
+        refusals,
+        plans,
+    }
+}
+
+#[cfg(test)]
+mod objective_tests {
+    use super::objective_counts;
+
+    const FEATURES: &str = "\
+| Feature | Status | Evidence |
+| --- | --- | --- |
+| a | shipped | `src/a.rs` |
+| b | shipped (partial) | `src/b.rs` |
+| c | scheduled 10 | `src/c.rs` |
+| d | unplanned | |
+| e | refused | ADR 1 |
+";
+
+    const ROADMAP: &str = "\
+| Rank | Item |
+| --- | --- |
+| 10 | open one |
+| 11 ✓ | shipped one |
+";
+
+    const DEFERRED: &str = "\
+## Reinstated
+
+| Item | Rank | Plan |
+| --- | --- | --- |
+| Editing | 11 | [plan](plans/editing.md) |
+| Forms | 12 | [plan](plans/forms.md) |
+
+## 1. Out of scope
+
+| Item | Why |
+| --- | --- |
+| ~~Shipped~~ | done |
+| ICC | a decision |
+
+## 2. Refused by design
+
+| Item | ADR |
+| --- | --- |
+| Racing | ADR 0001 |
+";
+
+    #[test]
+    fn the_histogram_counts_every_status_in_a_fixed_order() {
+        let counts = objective_counts(FEATURES, ROADMAP, DEFERRED, 3);
+        assert_eq!(counts.rows(), 5, "{counts:?}");
+        assert_eq!(counts.open, 2, "{counts:?}");
+        assert_eq!(
+            counts.statuses,
+            vec![
+                ("shipped".to_owned(), 1),
+                ("shipped (partial)".to_owned(), 1),
+                ("refused".to_owned(), 1),
+                ("scheduled".to_owned(), 1),
+                ("unplanned".to_owned(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn ranks_are_counted_with_the_ones_the_roadmap_marks_shipped() {
+        let counts = objective_counts(FEATURES, ROADMAP, DEFERRED, 0);
+        assert_eq!((counts.ranks, counts.open_ranks), (2, 1), "{counts:?}");
+    }
+
+    #[test]
+    fn a_deferred_row_ships_when_struck_through_or_naming_a_shipped_rank() {
+        let counts = objective_counts(FEATURES, ROADMAP, DEFERRED, 0);
+        // `Editing` names rank 11 (✓) and `~~Shipped~~` is struck; `Forms` (12) and
+        // `ICC` (no rank cell) are open.
+        assert_eq!(counts.deferred, 2, "{counts:?}");
+        assert_eq!(counts.refusals, 1, "{counts:?}");
+    }
+
+    #[test]
+    fn the_report_prints_one_line_per_number() {
+        let report = objective_counts(FEATURES, ROADMAP, DEFERRED, 3).report();
+        assert!(report.starts_with("status rows: 5\n"), "{report}");
+        assert!(
+            report.contains("open rows: 2 (1 scheduled, 1 unplanned)"),
+            "{report}"
+        );
+        assert!(report.contains("roadmap ranks: 2, open: 1"), "{report}");
+        assert!(report.contains("deferred open: 2, refusals: 1"), "{report}");
+        assert!(report.contains("plans: 3"), "{report}");
     }
 }
 

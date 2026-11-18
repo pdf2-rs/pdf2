@@ -73,7 +73,7 @@ Checked 2026-11-17 — `cargo test --workspace` (including `tests/edit.rs`, whic
 | Linearised files (read) | shipped | `corpus/tier-a/bug_jpx.pdf` declares `/Linearized` and the CLI reads it (`pdf2 check`, 2026-11-15); linearisation is an ordering, so the parser reads it by construction |
 | Linearisation (write) | unplanned | No demand evidence; `qpdf` owns the use case |
 | Incremental update (write) | shipped | `MutableDocument::save_incremental` (`src/edit.rs`): append, one classic xref section with `f` rows for deletions, trailer with `/Prev`/`/Size`/`/ID` (first string frozen), encrypted with the base's handler. Proved by `tests/edit.rs` — the round trip, the trailer to `14.4`, encryption on all three fixtures, and `pdftoppm`/`mutool` rendering the appended page (2026-11-17). Owner: item 11 |
-| `7.9` Common data structures — dates, names, strings, rectangles | shipped, partial | `Rect` and the name/string objects are modelled (`src/object.rs`); **dates are not**: no `Date` type exists, so `/CreationDate` and `/ModDate` are unread strings |
+| `7.9` Common data structures — dates, names, strings, rectangles | shipped (partial) | `Rect` and the name/string objects are modelled (`src/object.rs`); **dates are not**: no `Date` type exists, so `/CreationDate` and `/ModDate` are unread strings |
 | `7.10` Functions (types 0–4) | shipped (partial) | `crates/pdf2-render/src/function.rs` parses and evaluates **type 0** (sampled, bit-unpacked, multilinear), **type 2** (exponential), **type 3** (stitching, with `/Bounds` and `/Encode`) and **type 4** (the PostScript calculator: Table 42's operators, `if`/`ifelse` over procs, bounded to 4096 steps and 128 stack entries). Type 1 is refused by name as the deprecated form. Every `/Function` in the five shading pages parses and evaluates (`function.rs` tests); **nothing paints with them yet** — `sh` is item 10's next child. Owner: item 10 (functions, 2026-11-16) |
 | `7.10` Functions used for anything else | scheduled 10 | Nothing evaluates PDF functions; shadings cannot be drawn without them, so the row rides with item 10. Owner: item 10 |
 | `7.11` Embedded files and file specifications (`/EmbeddedFiles`, `/Filespec`) | unplanned | No `EmbeddedFiles` or `/Filespec` handling anywhere; attachments are invisible. Owner: none |
@@ -222,7 +222,7 @@ Checked 2026-11-15 — `cargo test --workspace` (`src/encoding.rs` unit tests, `
 
 | Annex | Status | Evidence / owner |
 | --- | --- | --- |
-| `D` Character sets and encodings | shipped, partial | `src/encoding.rs`: `StandardEncoding`, `WinAnsiEncoding`, `/Differences`; the upper half of `MacRoman` and glyph names outside the built-in table are skipped (README limits) |
+| `D` Character sets and encodings | shipped (partial) | `src/encoding.rs`: `StandardEncoding`, `WinAnsiEncoding`, `/Differences`; the upper half of `MacRoman` and glyph names outside the built-in table are skipped (README limits) |
 | `E` PDF Name Registry | not applicable | A registry of names and abbreviations; no behaviour to implement |
 | `F` Linearized PDF | not applicable | Linearisation is an ordering; the parser reads such files by construction (see the linearisation row in §File structure and objects), and no writer emits it |
 | `I` PDF versions and compatibility | shipped | `src/document.rs` accepts `%PDF-1.x` and `%PDF-2.x`, refuses the rest (`tests/document.rs`) |
