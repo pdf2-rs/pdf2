@@ -155,7 +155,10 @@ Tags are **per crate**, because each crate has its own version:
    the commit is on `main`, runs the workspace tests, exchanges an OIDC token and
    publishes. A crate whose version is already on crates.io is skipped, so a
    re-run is harmless.
-5. Create the GitHub release from the tag (optional).
+5. The GitHub release is created for you: the same workflow records it from the
+   tag, with the CHANGELOG section as the notes and `--latest` only for `pdf2`
+   (`publish.yml`, job `release`). A tag that predates that job is backfilled by
+   dispatching the workflow with `release_tag`.
 
 ### Publishing the whole train
 
