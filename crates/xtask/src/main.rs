@@ -67,29 +67,33 @@ fn main() -> ExitCode {
 }
 
 const USAGE: &str = "\
-cargo xtask — repository chores
+the repository chores
 
 Usage:
   cargo gate [--full]   run every gate step (CI's Gate job; --full adds the rest)
-  cargo xtask format    check formatting only
-  cargo xtask clippy    clippy over the workspace, warnings denied
-  cargo xtask test      test the workspace and the library's features
-  cargo xtask docs      rustdoc over the workspace, warnings denied
-  cargo xtask no-std    build and lint the library without std
-  cargo xtask wasm      build the wasm modules, smoke test, check size budgets
-  cargo xtask wasm-package
-                        build the npm package into crates/pdf2-wasm/pkg
-  cargo xtask demo      build the demo and drive it in a real browser
-  cargo xtask corpus    run the Tier A corpus through the CLI and the renderer
-  cargo xtask tier-b <dir>...
-                        measure a Tier B tree and write a failure histogram
-  cargo xtask ledger    check that docs/FEATURES.md and the roadmap agree
-  cargo xtask versions  check the one version the whole shipped group carries
-  cargo xtask bench     measure and compare with docs/performance-baseline.json
-  cargo xtask fixtures  regenerate tests/fixtures/*.pdf
-  cargo run -q -p xtask -- cmaps
-                        rebuild the generated CMap tables from vendor/adobe-cmaps
-  cargo xtask bless     re-render the committed golden PNGs
+  cargo fixtures        regenerate tests/fixtures/*.pdf
+  cargo bless           re-render the committed golden PNGs
+
+  Everything else is `cargo run -q -p xtask -- <chore>`: only `gate`, `fixtures` and
+  `bless` have an alias in `.cargo/config.toml`, so `cargo xtask <chore>` is not a
+  command and never was.
+
+  format      check formatting only
+  clippy      clippy over the workspace, warnings denied
+  test        test the workspace and the library's features
+  docs        rustdoc over the workspace, warnings denied
+  no-std      build and lint the library without std
+  wasm        build the wasm modules, smoke test, check size budgets
+  wasm-package
+              build the npm package into crates/pdf2-wasm/pkg
+  demo        build the demo and drive it in a real browser
+  corpus      run the Tier A corpus through the CLI and the renderer
+  tier-b <dir>...
+              measure a Tier B tree and write a failure histogram
+  ledger      check that docs/FEATURES.md and the roadmap agree
+  versions    check the one version the whole shipped group carries
+  bench       measure and compare with docs/performance-baseline.json
+  cmaps       rebuild the generated CMap tables from vendor/adobe-cmaps
 
 Exit codes: 0 all good, 1 a step failed.";
 
