@@ -57,7 +57,16 @@ Two clauses constrain the details:
 5. **Encryption is carried, not bypassed.** New strings and streams are encrypted with the
    base document's handler (revisions 2–4 derive the key from the *object number* as well as
    `/ID`, so this is per-object), and `/ID`'s first element is copied verbatim. A file we
-   cannot encrypt for (an unsupported handler) is refused, not written wrongly.
+   cannot encrypt for (an unsupported handler) is refused, not written wrongly. Implemented
+   for `/R 4` (RC4 `/V2` and AES-128 `/AESV2`) and `/R 6` (AES-256 `/AESV3`), verified by a
+   round trip on all three fixtures: `encrypted-r4-aes.pdf` 1 449 B → 542 B appended,
+   `encrypted-r4-rc4.pdf` 1 354 B → 524 B, `encrypted-r6.pdf` 1 694 B → 542 B.
+   **The AES IV is derived** — SHA-256 over the key, the object number and the payload,
+   truncated to 16 bytes — rather than drawn from a random source, which this library does not
+   have (`no_std`, and the choice is not a reader's to make). The consequence is deliberate:
+   the same edit saved twice is byte-identical, the same property `/ID`'s second string has,
+   and two appends of the *same* payload to the *same* object number would share an IV — which
+   an incremental update never does, because object numbers are never reused.
 6. **The ceilings apply to writes.** The overlay counts against `object_limit` and any
    page-tree change against `page_limit`, with the same `Error::TooMany` the reader uses. A
    save that would produce a document this crate then refuses to open is a bug, not a file.
