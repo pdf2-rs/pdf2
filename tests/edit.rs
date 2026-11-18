@@ -295,3 +295,133 @@ fn a_saved_edit_can_be_opened_edited_and_saved_again() {
         "the second edit is there: {texts:?}"
     );
 }
+
+/// The offset the newest `startxref` names, read from the raw bytes.
+fn last_startxref(bytes: &[u8]) -> i64 {
+    let at = bytes
+        .windows(b"startxref".len())
+        .rposition(|window| window == b"startxref")
+        .expect("a startxref");
+    let rest = &bytes[at + b"startxref".len()..];
+    let start = rest
+        .iter()
+        .position(|byte| byte.is_ascii_digit())
+        .expect("a startxref offset");
+    let end = start
+        + rest[start..]
+            .iter()
+            .position(|byte| !byte.is_ascii_digit())
+            .expect("the end of the offset");
+    core::str::from_utf8(&rest[start..end])
+        .expect("ASCII digits")
+        .parse()
+        .expect("a number")
+}
+
+#[test]
+fn the_appended_trailer_names_the_previous_section_and_keeps_the_first_identifier() {
+    const TWIN: &[u8] = include_bytes!("fixtures/plain-twin.pdf");
+    let base = Document::open(TWIN).expect("plain-twin.pdf opens");
+    let base_ids = match base.trailer().get(b"ID") {
+        Some(Object::Array(ids)) => ids.clone(),
+        other => panic!("the base /ID is {other:?}"),
+    };
+    assert_eq!(base_ids.len(), 2, "the base has two identifier strings");
+    let mut edit = MutableDocument::new(base);
+    edit.add_page(b"BT /F1 18 Tf 72 700 Td (added) Tj ET")
+        .expect("the page is added");
+    let expected_size = edit.next_object();
+
+    let saved = edit.save_incremental().expect("the edit saves");
+
+    // `/Prev` is the base's last `startxref`, read from the bytes rather than
+    // remembered: that is the number a reader follows into the previous section.
+    let appended = &saved[TWIN.len()..];
+    let section = String::from_utf8_lossy(appended).to_string();
+    assert!(
+        section.contains(&format!("/Prev {}", last_startxref(TWIN))),
+        "the trailer names the base's last section:\n{section}"
+    );
+
+    let reopened = Document::open(&saved[..]).expect("the saved file opens");
+    let trailer = reopened.trailer();
+    assert_eq!(
+        trailer.get(b"Prev"),
+        Some(&Object::Integer(last_startxref(TWIN))),
+        "the newest trailer's /Prev is the base's startxref"
+    );
+    assert_eq!(
+        trailer.get(b"Size"),
+        Some(&Object::Integer(i64::from(expected_size))),
+        "the newest trailer's /Size covers the highest number written"
+    );
+
+    // `14.4`: the first string is permanent — an encrypted file's key derives
+    // from it — and the second is the one an update replaces.
+    let ids = match trailer.get(b"ID") {
+        Some(Object::Array(ids)) => ids.clone(),
+        other => panic!("the saved /ID is {other:?}"),
+    };
+    assert_eq!(ids.len(), 2, "still two identifier strings");
+    assert_eq!(ids[0], base_ids[0], "the first string is byte-identical");
+    assert_ne!(ids[1], base_ids[1], "the second string changed");
+}
+
+#[test]
+fn a_base_without_an_identifier_gets_no_identifier_from_the_update() {
+    let base = opened();
+    assert!(
+        base.trailer().get(b"ID").is_none(),
+        "text.pdf carries no /ID"
+    );
+    let mut edit = MutableDocument::new(base);
+    edit.add_page(b"BT /F1 18 Tf 72 700 Td (added) Tj ET")
+        .expect("the page is added");
+    let saved = edit.save_incremental().expect("the edit saves");
+
+    let section = String::from_utf8_lossy(&saved[TEXT.len()..]).to_string();
+    assert!(
+        !section.contains("/ID"),
+        "an update invents no identifier:\n{section}"
+    );
+    let reopened = Document::open(&saved[..]).expect("the saved file opens");
+    assert!(
+        reopened.trailer().get(b"ID").is_none(),
+        "the saved file has no /ID either"
+    );
+}
+
+#[test]
+fn a_save_past_the_object_ceiling_returns_too_many_and_produces_no_bytes() {
+    let base = opened();
+    let pages = base.page_count().expect("text.pdf has pages");
+    let mut edit = MutableDocument::new(base);
+    // Three pages is six objects: a page and its content stream each, plus the
+    // rewritten page tree. A ceiling of two is below that and above nothing.
+    edit.base().set_object_limit(2);
+    for index in 0..3 {
+        edit.add_page(format!("BT /F1 18 Tf 72 700 Td (page {index}) Tj ET"))
+            .expect("the page is added in memory");
+    }
+    assert!(
+        edit.changes().len() > 2,
+        "the overlay holds more than the ceiling: {}",
+        edit.changes().len()
+    );
+
+    let error = edit
+        .save_incremental()
+        .expect_err("the ceiling fires before any bytes");
+    match error {
+        Error::TooMany { what, limit } => {
+            assert_eq!(what, "the number of objects an update writes");
+            assert_eq!(limit, 2);
+        }
+        other => panic!("expected Error::TooMany, got {other:?}"),
+    }
+    assert_eq!(
+        edit.page_count().expect("the overlay still counts"),
+        pages + 3,
+        "nothing was lost: the ceiling stopped the save, not the edit"
+    );
+}

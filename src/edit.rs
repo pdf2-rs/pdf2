@@ -253,6 +253,17 @@ impl MutableDocument {
                 what: "saving an incremental update to an encrypted document",
             });
         }
+        // The ceiling comes before the bytes: a save that would write a document
+        // this crate then refuses to read is a bug, and a caller cannot see the
+        // file, so there is nothing to do with the bytes but discard them.
+        let writing = self.changes.len();
+        let limit = self.base.object_limit();
+        if writing > limit {
+            return Err(Error::TooMany {
+                what: "the number of objects an update writes",
+                limit,
+            });
+        }
         let mut out = self.base.base_bytes().to_vec();
         if !out.ends_with(b"\n") {
             out.push(b'\n');
