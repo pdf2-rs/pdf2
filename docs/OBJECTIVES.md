@@ -241,7 +241,7 @@ can come in lower — but not by an order of magnitude, and this is the figure t
 | --- | --- | --- |
 | `90ms-RKSJ-H` (vendored) | 6 070 | 19 967 (`src/data/japan1_90ms_rksj.bin`) |
 | `UniJIS-UCS2-H` (vendored) | 168 597 | 9 294 (`src/data/japan1_unijis_ucs2.bin`) |
-| `UniGB-UCS2-H` (Adobe `Adobe-GB1-6/CMap`) | **274 383** | not measurable yet — `cargo run -q -p xtask -- cmaps` hardcodes the Japan1 pair (`crates/xtask/src/main.rs:1344-1350`) |
+| `UniGB-UCS2-H` (Adobe `Adobe-GB1-6/CMap`) | **274 383** | not measurable yet — `cargo run -q -p xtask -- cmaps` hardcodes the Japan1 pair (`crates/xtask/src/main.rs#fn cmaps`) |
 | `UniCNS-UCS2-H` (Adobe `Adobe-CNS1-7/CMap`) | **326 349** | as above |
 
 A *coverage* table (both Chinese CMaps are Unicode→CID like `UniJIS-UCS2-H`) compresses to a fraction of
@@ -335,7 +335,7 @@ Two numbers the ranking wants cannot be taken from here without work this object
 - **the packaged cost of the Chinese CMaps** — the two source files are 274 383 B (`UniGB-UCS2-H`) and
   326 349 B (`UniCNS-UCS2-H`), and the two `.bin`s already in `src/data/` were 19 967 B and 9 294 B from
   6 070 B and 168 597 B of CMap text; the packaged figure needs `cargo run -q -p xtask -- cmaps`
-  generalised past its hardcoded Japan1 pair (`crates/xtask/src/main.rs:1344-1350`), which is the CMap
+  generalised past its hardcoded Japan1 pair (`crates/xtask/src/main.rs#fn cmaps`), which is the CMap
   objective's first task;
 - **a page-count render time** — `book.pdf` page 1 renders in 4.3 ms against a 900 ms
   `corpus/render-budget.tsv` entry, and nothing times a document by page count; writing that harness is the

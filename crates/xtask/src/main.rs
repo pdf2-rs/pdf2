@@ -834,9 +834,12 @@ mod citations {
         pub at: usize,
         /// The repository-relative path it names.
         pub path: String,
-        /// The first line it names, 1-based.
+        /// The snippet the citation is about, when it cites an anchor rather than
+        /// a line: `path#snippet`. Absent for the `path:line` form.
+        pub anchor: Option<String>,
+        /// The first line it names, 1-based; `0` for the anchor form.
         pub start: usize,
-        /// The last line it names, 1-based; equal to `start` for a single line.
+        /// The last line it names, 1-based; `0` for the anchor form.
         pub end: usize,
     }
 
@@ -867,6 +870,23 @@ mod citations {
     /// for three rows in one table and `crates/pdf2-bench/src/corpus.rs:91,195` for
     /// two functions, so a comma list is as many citations as it has elements.
     fn one(inner: &str, at: usize) -> Vec<Citation> {
+        // The anchor form: `path#snippet`, where the snippet is what the file is
+        // expected to contain. It survives an edit above it, which a line number
+        // does not — the reason `fn cmaps` moved from 1092 to 1154 to 1344 while
+        // this document cited it.
+        if let Some((path, anchor)) = inner.split_once('#') {
+            let anchor = anchor.trim();
+            if !ROOTS.iter().any(|root| path.starts_with(root)) || anchor.is_empty() {
+                return Vec::new();
+            }
+            return vec![Citation {
+                at,
+                path: path.to_owned(),
+                anchor: Some(anchor.to_owned()),
+                start: 0,
+                end: 0,
+            }];
+        }
         let Some((path, spec)) = inner.rsplit_once(':') else {
             return Vec::new();
         };
@@ -889,6 +909,7 @@ mod citations {
             found.push(Citation {
                 at,
                 path: path.to_owned(),
+                anchor: None,
                 start,
                 end,
             });
@@ -916,6 +937,15 @@ mod citations {
                     continue;
                 }
             };
+            if let Some(anchor) = &citation.anchor {
+                if !text.contains(anchor.as_str()) {
+                    problems.push(format!(
+                        "line {}: `{}` no longer contains `{anchor}`",
+                        citation.at, citation.path
+                    ));
+                }
+                continue;
+            }
             let lines = text.lines().count();
             if citation.end > lines {
                 problems.push(format!(
@@ -979,6 +1009,45 @@ the range form at `docs/FEATURES.md:71-79`, and a URL at `https://example.com:80
                 reported[0].contains("past the end of a file with 2 line(s)"),
                 "{reported:?}"
             );
+        }
+
+        #[test]
+        fn an_anchor_survives_the_file_growing_above_it() {
+            let found = parse("`crates/xtask/src/main.rs#fn cmaps`");
+            assert_eq!(found.len(), 1, "{found:?}");
+            assert_eq!(found[0].anchor.as_deref(), Some("fn cmaps"));
+            assert_eq!((found[0].start, found[0].end), (0, 0));
+            // Two different files, the snippet found in the one cited.
+            let reported = problems(&found, |_| {
+                Ok("// moved 200 lines down\nfn cmaps() {}\n".to_owned())
+            });
+            assert!(reported.is_empty(), "{reported:?}");
+        }
+
+        #[test]
+        fn an_anchor_the_file_lost_is_reported() {
+            let found = parse("word `docs/FEATURES.md#a row that was renamed`");
+            let reported = problems(&found, |_| Ok("| a row | shipped |\n".to_owned()));
+            assert_eq!(reported.len(), 1, "{reported:?}");
+            assert!(
+                reported[0].contains("no longer contains `a row that was renamed`"),
+                "{reported:?}"
+            );
+        }
+
+        #[test]
+        fn both_forms_coexist_and_are_told_apart() {
+            let found = parse("`src/edit.rs#Object::Array` then `src/edit.rs:373`");
+            assert_eq!(found.len(), 2, "{found:?}");
+            assert!(found[0].anchor.is_some());
+            assert_eq!(found[1].anchor, None);
+            assert_eq!((found[1].start, found[1].end), (373, 373));
+        }
+
+        #[test]
+        fn an_empty_anchor_is_not_a_citation() {
+            assert!(parse("`docs/FEATURES.md#`").is_empty());
+            assert!(parse("`docs/FEATURES.md#   `").is_empty());
         }
 
         #[test]
