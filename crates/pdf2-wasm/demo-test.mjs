@@ -1452,9 +1452,15 @@ async function main() {
         }
         if (ink) { if (firstInk === null) firstInk = x; lastInk = x; }
       }
+      // The library's own rectangle for the match, as the page recorded it, against
+      // the mark built from the painted glyphs: where the document's advances are
+      // the painted ones -- an embedded font -- the two must agree.
+      const library = (mark.dataset.match || '').split(',').map(Number);
       return {
         mark: [rect.left, rect.right],
         ink: firstInk === null ? null : [firstInk / toBitmap + canvasRect.left, (lastInk + 1) / toBitmap + canvasRect.left],
+        libraryLeft: library.length === 4 ? library[0] : null,
+        libraryWidth: library.length === 4 ? library[2] : null,
         info,
         fallback: document.querySelectorAll('#selectionLayer i.find.fallback').length,
       };
@@ -1466,6 +1472,13 @@ async function main() {
         `${bookHit.mark?.map((v) => v.toFixed(1))} (${bookHit.info})`,
     );
     check(bookHit.fallback === 0, `the serif's hit did not fall back: ${bookHit.fallback}`);
+    check(
+      bookHit.libraryWidth !== null &&
+        bookHit.mark !== null &&
+        Math.abs(bookHit.mark[1] - bookHit.mark[0] - bookHit.libraryWidth) <= 2,
+      `the library's box for the match equals the painted word on the serif: ` +
+        `${bookHit.libraryWidth?.toFixed(2)} against ${(bookHit.mark[1] - bookHit.mark[0]).toFixed(2)} px`,
+    );
 
     // A zoom repaints at the new scale: the counter stays and the mark stays on
     // its word -- the scale is derived at paint time, not remembered.

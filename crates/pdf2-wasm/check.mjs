@@ -66,6 +66,24 @@ expect(
   `the fallback advances 6/9 em: ${firstAdvance} against ${glyphs[3]} pt`,
 );
 
+// A match's own rectangle and character offsets, beside the line box `search`
+// gives: six numbers per match, in the same order, so a caller can pair them.
+const matchBoxes = text.searchMatches('line');
+expect(matchBoxes instanceof Float64Array, 'searchMatches returns a Float64Array');
+const searchHits = text.search('line');
+expect(
+  matchBoxes.length === searchHits.length / 5 * 6,
+  `one match box per hit: ${matchBoxes.length} numbers for ${searchHits.length / 5} hits`,
+);
+const [mx0, my0, mx1, my1, mstart, mend] = Array.from(matchBoxes.slice(0, 6));
+const [lx0, ly0, lx1, ly1] = Array.from(searchHits.slice(1, 5));
+expect(mstart >= 0 && mend > mstart, `the offsets name characters: ${mstart}..${mend}`);
+expect(
+  mx0 >= lx0 - 0.01 && mx1 <= lx1 + 0.01 && my0 >= ly0 - 0.01 && my1 <= ly1 + 0.01,
+  `the match sits inside its line: ${[mx0, my0, mx1, my1]} in ${[lx0, ly0, lx1, ly1]}`,
+);
+expect(mx1 - mx0 < lx1 - lx0, `and is narrower than it: ${mx1 - mx0} against ${lx1 - lx0}`);
+
 // The text geometry the demo's text layer and find box read: four numbers per
 // span in a Float64Array, with the strings parallel to it, so no JavaScript type
 // of its own (the wasm bundle pays for every bit of engine glue).
@@ -145,11 +163,12 @@ expect(rejected, 'a wrong password throws');
 // site ships one with the image decoders compiled in (ADR 0007 — they cost about
 // 138 KiB gzip, which is why they are not in the default). Budgets are documented
 // in docs/PERFORMANCE.md; change both together.
-// Both raised on 2026-11-18: the glyph boxes cost the npm bundle +5 561 gzip
-// (387 275 → 392 836) and the demo bundle +3 262 (531 069 → 534 331), which
-// overran the old 384/520 KiB. The numbers are in docs/PERFORMANCE.md.
-const BUDGET_GZIP = 388 * 1024;
-const DEMO_BUDGET_GZIP = 528 * 1024;
+// Both raised on 2026-11-18 for the matched-character rectangles: the npm bundle
+// measured 396 202 gzip and the demo bundle 537 172, against budgets of 397 312 and
+// 540 672 that left 1.1 KiB and 3.5 KiB. The numbers and their causes are in
+// docs/PERFORMANCE.md.
+const BUDGET_GZIP = 392 * 1024;
+const DEMO_BUDGET_GZIP = 532 * 1024;
 
 /// Measure one artefact: the wasm module plus its JS glue, gzipped.
 const measure = (directory, budget, name) => {

@@ -56,6 +56,10 @@ struct Line {
     size: f64,
     /// How far the pen advanced on this line, in text space.
     advance: f64,
+    /// The advance of each character in `text`, in text space: the glyph
+    /// advances the document states, which is what lets a run be sliced by
+    /// offset. Empty when the font states none (the estimate then applies).
+    advances: Vec<f64>,
 }
 
 /// A 2-D affine transform, the six numbers `cm` and `Tm` take.
@@ -166,6 +170,10 @@ enum Font {
     Simple {
         /// Code → character table.
         encoding: Encoding,
+        /// `/Widths` and the descriptor's `/MissingWidth`, when the font states
+        /// them. Without them the advance is unknown, and the line's box falls
+        /// back to the documented estimate.
+        widths: Option<SimpleWidths>,
     },
     /// A composite font: codes split by the CMap's code space, text from
     /// `/ToUnicode` or a predefined CMap, advances from `/W` and `/DW`.
@@ -179,76 +187,182 @@ enum Font {
 }
 
 impl Font {
-    /// The text `bytes` stand for, and the advance in thousandths of an em.
+    /// The text `bytes` stand for, and each code's advance in em, with the number
+    /// of characters that advance covers.
     ///
-    /// Simple fonts report no advance: their `/Widths` are not read, so pen
-    /// tracking would be a guess, and a guess becomes a wrong space.
+    /// A simple font's advance comes from its `/Widths`; a font that states none
+    /// reports zero, and the caller falls back to the documented estimate rather
+    /// than inventing a width. The text is one `String` and the advances one
+    /// `Vec`, because a per-character `String` made a 1 MB page thirteen times
+    /// slower (measured by `pdf2-bench`'s `text_pages_s`).
+    fn pieces(&self, bytes: &[u8]) -> (String, Vec<(usize, f64)>) {
+        match self {
+            Self::Simple { encoding, widths } => {
+                let mut text = String::with_capacity(bytes.len());
+                let mut pieces = Vec::with_capacity(bytes.len());
+                for code in bytes {
+                    let Some(character) = encoding.character(*code) else {
+                        continue;
+                    };
+                    text.push(character);
+                    let em = widths
+                        .as_ref()
+                        .and_then(|widths| widths.advance(*code))
+                        .unwrap_or(0.0);
+                    pieces.push((1, em));
+                }
+                (text, pieces)
+            }
+            Self::Composite { map, widths } => {
+                let mut text = String::new();
+                let mut pieces = Vec::new();
+                let lengths = map.code_lengths();
+                let narrowest = lengths.first().map_or(1, |length| usize::from(*length));
+                let widest = usize::from(map.max_code_length());
+                let mut position = 0;
+                while position < bytes.len() {
+                    // A code space with one width is the common case and splits
+                    // exactly; a variable one is tried widest first, because a
+                    // variable code space means "the longest code that matches wins".
+                    let mut consumed = 0;
+                    let mut width = if lengths.len() == 1 {
+                        narrowest
+                    } else {
+                        widest
+                    };
+                    while width >= narrowest {
+                        if position + width <= bytes.len() {
+                            let code = pack(&bytes[position..position + width]);
+                            let matched = lengths.len() == 1
+                                || map.text(code, u8::try_from(width).unwrap_or(2)).is_some();
+                            if matched {
+                                consumed = width;
+                                break;
+                            }
+                        }
+                        if width == narrowest {
+                            break;
+                        }
+                        width -= 1;
+                    }
+                    if consumed == 0 {
+                        // Nothing maps this position: step over the narrowest code
+                        // so an unmapped byte cannot stall the loop.
+                        if position + narrowest > bytes.len() {
+                            break;
+                        }
+                        position += narrowest;
+                        continue;
+                    }
+                    let code = pack(&bytes[position..position + consumed]);
+                    let piece = map
+                        .text(code, u8::try_from(consumed).unwrap_or(2))
+                        .unwrap_or_default();
+                    let characters = piece.chars().count();
+                    text.push_str(&piece);
+                    pieces.push((characters, widths.width(code) / 1000.0));
+                    position += consumed;
+                }
+                (text, pieces)
+            }
+        }
+    }
+
+    /// The text `bytes` stand for, and the advance in em.
+    ///
+    /// This is the path extraction takes: one `String` and one sum, no per-code
+    /// vector, because a 1 MB page pays for every allocation it makes.
     fn decode(&self, bytes: &[u8]) -> (String, f64) {
-        let Self::Composite { map, widths } = self else {
-            let Self::Simple { encoding } = self else {
-                return (String::new(), 0.0);
-            };
-            return (
-                bytes
+        match self {
+            Self::Simple { encoding, widths } => {
+                let text = bytes
                     .iter()
                     .filter_map(|code| encoding.character(*code))
-                    .collect(),
-                0.0,
-            );
-        };
-        let mut text = String::new();
-        let mut advance = 0.0;
-        let lengths = map.code_lengths();
-        let narrowest = lengths.first().map_or(1, |length| usize::from(*length));
-        let widest = usize::from(map.max_code_length());
-        let mut position = 0;
-        while position < bytes.len() {
-            // A code space with one width is the common case and splits exactly;
-            // a variable one is tried widest first, because a variable code space
-            // means "the longest code that matches wins".
-            let mut consumed = 0;
-            let mut width = if lengths.len() == 1 {
-                narrowest
-            } else {
-                widest
-            };
-            while width >= narrowest {
-                if position + width <= bytes.len() {
-                    let code = pack(&bytes[position..position + width]);
-                    let matched = lengths.len() == 1
-                        || map.text(code, u8::try_from(width).unwrap_or(2)).is_some();
-                    if matched {
-                        consumed = width;
-                        break;
+                    .collect();
+                let advance: f64 = if let Some(widths) = widths {
+                    bytes.iter().filter_map(|code| widths.advance(*code)).sum()
+                } else {
+                    0.0
+                };
+                (text, advance)
+            }
+            Self::Composite { map, widths } => {
+                let mut text = String::new();
+                let mut advance = 0.0;
+                let lengths = map.code_lengths();
+                let narrowest = lengths.first().map_or(1, |length| usize::from(*length));
+                let widest = usize::from(map.max_code_length());
+                let mut position = 0;
+                while position < bytes.len() {
+                    let mut consumed = 0;
+                    let mut width = if lengths.len() == 1 {
+                        narrowest
+                    } else {
+                        widest
+                    };
+                    while width >= narrowest {
+                        if position + width <= bytes.len() {
+                            let code = pack(&bytes[position..position + width]);
+                            let matched = lengths.len() == 1
+                                || map.text(code, u8::try_from(width).unwrap_or(2)).is_some();
+                            if matched {
+                                consumed = width;
+                                break;
+                            }
+                        }
+                        if width == narrowest {
+                            break;
+                        }
+                        width -= 1;
                     }
+                    if consumed == 0 {
+                        if position + narrowest > bytes.len() {
+                            break;
+                        }
+                        position += narrowest;
+                        continue;
+                    }
+                    let code = pack(&bytes[position..position + consumed]);
+                    if let Some(mapped) = map.text(code, u8::try_from(consumed).unwrap_or(2)) {
+                        text.push_str(&mapped);
+                    }
+                    advance += widths.width(code) / 1000.0;
+                    position += consumed;
                 }
-                if width == narrowest {
-                    break;
-                }
-                width -= 1;
+                (text, advance)
             }
-            if consumed == 0 {
-                // Nothing maps this position: step over the narrowest code so an
-                // unmapped byte cannot stall the loop.
-                if position + narrowest > bytes.len() {
-                    break;
-                }
-                position += narrowest;
-                continue;
-            }
-            let code = pack(&bytes[position..position + consumed]);
-            if let Some(mapped) = map.text(code, u8::try_from(consumed).unwrap_or(2)) {
-                text.push_str(&mapped);
-            }
-            advance += widths.width(code);
-            position += consumed;
         }
-        (text, advance / 1000.0)
     }
 
     /// Whether `decode` reports advances, so the pen can be tracked.
     fn tracks_advances(&self) -> bool {
         matches!(self, Self::Composite { .. })
+    }
+}
+
+/// A simple font's `/Widths`, in 1/1000 em, with the descriptor's `/MissingWidth`
+/// for codes the array does not cover (9.2.4).
+///
+/// The renderer keeps the same table (`SimpleWidths` in
+/// `crates/pdf2-render/src/walk.rs`); the extractor needs it to place a line and
+/// to slice a run, which is why a hit can have its own box.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct SimpleWidths {
+    first: i64,
+    widths: Vec<f64>,
+    missing: f64,
+}
+
+impl SimpleWidths {
+    /// The advance for `code`, in em, or `None` when the table says nothing.
+    fn advance(&self, code: u8) -> Option<f64> {
+        let index = i64::from(code) - self.first;
+        let width = usize::try_from(index)
+            .ok()
+            .and_then(|index| self.widths.get(index))
+            .copied()
+            .or_else(|| (self.missing > 0.0).then_some(self.missing))?;
+        Some(width / 1000.0)
     }
 }
 
@@ -286,6 +400,9 @@ struct TextInterpreter<'a> {
     /// The open marked-content sequences, each with its `/ActualText` when it has
     /// one — a stack, because `BDC` nests.
     captures: Vec<Option<Capture>>,
+    /// Whether to record each character's advance. Off for extraction, which pays
+    /// for every allocation; on for a caller that needs a run's geometry.
+    positions: bool,
 }
 
 /// One `/ActualText` sequence being collected.
@@ -316,7 +433,14 @@ impl<'a> TextInterpreter<'a> {
             ctm_stack: Vec::new(),
             text_matrix: Matrix::IDENTITY,
             captures: Vec::new(),
+            positions: false,
         }
+    }
+
+    /// Record each character's advance as well as the line's total.
+    fn with_positions(mut self) -> Self {
+        self.positions = true;
+        self
     }
 
     fn run(mut self, content: &[u8]) -> Result<Vec<Line>> {
@@ -380,6 +504,7 @@ impl<'a> TextInterpreter<'a> {
             matrix: self.text_matrix.multiply(self.ctm),
             size: self.size,
             advance: 0.0,
+            advances: Vec::new(),
         });
         #[allow(clippy::unwrap_used)]
         self.lines.last_mut().unwrap()
@@ -579,9 +704,11 @@ impl<'a> TextInterpreter<'a> {
         if -adjustment < WORD_GAP {
             return;
         }
+        let space = (-adjustment / 1000.0 * self.size).max(0.0);
         let line = self.line();
         if !line.text.is_empty() && !line.text.ends_with(' ') {
             line.text.push(' ');
+            line.advances.push(space);
         }
         if self.pen_tracked {
             // A positive adjustment moves the pen left, so the sign is inverted.
@@ -594,7 +721,15 @@ impl<'a> TextInterpreter<'a> {
         let Some(font) = &self.font else {
             return;
         };
-        let (run, advance) = font.decode(bytes);
+        let pieces = if self.positions {
+            Some(font.pieces(bytes))
+        } else {
+            None
+        };
+        let (run, advance) = match &pieces {
+            Some((text, pieces)) => (text.clone(), pieces.iter().map(|(_, em)| em).sum()),
+            None => font.decode(bytes),
+        };
         // A new run placed well to the right of where the pen stopped is a gap a
         // reader sees as a space; only fonts whose widths are known are trusted
         // with it, and a quarter of an em is the threshold a word space clears.
@@ -634,18 +769,39 @@ impl<'a> TextInterpreter<'a> {
             }
             return;
         }
+        let gap_width = (self.line_x - self.pen_x).max(0.0);
         let line = self.line();
         if gap && !line.text.is_empty() && !line.text.ends_with(' ') {
             line.text.push(' ');
+            line.advances.push(gap_width);
         }
         line.text.push_str(&run);
+        // One entry per character: a composite code can stand for several, and the
+        // code's advance is shared between them.
+        if let Some((_, pieces)) = &pieces
+            && advance > 0.0
+            && let Some(line) = self.lines.last_mut()
+        {
+            for (characters, em) in pieces {
+                let each = em * self.size / (*characters).max(1) as f64;
+                line.advances
+                    .extend(core::iter::repeat_n(each, *characters));
+            }
+        }
         let tracked = self.pen_tracked;
+        let width = advance * self.size;
         if tracked {
-            self.pen_x = self.line_x + advance * self.size;
+            self.pen_x = self.line_x + width;
             let start = self.line_x;
             if let Some(line) = self.lines.last_mut() {
                 line.advance = self.pen_x - start;
             }
+        } else if width > 0.0
+            && let Some(line) = self.lines.last_mut()
+        {
+            // A simple font that states widths knows its own advance even when the
+            // pen is not tracked for space purposes.
+            line.advance = width;
         }
     }
 
@@ -694,7 +850,48 @@ impl<'a> TextInterpreter<'a> {
         }
         Ok(Font::Simple {
             encoding: self.encoding_of(&dict)?,
+            widths: self.simple_widths(&dict)?,
         })
+    }
+
+    /// A simple font's `/Widths` and its descriptor's `/MissingWidth` (9.2.4),
+    /// when the font states them.
+    fn simple_widths(&self, dict: &Dictionary) -> Result<Option<SimpleWidths>> {
+        let Some(entries) = dict.get(b"Widths") else {
+            return Ok(None);
+        };
+        let entries = self
+            .document
+            .resolve(Some(entries))?
+            .unwrap_or(Object::Null);
+        let Object::Array(entries) = entries else {
+            return Ok(None);
+        };
+        let first = match dict.get(b"FirstChar") {
+            Some(Object::Integer(first)) => *first,
+            _ => 0,
+        };
+        let mut widths = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            let value = self.document.resolve(Some(entry))?.unwrap_or(Object::Null);
+            widths.push(value.as_real().unwrap_or(0.0));
+        }
+        let missing = dict
+            .get(b"FontDescriptor")
+            .map(|descriptor| self.document.resolve(Some(descriptor)))
+            .transpose()?
+            .flatten()
+            .and_then(|descriptor| match descriptor {
+                Object::Dictionary(descriptor) => descriptor.get(b"MissingWidth").cloned(),
+                _ => None,
+            })
+            .and_then(|value| value.as_real())
+            .unwrap_or(0.0);
+        Ok(Some(SimpleWidths {
+            first,
+            widths,
+            missing,
+        }))
     }
 
     /// A Type0 font: an Identity encoding, a `/ToUnicode` map, and its widths.
@@ -927,6 +1124,43 @@ pub struct TextSpan {
     pub bounds: Rect,
 }
 
+/// One match of a needle: the characters it names, where the line sits, and the
+/// rectangle of the match itself.
+///
+/// [`SearchHit`] carries the line's box, because a hit was a line in the first
+/// model; this carries the rectangle of the matched characters, derived from the
+/// glyph advances the document states. It is a separate type rather than new fields
+/// on `SearchHit` so that no caller's struct literal breaks: the change is additive,
+/// which is what keeps it a minor release.
+///
+/// The rectangle is the *document's* view of the characters. Where a reader
+/// substitutes a font — `pdf2-render` paints its built-in alphabet for a base-14
+/// font — the painted advance differs (0.5 em stated against 6/9 em painted on
+/// `tests/fixtures/text.pdf`), so a rendered highlight still has to follow the
+/// glyphs the renderer placed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchMatch {
+    /// The matched text, as the page carries it.
+    pub text: String,
+    /// The line's box, for a caller that wants the whole line.
+    pub line: Rect,
+    /// The rectangle of the matched characters.
+    pub bounds: Rect,
+    /// Where the match starts in the line's text, in characters.
+    pub start: usize,
+    /// Where it ends, exclusive, in characters.
+    pub end: usize,
+}
+
+/// One page's matches: a needle found on a page, with where each one sits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageMatches {
+    /// The page, counting from zero as [`Document::page`] does.
+    pub page: usize,
+    /// The matches on that page, left to right and top to bottom.
+    pub matches: Vec<SearchMatch>,
+}
+
 /// One page's search hits: a needle found on a page, with where it was found.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageHits {
@@ -950,6 +1184,45 @@ pub struct SearchHit {
 
 impl Line {
     /// The line's box in page space, or `None` when it cannot be placed.
+    /// The rectangle the characters `[start, end)` occupy, in the page space the
+    /// line's matrix puts them in.
+    ///
+    /// The advances are the ones the document states (round 1); a font that states
+    /// none falls back to the half-em estimate, spread evenly, so the rectangle is
+    /// always inside the line's own box.
+    fn bounds_of(&self, start: usize, end: usize) -> Rect {
+        let characters = self.text.chars().count();
+        let end = end.min(characters);
+        let start = start.min(end);
+        let total = if self.advance > 0.0 {
+            self.advance
+        } else {
+            self.size * 0.5 * characters as f64
+        };
+        let x_at = |index: usize| -> f64 {
+            if self.advances.len() == characters && characters > 0 {
+                self.advances[..index].iter().sum()
+            } else if characters > 0 {
+                total * index as f64 / characters as f64
+            } else {
+                0.0
+            }
+        };
+        let matrix = self.matrix;
+        let left = x_at(start);
+        let right = x_at(end);
+        let (x0, y0) = matrix.apply(left, 0.0);
+        let (x1, y1) = matrix.apply(right, 0.0);
+        let (x2, y2) = matrix.apply(left, self.size);
+        let (x3, y3) = matrix.apply(right, self.size);
+        Rect::new(
+            x0.min(x1).min(x2).min(x3),
+            y0.min(y1).min(y2).min(y3),
+            x0.max(x1).max(x2).max(x3),
+            y0.max(y1).max(y2).max(y3),
+        )
+    }
+
     fn bounds(&self) -> Rect {
         let matrix = self.matrix;
         let (x0, y0) = matrix.apply(0.0, 0.0);
@@ -1017,7 +1290,9 @@ impl Document {
         for (index, page) in self.pages()?.iter().enumerate() {
             let content = self.page_content(page)?;
             let mut hits = Vec::new();
-            for span in self.spans_from(&content, page.resources.as_ref())? {
+            // A hit needs its own rectangle, which is cut from the characters'
+            // advances -- so this path asks the interpreter to keep them.
+            for span in self.spans_with_positions(&content, page.resources.as_ref())? {
                 let haystack = span.text.to_lowercase();
                 let mut from = 0;
                 while let Some(at) = haystack[from..].find(&folded) {
@@ -1045,6 +1320,71 @@ impl Document {
         Ok(found)
     }
 
+    /// The spans of a decoded content stream, with each character's advance kept
+    /// for the line -- what a hit's own rectangle is cut from.
+    pub(crate) fn spans_with_positions(
+        &self,
+        content: &[u8],
+        resources: Option<&Dictionary>,
+    ) -> Result<Vec<TextSpan>> {
+        let lines = TextInterpreter::new(self, resources.cloned())
+            .with_positions()
+            .run(content)?;
+        Ok(lines
+            .into_iter()
+            .map(|line| TextSpan {
+                bounds: line.bounds(),
+                text: line.text,
+            })
+            .collect())
+    }
+
+    /// Every match of `needle`, with the rectangle of the matched characters.
+    ///
+    /// The match is found on the lowercased line, as [`Document::search`] finds it,
+    /// but the offsets and the rectangle describe the *original* text: folding can
+    /// change length (`İ` lowercases to two code points), so the folded string is
+    /// built with a map back to the characters it came from.
+    pub fn search_matches(&self, needle: &str) -> Result<Vec<PageMatches>> {
+        let folded_needle = needle.to_lowercase();
+        let mut found = Vec::new();
+        if folded_needle.is_empty() {
+            return Ok(found);
+        }
+        for (index, page) in self.pages()?.iter().enumerate() {
+            let content = self.page_content(page)?;
+            let lines = TextInterpreter::new(self, page.resources.clone())
+                .with_positions()
+                .run(&content)?;
+            let mut matches = Vec::new();
+            for line in &lines {
+                let (folded, origin) = fold_with_origin(&line.text);
+                let mut from = 0;
+                while let Some(at) = folded[from..].find(&folded_needle) {
+                    let start = from + at;
+                    let end = start + folded_needle.len();
+                    let first = origin[start];
+                    let last = origin[end - 1] + 1;
+                    matches.push(SearchMatch {
+                        text: line.text.chars().skip(first).take(last - first).collect(),
+                        line: line.bounds(),
+                        bounds: line.bounds_of(first, last),
+                        start: first,
+                        end: last,
+                    });
+                    from = end;
+                }
+            }
+            if !matches.is_empty() {
+                found.push(PageMatches {
+                    page: index,
+                    matches,
+                });
+            }
+        }
+        Ok(found)
+    }
+
     /// Spans of a decoded content stream and its resource dictionary.
     pub fn spans_from(
         &self,
@@ -1060,6 +1400,24 @@ impl Document {
             })
             .collect())
     }
+}
+
+/// The lowercased text and, for each of its *bytes*, the character index it came
+/// from in the original.
+///
+/// `to_lowercase` can change length (`İ` is two code points), so a byte found in
+/// the folded string cannot be used as an offset into the original without a map.
+fn fold_with_origin(text: &str) -> (String, Vec<usize>) {
+    let mut folded = String::with_capacity(text.len());
+    let mut origin = Vec::with_capacity(text.len());
+    for (index, character) in text.chars().enumerate() {
+        for lowered in character.to_lowercase() {
+            let before = folded.len();
+            folded.push(lowered);
+            origin.extend(core::iter::repeat_n(index, folded.len() - before));
+        }
+    }
+    (folded, origin)
 }
 
 /// The byte offset of a character position in `text`.
@@ -1096,5 +1454,150 @@ mod tests {
             "EI inside a word is not the operator"
         );
         assert_eq!(find_operator(b"no terminator", b"EI"), None);
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::{Font, SimpleWidths};
+    use crate::encoding::Encoding;
+
+    fn widths(first: i64, values: &[f64], missing: f64) -> SimpleWidths {
+        SimpleWidths {
+            first,
+            widths: values.to_vec(),
+            missing,
+        }
+    }
+
+    #[test]
+    fn a_code_takes_its_width_from_the_table_and_the_rest_from_missing_width() {
+        let table = widths(65, &[500.0, 1000.0], 250.0);
+        assert_eq!(table.advance(b'A'), Some(0.5), "the first entry is code 65");
+        assert_eq!(table.advance(b'B'), Some(1.0));
+        assert_eq!(
+            table.advance(b'C'),
+            Some(0.25),
+            "past the array: /MissingWidth"
+        );
+        assert_eq!(table.advance(b'@'), Some(0.25), "before the array too");
+        let without = widths(65, &[500.0], 0.0);
+        assert_eq!(without.advance(b'Z'), None, "no width, no guess");
+    }
+
+    #[test]
+    fn a_simple_font_reports_one_advance_per_code_it_states() {
+        let font = Font::Simple {
+            encoding: Encoding::win_ansi(),
+            widths: Some(widths(65, &[500.0, 600.0], 0.0)),
+        };
+        let (text, pieces) = font.pieces(b"AB");
+        assert_eq!(text, "AB");
+        assert_eq!(pieces.len(), 2);
+        assert_eq!(pieces[0].0, 1, "one character per code");
+        assert!((pieces[0].1 - 0.5).abs() < 1e-9);
+        assert!((pieces[1].1 - 0.6).abs() < 1e-9);
+        let (text, advance) = font.decode(b"AB");
+        assert_eq!(text, "AB");
+        assert!(
+            (advance - 1.1).abs() < 1e-9,
+            "the total is the entries' sum"
+        );
+    }
+
+    /// A one-page PDF around `(object number, body)` pairs.
+    fn document(objects: &[(u32, &str)]) -> crate::Document {
+        let mut out = b"%PDF-2.0\n".to_vec();
+        let mut offsets = Vec::new();
+        for (number, body) in objects {
+            offsets.push((*number, out.len()));
+            out.extend_from_slice(format!("{number} 0 obj\n{body}\nendobj\n").as_bytes());
+        }
+        let xref = out.len();
+        out.extend_from_slice(b"xref\n");
+        for (number, offset) in &offsets {
+            out.extend_from_slice(format!("{number} 1\n{offset:010} 00000 n \n").as_bytes());
+        }
+        let size = objects.iter().map(|(number, _)| *number).max().unwrap_or(0) + 1;
+        out.extend_from_slice(format!("trailer\n<< /Size {size} /Root 1 0 R >>\n").as_bytes());
+        out.extend_from_slice(format!("startxref\n{xref}\n%%EOF\n").as_bytes());
+        crate::Document::open(out).expect("the test document opens")
+    }
+
+    #[test]
+    fn a_run_keeps_one_advance_per_character_when_asked() {
+        // Two codes of 500 and 1000 units at 10 pt: the line's characters advance
+        // by 5 and 10 units, which is what a hit's rectangle is cut from.
+        let content = "BT /F1 10 Tf 10 10 Td (AB) Tj ET";
+        let document = document(&[
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (
+                3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R \
+                 /Resources << /Font << /F1 5 0 R >> >> >>",
+            ),
+            (
+                4,
+                &format!(
+                    "<< /Length {} >>\nstream\n{content}\nendstream",
+                    content.len()
+                ),
+            ),
+            (
+                5,
+                "<< /Type /Font /Subtype /Type1 /BaseFont /X /Encoding /WinAnsiEncoding \
+                 /FirstChar 65 /Widths [500 1000] >>",
+            ),
+        ]);
+        let page = document.page(0).expect("page");
+        let lines = super::TextInterpreter::new(&document, page.resources.clone())
+            .with_positions()
+            .run("BT /F1 10 Tf 10 10 Td (AB) Tj ET".as_bytes())
+            .expect("the content runs");
+        let line = lines.first().expect("one line");
+        assert_eq!(line.text, "AB");
+        assert_eq!(line.advances.len(), 2, "one advance per character");
+        assert!((line.advances[0] - 5.0).abs() < 1e-9, "0.5 em of 10 pt");
+        assert!((line.advances[1] - 10.0).abs() < 1e-9, "1 em of 10 pt");
+        assert!((line.advance - 15.0).abs() < 1e-9, "and the line's total");
+    }
+
+    #[test]
+    fn offsets_survive_a_character_whose_lowercase_is_longer() {
+        // `İ` lowercases to two code points, so a byte offset in the folded string is
+        // not one in the original: the map is what keeps a match on the right
+        // characters. No fixture can carry such a character, so this is the
+        // function's own test.
+        let (folded, origin) = super::fold_with_origin("İstanbul");
+        assert!(folded.starts_with("i\u{307}stanbul"), "folded: {folded}");
+        let at = folded.find("stan").expect("the needle folds in");
+        let first = origin[at];
+        let last = origin[at + 3];
+        assert_eq!(
+            (first, last),
+            (1, 4),
+            "the characters 'stan' in the original"
+        );
+        let taken: String = "İstanbul"
+            .chars()
+            .skip(first)
+            .take(last + 1 - first)
+            .collect();
+        assert_eq!(
+            taken, "stan",
+            "and the offsets name exactly those characters"
+        );
+    }
+
+    #[test]
+    fn a_simple_font_without_widths_still_reads_its_text_and_no_advance() {
+        let font = Font::Simple {
+            encoding: Encoding::win_ansi(),
+            widths: None,
+        };
+        let (text, advance) = font.decode(b"Hi");
+        assert_eq!(text, "Hi");
+        assert_eq!(advance, 0.0, "the caller's estimate applies");
     }
 }

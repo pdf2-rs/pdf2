@@ -206,8 +206,17 @@ node --no-warnings crates/pdf2-wasm/check.mjs
 
 | File | Raw | Gzip |
 | --- | --- | --- |
-| `pdf2_wasm_bg.wasm` | 1 042 710 B | 360 895 B |
-| `pdf2_wasm.js` (glue) | 19 006 B | 4 810 B |
+| `pdf2_wasm_bg.wasm` | 1 123 252 B | 390 373 B |
+| `pdf2_wasm.js` (glue) | 24 473 B | 5 829 B |
+
+**Both budgets moved on 2026-11-18 for the matched-character rectangles**: the npm
+bundle measured **396 202** gzip against the 388 KiB budget and the demo bundle
+**537 172** against 528 KiB — under by 1.1 KiB and 3.3 KiB, which is not headroom, it
+is a coin flip on the next change. The cost is `Document::search_matches` with its
+`SearchMatch`/`PageMatches` types and the per-character positions a simple font's
+`/Widths` now fill in (`Line::advances`), all of which the browser artifact carries
+whether or not the renderer is linked. The step is to 392 KiB and 532 KiB: enough for
+this change plus the next extraction fix without spending a round on arithmetic.
 
 **JPEG 2000 and JBIG2 are features, and the npm bundle did not move for them**
 (2026-11-17, [ADR 0007](adr/0007-decoder-features.md)): `/JPXDecode` costs
