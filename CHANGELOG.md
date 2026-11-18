@@ -4,6 +4,39 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-11-18
+
+**A search hit carries the rectangle of the characters it matched, not the box of the line they sit
+on.** `Document::search_matches` returns a `SearchMatch` per hit with the match's own `bounds` and
+its `start`/`end` character offsets beside the line's box, derived from the advances the document
+states — the same `/Widths` the renderer already honoured. `SearchHit`, `PageHits` and
+`Document::search` are unchanged, so this is a minor release.
+
+### Added
+
+- **`Document::search_matches`**, returning `PageMatches`/`SearchMatch` — `text`, the line's box, the
+  match's box, and the offsets the match occupies in the line's text. On the text sample a hit on
+  "fourth line" reports a box 36 units wide starting 63 units into the line, where the line's own box
+  spans all of it. A one-character hit is a one-advance box.
+- **`PdfDocument::searchMatches`** in the wasm binding, six numbers per match — `x0, y0, x1, y1, start,
+  end` — beside `search`'s rows, which keep their shape so no existing caller reads the wrong number.
+- The demo's find mark is now the glyphs at the hit's offsets instead of a hand mapping of text onto
+  painted lines, and on an embedded font — where the paint follows the document's widths — the library's
+  box and the painted word agree to **0.01 px**.
+
+### Changed
+
+- **A line box's width now uses the widths the document states.** For a simple font the extractor reads
+  `/Widths` (with the descriptor's `/MissingWidth`) and advances each character by it, instead of
+  estimating `0.5 em` per character. `TextSpan::bounds` and `SearchHit::bounds` are line boxes, so a page
+  whose font declares widths reports a **narrower** box afterwards — the text sample, which declares
+  none, still uses the documented `0.5 em` estimate. Nothing in the API's shape changed; the numbers did,
+  which is why this is a minor release and not a patch.
+- Search is a little cheaper on a page whose font states widths: the positions come from a table lookup
+  rather than an estimate, and `search` alone still takes the fast path that skips them.
+
+Every crate moves with the group ([ADR 0009](docs/adr/0009-one-version-per-group.md)).
+
 ## [1.7.3] — 2026-11-18
 
 **The find box's arrows navigate.** Next and previous moved from the first hit every time, because
