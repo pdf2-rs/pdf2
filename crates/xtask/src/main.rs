@@ -129,6 +129,26 @@ fn package_version(package: &str) -> Result<String, String> {
         .ok_or_else(|| format!("cargo pkgid -p {package} answered {answer:?}"))
 }
 
+/// Every manifest that can carry a path dependency: the root and each member.
+///
+/// `crates/*/Cargo.toml` is the workspace's own layout (`[workspace] members`),
+/// and a member added there without a manifest would fail to build long before
+/// this check ran.
+fn workspace_manifests() -> Result<Vec<String>, String> {
+    let mut manifests = vec!["Cargo.toml".to_owned()];
+    let entries =
+        std::fs::read_dir("crates").map_err(|error| format!("reading crates/: {error}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("reading crates/: {error}"))?;
+        let manifest = entry.path().join("Cargo.toml");
+        if manifest.is_file() {
+            manifests.push(manifest.display().to_string());
+        }
+    }
+    manifests.sort();
+    Ok(manifests)
+}
+
 /// One version for the whole shipped group (ADR 0009).
 ///
 /// The manifests inherit `[workspace.package] version`, so they cannot drift;
@@ -173,6 +193,44 @@ fn versions() -> Result<(), String> {
         ));
     }
 
+    // A path dependency's `version` is the one number Cargo does *not* inherit:
+    // it is written by hand in six manifests, and `AGENTS.md`'s release checklist
+    // says it moves with the bump. Until this check existed the gate was green
+    // with every pin a year behind the group (`1.6.0` against `1.8.0`), because
+    // `cargo pkgid` reads the package's own version and never the requirement.
+    for manifest in workspace_manifests()? {
+        let text = std::fs::read_to_string(&manifest)
+            .map_err(|error| format!("reading {manifest}: {error}"))?;
+        for (number, line) in text.lines().enumerate() {
+            // Only a dependency's inline table carries both keys: `[[bin]] path`
+            // has a path and no version, and is not a package reference at all.
+            let Some((_, table)) = line.split_once('{') else {
+                continue;
+            };
+            if !line.contains('=') || !table.contains("path = \"") {
+                continue;
+            }
+            let Some((_, after_version)) = table.split_once("version = \"") else {
+                // A path dependency without a version is a different problem:
+                // `cargo publish` refuses it, and `AGENTS.md` names it too.
+                let line = number + 1;
+                problems.push(format!(
+                    "{manifest}:{line}: a path dependency has no version requirement"
+                ));
+                continue;
+            };
+            let Some((pin, _)) = after_version.split_once('"') else {
+                continue;
+            };
+            if pin != group {
+                let line = number + 1;
+                problems.push(format!(
+                    "{manifest}:{line}: a path dependency pins version {pin}, the group is {group}"
+                ));
+            }
+        }
+    }
+
     let changelog = std::fs::read_to_string("CHANGELOG.md")
         .map_err(|error| format!("reading CHANGELOG.md: {error}"))?;
     let newest = changelog
@@ -193,7 +251,7 @@ fn versions() -> Result<(), String> {
         ));
     }
     println!(
-        "versions: {group} across {}, package.json and CHANGELOG.md",
+        "versions: {group} across {}, package.json, CHANGELOG.md and the path-dependency pins",
         SHIPPED.join(", ")
     );
     Ok(())
