@@ -304,7 +304,7 @@ impl Document {
 
 /// Serialize a stream as an indirect object, keeping `/Length` in step with
 /// the payload regardless of what the dictionary said.
-fn write_stream_object(number: u32, stream: &Stream, out: &mut Vec<u8>) {
+pub(crate) fn write_stream_object(number: u32, stream: &Stream, out: &mut Vec<u8>) {
     let mut dict = stream.dict().clone();
     dict.insert("Length", Object::Integer(stream.data().len() as i64));
     out.extend_from_slice(format!("{number} 0 obj\n").as_bytes());
