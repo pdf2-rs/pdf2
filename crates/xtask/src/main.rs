@@ -300,9 +300,13 @@ fn wasm_package() -> Result<(), String> {
     let build = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
+    // The revision says *which* build this is; the stamp says *when*, and only
+    // the stamp can bust a cache — rebuilding the same commit yields the same
+    // revision, so the two are not interchangeable.
+    let rev = revision();
     std::fs::write(
         "crates/pdf2-wasm/demo/build.json",
-        format!("{{\"version\":\"{version}\",\"build\":\"{build}\"}}\n"),
+        format!("{{\"version\":\"{version}\",\"build\":\"{build}\",\"rev\":\"{rev}\"}}\n"),
     )
     .map_err(|error| format!("writing build.json: {error}"))?;
     // The demo's samples are the crate's own fixtures, copied rather than kept:
@@ -915,6 +919,49 @@ fn corpus() -> Result<(), String> {
 fn demo() -> Result<(), String> {
     wasm_package()?;
     run("node", &["--no-warnings", "crates/pdf2-wasm/demo-test.mjs"])
+}
+
+/// The commit this build came from: `GITHUB_SHA` when CI sets it, else git's
+/// short revision, else `unknown`. A modified working tree appends `-dirty`,
+/// because a build that included uncommitted changes is not the commit it names.
+fn revision() -> String {
+    const LENGTH: usize = 12;
+    let short = |text: &str| {
+        let trimmed = text.trim();
+        let hex: String = trimmed
+            .chars()
+            .take(LENGTH)
+            .filter(char::is_ascii_hexdigit)
+            .collect();
+        (hex.len() == LENGTH).then_some(hex)
+    };
+    let base = std::env::var("GITHUB_SHA")
+        .ok()
+        .and_then(|sha| short(&sha))
+        .or_else(|| {
+            let output = Command::new("git")
+                .args(["rev-parse", &format!("--short={LENGTH}"), "HEAD"])
+                .output()
+                .ok()?;
+            output
+                .status
+                .success()
+                .then(|| String::from_utf8_lossy(&output.stdout).to_string())
+                .and_then(|text| short(&text))
+        })
+        .unwrap_or_else(|| "unknown".to_owned());
+    if base != "unknown" && is_dirty() {
+        return format!("{base}-dirty");
+    }
+    base
+}
+
+/// Whether the working tree has changes, so a build can say so.
+fn is_dirty() -> bool {
+    Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .is_ok_and(|output| output.status.success() && !output.stdout.is_empty())
 }
 
 fn copy(from: &str, to: &str) -> Result<(), String> {

@@ -282,6 +282,13 @@
         color: var(--muted);
         font-size: 0.85rem;
       }
+      /* Which build this page is: the version from package.json and the commit
+         the wasm came from, both read out of build.json at load time. */
+      footer .build {
+        display: block;
+        margin-top: 0.5rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
     </style>
   </head>
   <body>
@@ -382,6 +389,7 @@
       fallback, which covers ASCII, common Latin-1 accents composed onto their
       base letters, and draws a <code>.notdef</code> box for anything else.
       Sample files are the crate's own test fixtures.
+      <span id="appVersion" class="build"></span>
     </footer>
 
     <script type="module" src="app.js"></script>

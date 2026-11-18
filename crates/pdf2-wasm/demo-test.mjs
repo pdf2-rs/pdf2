@@ -275,6 +275,33 @@ async function main() {
     );
     check(true, 'the demo loads its first sample');
 
+    // The page says which build it is, and both halves come from `build.json`:
+    // a version alone cannot tell two builds of one release apart, and a
+    // hard-coded string would be the wrong build the moment either moved.
+    const footer = await evaluate(`
+      const build = await (await fetch('build.json', { cache: 'no-store' })).json();
+      const shown = document.querySelector('#appVersion')?.textContent ?? '';
+      const entry = (performance.getEntriesByType('resource') ?? []).find((item) =>
+        /pdf2_wasm\\.js/.test(item.name),
+      );
+      return {
+        build,
+        shown,
+        moduleUrl: entry ? entry.name : null,
+      };
+    `);
+    const wanted = `pdf2-wasm ${footer.build.version} (${footer.build.rev ?? 'unknown'})`;
+    check(
+      footer.shown === wanted,
+      `the footer names the build: ${JSON.stringify(footer.shown)}`,
+      `expected ${JSON.stringify(wanted)}`,
+    );
+    check(
+      footer.moduleUrl !== null &&
+        footer.moduleUrl.endsWith(`?v=${encodeURIComponent(footer.build.build)}`),
+      `the module is imported with the build stamp: ${footer.moduleUrl}`,
+    );
+
     check(
       (await evaluate(`return document.querySelector('#sample').value;`)) === '0',
       'the sample select shows the sample that is loaded',
