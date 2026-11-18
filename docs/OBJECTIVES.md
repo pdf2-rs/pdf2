@@ -249,6 +249,85 @@ its source — 168 597 → 9 294 is 5.5 % — while a byte-encoding table like `
 packaged figure is tens of kilobytes at most, and the CMap objective's first job is to generalise `cmaps()`
 and measure rather than assume.
 
+## The sequence
+
+Ten objectives, ranked by demand ÷ cost with `docs/GAPS.md`'s scale and its tie-break (prefer no new
+dependency, then code we already have, then more independent evidence of pain). Each row names the demand
+number measured in this tree, the one command that says "done", the effort in rounds of ~40 turns, what must
+land first, and the plan it is cut from. **A `/rounds-plan` on any row's objective sentence is a legal
+next objective.**
+
+| # | objective (one sentence) | demand, measured here | exit criterion | effort | depends on | plan |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | **Extraction quality: ligatures, `TJ` kerning and `/Artifact`** — make `text()` return what a reader would copy, including the parts a writer marked as decoration | the Tier B histogram's largest class: **6 of 16** failures in 200 pdf.js files are composite fonts without `/ToUnicode`; `/Artifact` is still extracted as text (`docs/FEATURES.md:212`) | `cargo test -p pdf2 --test content` | 2 | — | none yet |
+| 2 | **Render speed at page count** — a 200-page document timed page by page, with the budget tightened to what the measurement allows | **4.3 ms** per page on `book.pdf` against a **900 ms** budget (`corpus/render-budget.tsv`); nothing times a document by page count | `cargo run -q -p xtask -- bench` | 1 | — | none yet |
+| 3 | **Chinese and Korean CMaps** — Generalise `cmaps()` past the Japan1 pair and ship `UniGB-UCS2-H`, `UniCNS-UCS2-H`, `UniKS-UCS2-H` under the existing BSD-3-Clause notice | one CMap family ships today; the two Chinese sources are **274 383 B** and **326 349 B** (5.5 % of a coverage table survives packing — 168 597 → 9 294 B) | `cargo run -q -p xtask -- corpus` | 2 | — | none yet |
+| 4 | **The reader's document model: outlines, destinations, link actions, embedded files** — a page list is not a document | `/Outlines` **2**, `/URI` **2**, `/EmbeddedFiles` **1** of the 64 scanned files; nothing is modelled (`docs/FEATURES.md:79,181,184`) | `cargo test -p pdf2 --test document` | 2 | — | none yet |
+| 5 | **Repair a damaged file instead of stopping at the first error** — rebuild what can be rebuilt, report what cannot | Tier B: **2** missing `startxref`, **1** page-tree cycle, **1** malformed xref subsection out of 16 failures in 200 files | `cargo test -p pdf2 --test robustness` | 2 | — | none yet |
+| 6 | **ICC colour management behind a non-default `icc` feature** — a `/DeviceCMYK` page converted through the profile it names | `cmykjpeg.pdf` sits **8.455 mean** from the engines' **2.000** (`docs/RENDERING-QUALITY.md:10-20`); `/ICCBased` in **2** of 64 files; the feature costs **+88 441 gzip** scalar, **+121 404** with `moxcms`' defaults | `cargo test -p pdf2-render --test quality` | 4 | — | [icc.md](plans/icc.md) |
+| 7 | **Optional content: layers and their default configuration** — draw the configuration a reader would show, not every layer | `/OCProperties` in **2** of 64 files (`cmykjpeg.pdf`, `cid_cff.pdf`); nothing is modelled (`docs/FEATURES.md:153`) | `cargo test -p pdf2-render --test golden` | 2 | 4 | none yet |
+| 8 | **Forms filling and annotation authoring** — set a field and keep it when the file is saved | `/AcroForm` **0** of 64 files, so the evidence is the competitor: `pdfium-render` **4 079 913** downloads serves exactly this; the write side exists ([ADR 0006](adr/0006-editing-mutation-model.md)) | `cargo test -p pdf2 --test edit` | 3 | 4 | [forms.md](plans/forms.md) |
+| 9 | **Tagged PDF: structure tree, marked content and `/Artifact`** — the model PDF/UA-2 is written against | `/StructTreeRoot` **0**, `/MarkInfo` **0** of 64 files: no corpus page exists, so the evidence must come from `veraPDF-corpus` (CC BY 4.0, UA1/UA2) and generated fixtures | `cargo test -p pdf2 --test pages` | 3 | 4 | none yet |
+| 10 | **Conformance validation: PDF/A-4** — `check --strict` over the structural facts, then the part's clauses | ISO 19005-4:2020 (`pdf-issues.pdfa.org/19005-4-2020/`); veraPDF **1.30.4** is the CI oracle (GPL-3.0, so a binary, never a dependency); the corpus is CC BY 4.0 | `cargo run -q -p pdf2-cli -- check tests/fixtures/book.pdf` | 4 | 9 | [validation.md](plans/validation.md) |
+
+Every criterion above **passes today** — that is what makes it runnable — and an objective is done when it
+passes *with the cases that objective adds*: the command is the container, the new assertion is the work. The
+runs are below, so a later round can tell "the container still works" from "the work landed".
+
+**The four candidates with no corpus evidence**, ranked rather than guessed: tagged PDF (#9) and forms (#8)
+are justified above by `veraPDF-corpus` and by competitor demand; **>8-bit images** (`/BitsPerComponent 16`
+0 of 64) and **vertical writing** (`/WMode 1` 0 of 64) are below the line until a generated fixture proves
+them — a fixture is the cheap half, and neither can be ranked higher without a page that needs it.
+
+Below the line and not sequenced, with the reason: viewer preferences, page-piece dictionaries, measurement
+properties, geospatial features, requirements, multimedia/rich media, sounds, movies, alternate
+presentations, document parts, `O` fragment identifiers, `Q` transparency flag, and the CLI `render`
+subcommand — each either a viewer's concern or without a page in the corpus (`docs/FEATURES.md` lists them
+with this reasoning). Refusals stay refusals ([ADR 0001](adr/0001-differentiators.md)).
+
+## Exit criteria, run once (2026-11-18)
+
+Each command from the table above, executed on `d2f97bb` with the output it printed. All ten pass: none of
+them is the objective's assertion yet, they are the harnesses it will extend.
+
+```text
+$ cargo test -q -p pdf2 --test content
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ cargo run -q -p xtask -- bench
+compared 30 metric(s) with docs/performance-baseline.json (written 2026-11-17)
+skipped 1 metric(s): no gated baseline value for platform macos-aarch64
+within 10% tolerance
+
+$ cargo run -q -p xtask -- corpus
+25 files: 24 fully readable, 25 rendered
+   1 x composite (Type0) fonts without a /ToUnicode map
+
+$ cargo test -q -p pdf2 --test document
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ cargo test -q -p pdf2 --test robustness
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ cargo test -q -p pdf2-render --test quality
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ cargo test -q -p pdf2-render --test golden
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ cargo test -q -p pdf2 --test edit
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ cargo test -q -p pdf2 --test pages
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ cargo run -q -p pdf2-cli -- check tests/fixtures/book.pdf
+ok: tests/fixtures/book.pdf: 1 page(s) readable
+```
+
+The corpus line is the one number that will move first: objective 3 adds a Chinese sample, and objective 1's
+class ("composite (Type0) fonts without a `/ToUnicode` map") is the last one standing in that histogram.
+
 ## Figures this document does not have yet
 
 Two numbers the ranking wants cannot be taken from here without work this objective does not own:
