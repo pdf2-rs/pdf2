@@ -201,8 +201,9 @@ function scaleFor(pageWidth, pageHeight) {
 function buildTextLayer(base, pageHeight) {
   elements.textLayer.replaceChildren();
   state.spans = [];
-  state.hits = [];
-  state.hitIndex = 0;
+  // The hits belong to the needle, not to the page: clearing them here made a
+  // zoom lose the counter and the mark (`state.hitIndex` too), which is why the
+  // find result must survive a render.
   if (!state.document) {
     return;
   }
@@ -253,10 +254,53 @@ function buildTextLayer(base, pageHeight) {
 /// cells the spans were positioned with, welding neighbours into one rectangle, so
 /// adjacent characters share an edge instead of leaving a sliver -- and a white
 /// rectangle in `difference` mode inverts the page instead of tinting it.
+/// Clear one kind of mark (`selection` or `find`) and leave the other alone.
+///
+/// Both kinds share the inverted overlay, so a painter that cleared the whole
+/// layer would erase the other one: a selection change would wipe a find mark and
+/// vice versa.
+function clearMarks(kind) {
+  for (const mark of elements.selectionLayer.querySelectorAll(`i.${kind}`)) {
+    mark.remove();
+  }
+}
+
+/// One rectangle per run: cells that sit on one baseline and touch are one mark.
+function weldCells(cells) {
+  const boxes = [];
+  for (const cell of cells) {
+    const last = boxes[boxes.length - 1];
+    if (
+      last &&
+      Math.abs(last.top - cell.top) < 1 &&
+      cell.left <= last.left + last.width + 0.5
+    ) {
+      last.width = cell.left + cell.width - last.left;
+      last.height = Math.max(last.height, cell.height);
+    } else {
+      boxes.push({ ...cell });
+    }
+  }
+  return boxes;
+}
+
+/// Paint mark rectangles into the overlay under `kind`, `active` on the current one.
+function paintMarks(kind, boxes) {
+  clearMarks(kind);
+  for (const box of boxes) {
+    const mark = document.createElement('i');
+    mark.className = kind === 'find' ? 'find active' : 'selection';
+    mark.style.left = `${box.left}px`;
+    mark.style.top = `${box.top}px`;
+    mark.style.width = `${box.width}px`;
+    mark.style.height = `${box.height}px`;
+    elements.selectionLayer.append(mark);
+  }
+}
+
 function paintSelection() {
-  const layer = elements.selectionLayer;
-  layer.replaceChildren();
   const selection = globalThis.getSelection();
+  clearMarks('selection');
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
     return;
   }
@@ -267,9 +311,7 @@ function paintSelection() {
     return;
   }
   const origin = elements.pageBox.getBoundingClientRect();
-  // One rectangle per line, welded left to right: the cells tile the line, so two
-  // that touch are one highlight.
-  const boxes = [];
+  const cells = [];
   for (const span of elements.textLayer.querySelectorAll('span')) {
     if (!range.intersectsNode(span)) {
       continue;
@@ -278,23 +320,14 @@ function paintSelection() {
     if (rect.width < 0.5) {
       continue;
     }
-    const left = rect.left - origin.left;
-    const top = rect.top - origin.top;
-    const last = boxes[boxes.length - 1];
-    if (last && Math.abs(last.top - top) < 1 && left <= last.left + last.width + 0.5) {
-      last.width = left + rect.width - last.left;
-    } else {
-      boxes.push({ left, top, width: rect.width, height: rect.height });
-    }
+    cells.push({
+      left: rect.left - origin.left,
+      top: rect.top - origin.top,
+      width: rect.width,
+      height: rect.height,
+    });
   }
-  for (const box of boxes) {
-    const mark = document.createElement('i');
-    mark.style.left = `${box.left}px`;
-    mark.style.top = `${box.top}px`;
-    mark.style.width = `${box.width}px`;
-    mark.style.height = `${box.height}px`;
-    layer.append(mark);
-  }
+  paintMarks('selection', weldCells(cells));
 }
 
 /// The text the browser currently has selected, inside the text layer only.
@@ -311,22 +344,204 @@ function selectedText() {
 }
 
 /// Highlight every hit, with the active one brighter.
-function paintHits() {
-  for (const mark of elements.textLayer.querySelectorAll('.find-mark')) {
-    mark.remove();
+/// The painted lines of a page: cells grouped by baseline and split at a gap
+/// wider than two ems, with the text they spell and where each character starts.
+///
+/// A page's glyph texts weld their lines together when concatenated, so matching
+/// has to happen run by run -- which is also the only granularity `search` matches
+/// at, since its haystack is one span (`src/content.rs:1021`).
+function paintedLines(page) {
+  const cached = state.glyphs.get(page);
+  if (!cached) {
+    return null;
   }
+  const numbers = cached.numbers;
+  const texts = cached.texts;
+  const glyphs = [];
+  for (let index = 0; index < texts.length; index += 1) {
+    const [x, y, advance, size] = Array.from(numbers.slice(index * 4, index * 4 + 4));
+    glyphs.push({ text: texts[index], x, y, advance, size });
+  }
+  glyphs.sort((left, right) => right.y - left.y || left.x - right.x);
+  const lines = [];
+  let current = null;
+  for (const glyph of glyphs) {
+    const gap = current ? glyph.x - (current.glyphs[current.glyphs.length - 1].x + current.glyphs[current.glyphs.length - 1].advance) : 0;
+    const sameLine = current && Math.abs(glyph.y - current.glyphs[0].y) < 1.0;
+    if (!sameLine || gap > 2 * glyph.size) {
+      current = { glyphs: [], text: '', starts: [] };
+      lines.push(current);
+    }
+    current.starts.push(current.text.length);
+    current.text += glyph.text;
+    current.glyphs.push(glyph);
+  }
+  for (const line of lines) {
+    const first = line.glyphs[0];
+    const last = line.glyphs[line.glyphs.length - 1];
+    line.x0 = first.x;
+    line.y0 = first.y;
+    line.x1 = last.x + last.advance;
+    line.height = Math.max(...line.glyphs.map((glyph) => glyph.size));
+  }
+  return lines;
+}
+
+/// The line a hit belongs to: the nearest run whose text *contains* the hit.
+///
+/// Text first, position second, because the two engines do not always agree on
+/// where a line sits: on `text.pdf` the extractor puts "fourth line" at 638..656
+/// while the renderer paints it at baseline 624, a 14 px disagreement, while the
+/// line above agrees exactly. Matching by overlap alone therefore misses the hit
+/// and falls back to the whole line box -- the bug this file exists to fix.
+function lineOf(lines, hit) {
+  const needle = hit.text.toLocaleLowerCase();
+  const [x0, y0, , y1] = hit.box;
+  const middle = (y0 + y1) / 2;
+  let best = null;
+  for (const line of lines) {
+    if (!line.text.toLocaleLowerCase().includes(needle)) {
+      continue;
+    }
+    const vertical = Math.abs(line.y0 + line.height / 2 - middle);
+    const horizontal = Math.abs(line.x0 - x0);
+    if (!best || vertical < best.vertical || (vertical === best.vertical && horizontal < best.horizontal)) {
+      best = { line, vertical, horizontal };
+    }
+  }
+  return best ? best.line : null;
+}
+
+/// Which occurrence of its text each hit is, in hit order.
+///
+/// Hits arrive left to right and top to bottom (`src/content.rs:1020-1040`), so on
+/// one line they consume that line's occurrences in order: two "line" hits on one
+/// page must not resolve to the same glyphs.
+function hitOccurrences(lines) {
+  const counters = new Map();
+  const resolved = [];
+  for (let index = 0; index < state.hits.length; index += 1) {
+    const hit = state.hits[index];
+    const line = lineOf(lines, hit);
+    if (!line) {
+      resolved.push(null);
+      continue;
+    }
+    const occurrence = counters.get(line) ?? 0;
+    counters.set(line, occurrence + 1);
+    resolved.push({ line, occurrence });
+  }
+  return resolved;
+}
+
+/// The glyph run a hit names, as page-space cells, or null when it cannot be
+/// mapped (a code with no character leaves that part of the line unspellable).
+///
+/// The hit carries its *line's* box (`src/content.rs:1036`), so the line comes from
+/// the box and the occurrence from the hits before it; the cells are the glyphs
+/// that spell the matched text.
+function hitCells(hit) {
+  const lines = paintedLines(hit.page);
+  if (!lines || lines.length === 0) {
+    return null;
+  }
+  const resolved = hitOccurrences(lines)[state.hitIndex];
+  if (!resolved) {
+    return null;
+  }
+  const { line, occurrence } = resolved;
+  const needle = hit.text.toLocaleLowerCase();
+  if (needle.length === 0) {
+    return null;
+  }
+  const haystack = line.text.toLocaleLowerCase();
+  const found = [];
+  let from = 0;
+  while (from <= haystack.length - needle.length) {
+    const at = haystack.indexOf(needle, from);
+    if (at < 0) {
+      break;
+    }
+    found.push(at);
+    from = at + Math.max(1, needle.length);
+  }
+  if (found.length === 0) {
+    return null;
+  }
+  const start = found[Math.min(occurrence, found.length - 1)];
+  let first = -1;
+  for (let index = 0; index < line.glyphs.length; index += 1) {
+    if (line.starts[index] <= start) {
+      first = index;
+    } else {
+      break;
+    }
+  }
+  if (first < 0) {
+    return null;
+  }
+  const cells = [];
+  let covered = 0;
+  for (let index = first; index < line.glyphs.length && covered < needle.length; index += 1) {
+    const glyph = line.glyphs[index];
+    cells.push({
+      left: glyph.x,
+      top: glyph.y,
+      width: Math.max(1, glyph.advance),
+      height: glyph.size,
+    });
+    covered += glyph.text.length;
+  }
+  return cells;
+}
+
+function paintHits() {
+  clearMarks('find');
   if (state.hits.length === 0) {
     return;
   }
   const hit = state.hits[state.hitIndex];
-  const [x0, y0, x1, y1] = hit.box;
-  const mark = document.createElement('div');
-  mark.className = 'find-mark active';
-  mark.style.left = `${x0 * hit.base}px`;
-  mark.style.top = `${(hit.pageHeight - y1) * hit.base}px`;
-  mark.style.width = `${Math.max(1, (x1 - x0) * hit.base)}px`;
-  mark.style.height = `${Math.max(1, (y1 - y0) * hit.base)}px`;
-  elements.textLayer.prepend(mark);
+  if (hit.page !== state.page) {
+    // The layer shows another page; a mark in this page's coordinates would
+    // land on the wrong one.
+    return;
+  }
+  // The scale is derived here rather than read from the hit: `focusHit` sets it
+  // once, and a zoom since then has moved on from that value.
+  const [, pageHeight] = state.document.pageSize(hit.page);
+  const base = scaleFor(...state.document.pageSize(hit.page));
+  const cells = hitCells(hit);
+  if (!cells) {
+    // Defensive, and unreachable from any fixture in the tree: a glyph carries no
+    // text only when its code has no `/ToUnicode` (a composite font), and the one
+    // page with such a glyph (`tr-clip-type3.pdf`) has no extractable text at all,
+    // so `search` never returns a hit there. If it ever does, the line box is what
+    // a reader gets -- the geometry this file replaces -- rather than no mark.
+    const [x0, y0, x1, y1] = hit.box;
+    paintMarks('find', [
+      {
+        left: x0 * base,
+        top: (pageHeight - y1) * base,
+        width: Math.max(1, (x1 - x0) * base),
+        height: Math.max(1, (y1 - y0) * base),
+      },
+    ]);
+    for (const mark of elements.selectionLayer.querySelectorAll('i.find')) {
+      mark.classList.add('fallback');
+    }
+    return;
+  }
+  paintMarks(
+    'find',
+    weldCells(
+      cells.map((cell) => ({
+        left: cell.left * base,
+        top: (pageHeight - cell.top - cell.height) * base,
+        width: cell.width * base,
+        height: cell.height * base,
+      })),
+    ),
+  );
 }
 
 /// Run the current needle, moving to the first hit's page when it is elsewhere.
@@ -367,17 +582,13 @@ async function focusHit() {
   if (!hit) {
     return;
   }
-  const [, pageHeight] = state.document.pageSize(hit.page);
-  const base = scaleFor(...state.document.pageSize(hit.page));
-  hit.base = base;
-  hit.pageHeight = pageHeight;
   if (hit.page !== state.page) {
     state.page = hit.page;
     await render();
   }
   elements.findInfo.textContent = `${state.hitIndex + 1} / ${state.hits.length}`;
   paintHits();
-  const mark = elements.textLayer.querySelector('.find-mark.active');
+  const mark = elements.selectionLayer.querySelector('i.find.active');
   if (mark) {
     mark.scrollIntoView({ block: 'center', inline: 'center' });
   }
@@ -457,6 +668,9 @@ async function render() {
     // The text layer is rebuilt with every render: the geometry moves with the
     // page and the zoom, and a stale layer would select the wrong words.
     buildTextLayer(base, height);
+    // The find mark is drawn from the same geometry, at this render's scale: a
+    // zoom rebuilds the layer, so the mark has to be rebuilt with it.
+    paintHits();
     const pages = state.document.pageCount();
     elements.pageInfo.textContent = `${state.page + 1} / ${pages}`;
     elements.zoomInfo.textContent =
