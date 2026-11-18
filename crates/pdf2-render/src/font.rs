@@ -219,6 +219,20 @@ impl Font {
     /// lack one mean the code *is* the glyph id — pdf.js's
     /// `TrueType_without_cmap.pdf` is the case, and refusing to guess drew a
     /// blank page while reporting nothing at all.
+    /// The character a code stands for, in this font's encoding.
+    ///
+    /// What a text layer needs: a code with no character is a glyph the page
+    /// shows but no reader can quote, and it stays a box with no text.
+    pub fn character(&self, code: u8) -> Option<char> {
+        let encoding = match self {
+            Self::Builtin { encoding }
+            | Self::Type1 { encoding, .. }
+            | Self::Cff { encoding, .. }
+            | Self::TrueType { encoding, .. } => encoding,
+        };
+        encoding.character(code)
+    }
+
     pub fn glyph(&self, code: u8) -> Option<Glyph> {
         match self {
             Self::Builtin { encoding } => builtin_glyph(encoding.character(code)?),

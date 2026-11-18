@@ -135,6 +135,35 @@ impl PdfDocument {
             .collect())
     }
 
+    /// The page's painted glyphs as page-space numbers, five per glyph in
+    /// painting order: `[x, y, advance, size, …]`.
+    ///
+    /// The text layer over the canvas is built from these: the renderer paints
+    /// the page, so only it knows where each glyph landed and how far the pen
+    /// moved -- the extractor falls back to 500/1000 em when a font states no
+    /// `/Widths`, which is a quarter too narrow on exactly the base-14 pages.
+    /// `glyphTexts(index)` returns the parallel characters, empty for a code the
+    /// font's encoding cannot name.
+    #[wasm_bindgen(js_name = glyphs)]
+    pub fn glyphs(&self, index: usize) -> Result<Vec<f64>, JsError> {
+        let glyphs = self.glyphs_of(index)?;
+        let mut out = Vec::with_capacity(glyphs.len() * 4);
+        for glyph in glyphs {
+            out.extend_from_slice(&[glyph.x, glyph.y, glyph.advance, glyph.size]);
+        }
+        Ok(out)
+    }
+
+    /// The page's glyph characters, parallel to `glyphs(index)`.
+    #[wasm_bindgen(js_name = glyphTexts)]
+    pub fn glyph_texts(&self, index: usize) -> Result<Vec<String>, JsError> {
+        Ok(self
+            .glyphs_of(index)?
+            .into_iter()
+            .map(|glyph| glyph.text)
+            .collect())
+    }
+
     /// Every search hit in the document as `[page, x0, y0, x1, y1, …]`, four box
     /// numbers after each page index, case-insensitively.
     ///
@@ -174,6 +203,17 @@ impl PdfDocument {
     }
 
     /// The spans of one page, shared by the two accessors above.
+    /// The painted glyphs of one page, at the render scale of `1.0` points.
+    fn glyphs_of(&self, index: usize) -> Result<Vec<pdf2_render::GlyphBox>, JsError> {
+        pdf2_render::render_page_number_traced(
+            &self.document,
+            index,
+            &pdf2_render::RenderOptions::default(),
+        )
+        .map(|traced| traced.glyphs)
+        .map_err(|error| JsError::new(&error.to_string()))
+    }
+
     fn spans_of(&self, index: usize) -> Result<Vec<pdf2::TextSpan>, JsError> {
         let page = self
             .document

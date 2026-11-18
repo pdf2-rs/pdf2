@@ -4,6 +4,41 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-11-18
+
+**Selection lands on the paint.** The demo's invisible text layer was built from the
+extractor's line boxes and then scaled into them, so a selection could miss the glyphs it
+covered: on a base-14 page — where the renderer substitutes its 5×7 alphabet and every
+letter advances 6/9 em — the extractor's box is **147 px against 194 px of paint**, a ratio
+of 0.758, and the browser's proportional font then drifted inside what was left. The layer
+is now built from what the renderer actually painted: one positioned span per glyph, no
+scaling, and the browser can substitute whatever font it likes.
+
+### Added
+
+- `pdf2_render::GlyphBox { text, x, y, advance, size }` and `pdf2_render::TracedPage`,
+  returned by `render_page_traced` / `render_page_number_traced`: every glyph the walker
+  painted, in page space, with the advance it moved by and the size it was drawn at. The
+  raster is byte-identical to `render_page`'s — the trace only records.
+- `Font::character(code)`: the character a code stands for in that font's encoding.
+- `PdfDocument.glyphs(page)` / `glyphTexts(page)` in the wasm binding, a `Float64Array` of
+  `[x, y, advance, size]` with the characters parallel to it — the same shape as
+  `spans`/`spanTexts`, because the engine costs kilobytes in the bundle.
+- The demo's text layer is one span per painted glyph, cached per page, so zooming no longer
+  re-renders the page to rebuild it; a drag across a line still copies the line.
+
+### Fixed
+
+- **A selection over painted text could cover less than the glyphs it crossed** — reported
+  as "shows hello with all letters of equal width, but during selection selected boxes take
+  less space, like for serif font". `demo-test.mjs` now measures it: a word's ink sits
+  inside its selection rectangle on both the base-14 sample (143.0–220.0 px inside
+  143.0–227.0) and the embedded serif (151.0–182.0 inside 150.8–184.8), and no span carries
+  a transform.
+
+Every crate moves with the group: `pdf2`'s own sources did not change this release, and it
+carries the number because the group does ([ADR 0009](docs/adr/0009-one-version-per-group.md)).
+
 ## [1.6.0] — 2026-11-18
 
 **Editing an opened document.** `MutableDocument` overlays a `Document` and saves

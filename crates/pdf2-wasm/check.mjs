@@ -45,6 +45,27 @@ expect(pixels instanceof Uint8ClampedArray, 'renderPage returns a Uint8ClampedAr
 expect(pixels.length === 612 * 792 * 4, `renderPage length: ${pixels.length}`);
 expect(pixels[0] === 255, 'renderPage starts on the white background');
 
+// The painted glyphs, which is what the demo's text layer is built from: five
+// numbers per glyph ([x, y, advance, size]) with the characters parallel to
+// them. The extractor's span box for this page is a quarter too narrow, so the
+// numbers here have to come from the renderer.
+const glyphs = text.glyphs(0);
+const glyphTexts = text.glyphTexts(0);
+expect(glyphs instanceof Float64Array, 'glyphs(0) is a Float64Array');
+expect(
+  glyphs.length > 0 && glyphs.length === glyphTexts.length * 4,
+  `glyphs: ${glyphs.length} numbers, ${glyphTexts.length} texts`,
+);
+expect(
+  glyphTexts.slice(0, 4).join('') === 'Hell',
+  `the page opens with its first word: ${glyphTexts.slice(0, 8).join('')}`,
+);
+const firstAdvance = glyphs[2];
+expect(
+  Math.abs(firstAdvance - (6 / 9) * glyphs[3]) < 1e-9,
+  `the fallback advances 6/9 em: ${firstAdvance} against ${glyphs[3]} pt`,
+);
+
 // The text geometry the demo's text layer and find box read: four numbers per
 // span in a Float64Array, with the strings parallel to it, so no JavaScript type
 // of its own (the wasm bundle pays for every bit of engine glue).

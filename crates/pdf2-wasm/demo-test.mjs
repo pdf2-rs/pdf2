@@ -561,142 +561,170 @@ async function main() {
       `the first span is the page's own text: ${JSON.stringify(layer.first)}`,
     );
 
-    // The glyphs have to fill the line they were painted in. The browser lays the
-    // invisible text out with its own advances, so the app scales each span to the
-    // library's line box; without that the browser hit-tests characters at advances
-    // the page never had, and a drag highlights a word somewhere else entirely.
-    const lines = await evaluate(`
+    // Selection has to land on the paint. The layer is one span per painted
+    // glyph, positioned from the renderer's own numbers, so a word's selection
+    // rectangle and the canvas's inked columns in that rectangle must agree --
+    // the old layer scaled the browser's text into the *extractor's* line box,
+    // which for a base-14 font is a quarter too narrow.
+    const alignment = await evaluate(`
       const spans = [...document.querySelectorAll('#textLayer span')];
-      let worst = { delta: 0, text: '' };
-      let withText = 0;
-      let scaled = 0;
+      const canvas = document.querySelector('#canvas');
+      const context = canvas.getContext('2d');
+      const canvasRect = canvas.getBoundingClientRect();
+      const toBitmap = canvas.width / canvasRect.width;
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      // The first word: the first run of spans up to the first space.
+      const word = [];
       for (const span of spans) {
-        if (span.textContent.trim().length === 0) {
-          // A padded line has no glyphs to place; there is nothing to scale.
-          continue;
-        }
-        withText += 1;
-        const box = Number(span.dataset.box);
-        const rect = span.getBoundingClientRect();
-        const delta = Math.abs(rect.width - box);
-        if (delta > worst.delta) {
-          worst = { delta, text: span.textContent.slice(0, 24), box, width: rect.width };
-        }
-        if (getComputedStyle(span).transform !== 'none') {
-          scaled += 1;
-        }
-      }
-      const wide = spans.reduce(
-        (best, span) => (span.getBoundingClientRect().width > best.getBoundingClientRect().width ? span : best),
-        spans[0],
-      );
-      const rect = wide.getBoundingClientRect();
-      const node = wide.firstChild;
-      const text = wide.textContent;
-      let last = text.length - 1;
-      while (last > 0 && text[last] === ' ') {
-        last -= 1;
-      }
-      const glyph = document.createRange();
-      glyph.setStart(node, last);
-      glyph.setEnd(node, last + 1);
-      const lastGlyphRight = glyph.getBoundingClientRect().right;
-      const applied = wide.style.transform;
-      wide.style.transform = 'none';
-      const unscaledLastGlyphRight = glyph.getBoundingClientRect().right;
-      wide.style.transform = applied;
-      const caretAt = (fraction) => {
-        const x = rect.left + rect.width * fraction;
-        const y = rect.top + rect.height / 2;
-        let position = document.caretPositionFromPoint ? document.caretPositionFromPoint(x, y) : null;
-        if (!position && document.caretRangeFromPoint) {
-          const fallback = document.caretRangeFromPoint(x, y);
-          if (fallback) {
-            position = { offsetNode: fallback.startContainer, offset: fallback.startOffset };
-          }
-        }
-        if (!position) {
-          return null;
-        }
-        return {
-          inside: wide.contains(position.offsetNode),
-          offset: position.offset,
-          length: text.length,
-        };
-      };
-      return {
-        count: withText,
-        scaled,
-        worst,
-        widest: { text: text.slice(0, 40), length: text.length, right: rect.right },
-        lastGlyphRight,
-        unscaledLastGlyphRight,
-        quarter: caretAt(0.25),
-        threeQuarters: caretAt(0.8),
-      };
-    `);
-    check(
-      lines.count > 0 && lines.scaled === lines.count,
-      `every one of ${lines.count} text spans is scaled to its line box: ${lines.scaled} scaled`,
-    );
-    check(
-      lines.worst.delta <= 1,
-      `each span's rendered width is its line: worst ${lines.worst.delta.toFixed(2)}px on ${JSON.stringify(lines.worst.text)}`,
-    );
-    const glyphDelta = Math.abs(lines.lastGlyphRight - lines.widest.right);
-    check(
-      glyphDelta <= 2,
-      `the last glyph ends where the line ends: ${glyphDelta.toFixed(2)}px off on ${JSON.stringify(lines.widest.text)}`,
-    );
-    check(
-      lines.quarter !== null && lines.quarter.inside,
-      `the caret finds the span's text at a quarter of the line: ${JSON.stringify(lines.quarter)}`,
-    );
-    check(
-      lines.quarter !== null &&
-        lines.quarter.offset > 0 &&
-        lines.quarter.offset < lines.widest.length,
-      `a quarter along the line is a character inside it: offset ${lines.quarter && lines.quarter.offset} of ${lines.widest.length}`,
-    );
-    check(
-      lines.threeQuarters !== null && lines.quarter !== null &&
-        lines.threeQuarters.offset > lines.quarter.offset,
-      `further along the line is further into the text: ${lines.threeQuarters && lines.threeQuarters.offset} after ${lines.quarter && lines.quarter.offset}`,
-    );
-    console.log(
-      `note  unscaled, the same span's last glyph sat at ${lines.unscaledLastGlyphRight.toFixed(1)}px ` +
-        `against a line ending at ${lines.widest.right.toFixed(1)}px — the drift the scale removes`,
-    );
-
-    // Selecting one word of a line reads that word, not the line: the character
-    // offsets a drag produces are the ones the layer now lays out.
-    const oneWord = await evaluate(`
-      const span = [...document.querySelectorAll('#textLayer span')].find(
-        (candidate) => candidate.textContent.trim().indexOf(' ') > 0,
-      );
-      const text = span.textContent;
-      const start = text.indexOf(' ');
-      let wordStart = 0;
-      while (wordStart < start && text[wordStart] === ' ') {
-        wordStart += 1;
-      }
-      let wordEnd = wordStart;
-      while (wordEnd < text.length && text[wordEnd] !== ' ') {
-        wordEnd += 1;
+        if (span.textContent === ' ') break;
+        if (span.textContent.trim().length > 0) word.push(span);
       }
       const range = document.createRange();
-      range.setStart(span.firstChild, wordStart);
-      range.setEnd(span.firstChild, wordEnd);
+      range.setStartBefore(word[0]);
+      range.setEndAfter(word[word.length - 1]);
+      const selection = range.getBoundingClientRect();
+      const text = word.map((span) => span.textContent).join('');
+      // Ink inside that rectangle, in canvas pixels.
+      const x0 = Math.floor((selection.left - canvasRect.left) * toBitmap);
+      const x1 = Math.ceil((selection.right - canvasRect.left) * toBitmap);
+      const y0 = Math.max(0, Math.floor((selection.top - canvasRect.top) * toBitmap));
+      const y1 = Math.min(canvas.height, Math.ceil((selection.bottom - canvasRect.top) * toBitmap));
+      let firstInk = null;
+      let lastInk = null;
+      for (let x = x0; x < x1; x += 1) {
+        let ink = false;
+        for (let y = y0; y < y1 && !ink; y += 1) {
+          const offset = (y * canvas.width + x) * 4;
+          ink = image.data[offset] + image.data[offset + 1] + image.data[offset + 2] < 600;
+        }
+        if (ink) { if (firstInk === null) firstInk = x; lastInk = x; }
+      }
+      const glyphs = spans.length;
+      const scaled = spans.filter((span) => getComputedStyle(span).transform !== 'none').length;
+      return {
+        text,
+        glyphs,
+        scaled,
+        selection: [selection.left, selection.right],
+        ink: firstInk === null ? null : [firstInk / toBitmap + canvasRect.left, (lastInk + 1) / toBitmap + canvasRect.left],
+      };
+    `);
+    check(alignment.text.length > 1, `the layer's first word is "${alignment.text}" over ${alignment.glyphs} glyph spans`);
+    check(
+      alignment.scaled === 0,
+      `no span is scaled any more: ${alignment.scaled} of ${alignment.glyphs} carry a transform`,
+    );
+    check(alignment.ink !== null, 'the word was painted on the canvas');
+    if (alignment.ink !== null) {
+      // The word's ink must sit *inside* its selection rectangle: the rectangle
+      // runs to the last glyph's advance, which a comma does not reach, but no
+      // painted column may fall outside it. The old layer failed here by 58 px,
+      // its box being 0.758 of the paint.
+      const leftDelta = Math.abs(alignment.ink[0] - alignment.selection[0]);
+      const overflow = Math.max(
+        alignment.selection[0] - alignment.ink[0],
+        alignment.ink[1] - alignment.selection[1],
+        0,
+      );
+      check(
+        leftDelta <= 2 && overflow <= 2,
+        `the selection covers the painted word: ink ${alignment.ink.map((v) => v.toFixed(1))} ` +
+          `inside selection ${alignment.selection.map((v) => v.toFixed(1))}, ` +
+          `left gap ${leftDelta.toFixed(1)} px, overflow ${overflow.toFixed(1)} px`,
+      );
+    }
+
+    // A drag across the line still reads the line: per-glyph spans must not
+    // turn copying into a character at a time.
+    const lineCopy = await evaluate(`
+      const spans = [...document.querySelectorAll('#textLayer span')];
+      const firstLine = [];
+      const top = spans[0].getBoundingClientRect().top;
+      for (const span of spans) {
+        if (Math.abs(span.getBoundingClientRect().top - top) > 2) break;
+        firstLine.push(span);
+      }
+      const range = document.createRange();
+      range.setStartBefore(firstLine[0]);
+      range.setEndAfter(firstLine[firstLine.length - 1]);
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
       document.dispatchEvent(new Event('selectionchange'));
-      return { word: text.slice(wordStart, wordEnd), info: document.querySelector('#selectionInfo').textContent };
+      return {
+        spans: firstLine.length,
+        text: selection.toString(),
+        info: document.querySelector('#selectionInfo').textContent,
+      };
     `);
     check(
-      oneWord.word.length > 0 && oneWord.info.trim() === oneWord.word,
-      `a range over one word reads that word: ${JSON.stringify(oneWord.info)} against ${JSON.stringify(oneWord.word)}`,
+      lineCopy.text.startsWith('Hello, PDF 2.0') && lineCopy.info.trim() === lineCopy.text.trim(),
+      `a drag across the line still reads it: ${JSON.stringify(lineCopy.text)} over ${lineCopy.spans} spans`,
     );
+
+    // And the same on the embedded serif, where the advances are proportional:
+    // a fallback-to-a-browser-font layer drifts there in the opposite direction.
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      const option = [...select.options].find((o) => /book/.test(o.textContent));
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(`document.querySelector('#factName').textContent === 'book.pdf'`, 'the book sample');
+    await new Promise((done) => setTimeout(done, 300));
+    const serifAlignment = await evaluate(`
+      const spans = [...document.querySelectorAll('#textLayer span')];
+      const canvas = document.querySelector('#canvas');
+      const context = canvas.getContext('2d');
+      const canvasRect = canvas.getBoundingClientRect();
+      const toBitmap = canvas.width / canvasRect.width;
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const word = [];
+      for (const span of spans) {
+        if (span.textContent === ' ') break;
+        if (span.textContent.trim().length > 0) word.push(span);
+      }
+      const range = document.createRange();
+      range.setStartBefore(word[0]);
+      range.setEndAfter(word[word.length - 1]);
+      const selection = range.getBoundingClientRect();
+      const x0 = Math.floor((selection.left - canvasRect.left) * toBitmap);
+      const x1 = Math.ceil((selection.right - canvasRect.left) * toBitmap);
+      const y0 = Math.max(0, Math.floor((selection.top - canvasRect.top) * toBitmap));
+      const y1 = Math.min(canvas.height, Math.ceil((selection.bottom - canvasRect.top) * toBitmap));
+      let firstInk = null;
+      let lastInk = null;
+      for (let x = x0; x < x1; x += 1) {
+        let ink = false;
+        for (let y = y0; y < y1 && !ink; y += 1) {
+          const offset = (y * canvas.width + x) * 4;
+          ink = image.data[offset] + image.data[offset + 1] + image.data[offset + 2] < 600;
+        }
+        if (ink) { if (firstInk === null) firstInk = x; lastInk = x; }
+      }
+      return {
+        text: word.map((span) => span.textContent).join(''),
+        selection: [selection.left, selection.right],
+        ink: firstInk === null ? null : [firstInk / toBitmap + canvasRect.left, (lastInk + 1) / toBitmap + canvasRect.left],
+      };
+    `);
+    check(
+      serifAlignment.ink !== null &&
+        Math.abs(serifAlignment.ink[0] - serifAlignment.selection[0]) <= 2 &&
+        serifAlignment.ink[1] <= serifAlignment.selection[1] + 2,
+      `the embedded serif's word is covered too: "${serifAlignment.text}" ink ` +
+        `${serifAlignment.ink?.map((v) => v.toFixed(1))} inside selection ` +
+        `${serifAlignment.selection.map((v) => v.toFixed(1))}`,
+    );
+    // Back to the text sample for the checks that follow.
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      const option = [...select.options].find((o) => /Text and accents/.test(o.textContent));
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(`document.querySelector('#factName').textContent === 'text.pdf'`, 'the text sample again');
+    await new Promise((done) => setTimeout(done, 300));
 
     const selected = await evaluate(`
       const span = document.querySelector('#textLayer span');
