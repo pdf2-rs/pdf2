@@ -33,7 +33,7 @@ hayro-jpeg2000 = { version = "0.5.0", optional = true, default-features = false,
     "std",
 ] }
 miniz_oxide = "0.9"
-pdf2 = { path = "../..", version = "1.6.0" }
+pdf2 = { path = "../..", version = "1.8.0" }
 ttf-parser = "0.25.1"
 zune-jpeg = { version = "0.5.15", optional = true }
 
