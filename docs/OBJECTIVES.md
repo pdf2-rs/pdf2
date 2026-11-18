@@ -5,13 +5,25 @@ objective is cut from. It is generated from the repository, not from memory: eve
 `file:line` it came from, every demand number a command, and the counts are quoted beside the command
 that produced them so a later round can diff them instead of re-reading the whole backlog.
 
-Regenerate the sources with:
+Regenerate and verify the sources with:
 
 ```sh
-cargo run -q -p xtask -- ledger      # 114 rows, 21 roadmap items
+cargo run -q -p xtask -- ledger      # 114 rows, 21 roadmap items, 28 citations, every count
+cargo run -q -p xtask -- objective   # the counts block below, recomputed
 grep -c '^|' docs/FEATURES.md        # 161 table lines (117 status rows once headers and separators are out)
 ls docs/plans/*.md                   # 11 files: 10 plans + README
 ```
+
+Neither command is advice: `cargo gate` runs both, and fails when this document disagrees
+with the tree. What is checked, in one list —
+
+- every citation here is `path#snippet` and the file must contain the snippet (28 of them);
+- every `line` in the open-rows table is not checked (it is a reader's jump target), but every
+  backticked path in `docs/FEATURES.md`'s evidence must exist (163 of them);
+- the counts block below is compared line for line with `objective`'s output;
+- no `docs/FEATURES.md` row may be `scheduled` under a rank `docs/ROADMAP-NEXT.md` marks ✓.
+
+The CI Gate job runs `cargo gate`, so all of it runs on every pull request.
 
 ## Counts, as of this round
 
