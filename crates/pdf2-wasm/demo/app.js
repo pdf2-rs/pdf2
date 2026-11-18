@@ -149,6 +149,9 @@ const state = {
   // Painted glyph boxes per page: page-space, so a zoom or a re-render reuses
   // the answer instead of asking the renderer to paint the page again.
   glyphs: new Map(),
+  // The needle `hits` and `hitIndex` belong to, so an arrow press steps from
+  // where the reader is while new text starts again at the first hit.
+  needle: null,
   hits: [],
   hitIndex: 0,
   canvasWidth: 0,
@@ -387,20 +390,42 @@ function paintedLines(page) {
   return lines;
 }
 
-/// The line a hit belongs to: the nearest run whose text *contains* the hit.
+/// How many times `needle` (already folded) occurs in `text` (already folded).
+function countOccurrences(text, needle) {
+  if (needle.length === 0) {
+    return 0;
+  }
+  let count = 0;
+  let from = 0;
+  while (from <= text.length - needle.length) {
+    const at = text.indexOf(needle, from);
+    if (at < 0) {
+      break;
+    }
+    count += 1;
+    from = at + needle.length;
+  }
+  return count;
+}
+
+/// The line a hit belongs to: the nearest run whose text still *has* the hit to give.
 ///
 /// Text first, position second, because the two engines do not always agree on
 /// where a line sits: on `text.pdf` the extractor puts "fourth line" at 638..656
 /// while the renderer paints it at baseline 624, a 14 px disagreement, while the
-/// line above agrees exactly. Matching by overlap alone therefore misses the hit
-/// and falls back to the whole line box -- the bug this file exists to fix.
-function lineOf(lines, hit) {
+/// line above agrees exactly. A nearest-wins rule then ties -- 14 px to one line,
+/// 14 px to the other -- and picks whichever comes first, which for a second hit of
+/// the same needle means re-marking the first word. So a line is only a candidate
+/// while it has an occurrence left: searching "ou" marks `spaced out` and then
+/// `fourth line`.
+function lineOf(lines, hit, consumed) {
   const needle = hit.text.toLocaleLowerCase();
   const [x0, y0, , y1] = hit.box;
   const middle = (y0 + y1) / 2;
   let best = null;
   for (const line of lines) {
-    if (!line.text.toLocaleLowerCase().includes(needle)) {
+    const text = line.text.toLocaleLowerCase();
+    if (countOccurrences(text, needle) <= (consumed.get(line) ?? 0)) {
       continue;
     }
     const vertical = Math.abs(line.y0 + line.height / 2 - middle);
@@ -418,17 +443,20 @@ function lineOf(lines, hit) {
 /// one line they consume that line's occurrences in order: two "line" hits on one
 /// page must not resolve to the same glyphs.
 function hitOccurrences(lines) {
-  const counters = new Map();
+  // Per line, how many of its occurrences the hits so far have taken: a line
+  // cannot supply more than its text holds, and a hit that would overrun it must
+  // look at the next candidate instead.
+  const consumed = new Map();
   const resolved = [];
   for (let index = 0; index < state.hits.length; index += 1) {
     const hit = state.hits[index];
-    const line = lineOf(lines, hit);
+    const line = lineOf(lines, hit, consumed);
     if (!line) {
       resolved.push(null);
       continue;
     }
-    const occurrence = counters.get(line) ?? 0;
-    counters.set(line, occurrence + 1);
+    const occurrence = consumed.get(line) ?? 0;
+    consumed.set(line, occurrence + 1);
     resolved.push({ line, occurrence });
   }
   return resolved;
@@ -546,9 +574,17 @@ function paintHits() {
 
 /// Run the current needle, moving to the first hit's page when it is elsewhere.
 async function runFind(needle, move = 0) {
+  // A press of next/previous is a *move within* the current result, not a new
+  // search: zeroing the index first made every press start from the first hit, so
+  // the second press stayed on the second hit and the step back never moved.
+  const sameNeedle = needle === state.needle;
   state.hits = [];
-  state.hitIndex = 0;
+  state.needle = needle;
+  if (!sameNeedle) {
+    state.hitIndex = 0;
+  }
   if (!needle) {
+    state.hitIndex = 0;
     elements.findInfo.textContent = '–';
     paintHits();
     return;
@@ -568,11 +604,17 @@ async function runFind(needle, move = 0) {
     state.hits.push({ page, text: texts[index], box: [x0, y0, x1, y1] });
   }
   if (state.hits.length === 0) {
+    state.hitIndex = 0;
     elements.findInfo.textContent = '0 / 0';
     paintHits();
     return;
   }
-  state.hitIndex = (state.hitIndex + move + state.hits.length) % state.hits.length;
+  const total = state.hits.length;
+  // A needle reaches its first hit; the arrows move by one and wrap, which is
+  // what every find bar does (`n / total` from `total / total` to `1 / total`).
+  state.hitIndex = sameNeedle
+    ? (state.hitIndex + move + total) % total
+    : (move < 0 ? total - 1 : 0);
   await focusHit();
 }
 

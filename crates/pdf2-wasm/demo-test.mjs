@@ -1118,6 +1118,150 @@ async function main() {
       `next moves to another hit: ${found.info} then ${nextInfo}`,
     );
 
+    // The arrows step through every hit and wrap: next twice from `1 / 2` must
+    // return to the first, and previous at the first must land on the last.
+    const arrows = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = 'line';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 300));
+      const rows = [];
+      const snap = () => {
+        const mark = document.querySelector('#selectionLayer i.find');
+        const rect = mark ? mark.getBoundingClientRect() : null;
+        rows.push({
+          info: document.querySelector('#findInfo').textContent,
+          mark: rect ? [Math.round(rect.left), Math.round(rect.top)] : null,
+        });
+      };
+      snap();
+      document.querySelector('#findNext').click();
+      await new Promise((done) => setTimeout(done, 300));
+      snap();
+      document.querySelector('#findNext').click();
+      await new Promise((done) => setTimeout(done, 300));
+      snap();
+      document.querySelector('#findPrev').click();
+      await new Promise((done) => setTimeout(done, 300));
+      snap();
+      return rows;
+    `);
+    check(
+      arrows.map((row) => row.info).join(' | ') === '1 / 2 | 2 / 2 | 1 / 2 | 2 / 2',
+      `next twice wraps and previous steps back: ${arrows.map((row) => row.info).join(' | ')}`,
+    );
+    check(
+      arrows[0].mark && arrows[1].mark && arrows[0].mark[1] !== arrows[1].mark[1] &&
+        arrows[2].mark && arrows[2].mark[1] === arrows[0].mark[1],
+      `the mark moves with the counter: ${arrows.map((row) => row.mark?.join(',')).join(' → ')}`,
+    );
+
+    // One match reads `1 / 1` under both arrows, so "no move" means "one match".
+    const single = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = 'Hello';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 300));
+      const rows = [document.querySelector('#findInfo').textContent];
+      document.querySelector('#findNext').click();
+      await new Promise((done) => setTimeout(done, 200));
+      rows.push(document.querySelector('#findInfo').textContent);
+      document.querySelector('#findPrev').click();
+      await new Promise((done) => setTimeout(done, 200));
+      rows.push(document.querySelector('#findInfo').textContent);
+      return rows;
+    `);
+    check(
+      single.join(' | ') === '1 / 1 | 1 / 1 | 1 / 1',
+      `a single match holds 1 / 1 under both arrows: ${single.join(' | ')}`,
+    );
+
+    // Two hits of one needle, two different marks: "ou" occurs on two lines, and
+    // the second hit used to re-mark the first word because both resolved to the
+    // same line and its single occurrence was clamped.
+    const twoWords = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = 'ou';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 300));
+      const rows = [];
+      const snap = () => {
+        const marks = [...document.querySelectorAll('#selectionLayer i.find')];
+        rows.push({
+          info: document.querySelector('#findInfo').textContent,
+          marks: marks.map((mark) => {
+            const rect = mark.getBoundingClientRect();
+            return [Math.round(rect.left), Math.round(rect.top)];
+          }),
+          fallback: document.querySelectorAll('#selectionLayer i.find.fallback').length,
+        });
+      };
+      snap();
+      document.querySelector('#findNext').click();
+      await new Promise((done) => setTimeout(done, 300));
+      snap();
+      document.querySelector('#findPrev').click();
+      await new Promise((done) => setTimeout(done, 300));
+      snap();
+      return rows;
+    `);
+    check(
+      twoWords.map((row) => row.info).join(' | ') === '1 / 2 | 2 / 2 | 1 / 2',
+      `"ou" steps through both hits: ${twoWords.map((row) => row.info).join(' | ')}`,
+    );
+    check(
+      twoWords[0].marks.length === 1 && twoWords[1].marks.length === 1 &&
+        (twoWords[0].marks[0][0] !== twoWords[1].marks[0][0] ||
+          twoWords[0].marks[0][1] !== twoWords[1].marks[0][1]),
+      `the two "ou" hits are marked on different words: ${twoWords.map((row) => row.marks.flat().join(',')).join(' → ')}`,
+    );
+    check(
+      twoWords.every((row) => row.fallback === 0),
+      `no "ou" hit fell back to a line box: ${twoWords.map((row) => row.fallback).join(', ')}`,
+    );
+
+    // A new needle starts at its first hit, and stepping scrolls the mark into
+    // view when the page is bigger than the viewport.
+    const restart = await evaluate(`
+      const find = document.querySelector('#find');
+      find.value = 'line';
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((done) => setTimeout(done, 300));
+      const fresh = document.querySelector('#findInfo').textContent;
+      document.querySelector('#findNext').click();
+      await new Promise((done) => setTimeout(done, 300));
+      const stepped = document.querySelector('#findInfo').textContent;
+      document.querySelector('#zoomIn').click();
+      document.querySelector('#zoomIn').click();
+      await new Promise((done) => setTimeout(done, 600));
+      const wrap = document.querySelector('#canvasWrap');
+      wrap.scrollTop = 0;
+      document.querySelector('#findPrev').click();
+      await new Promise((done) => setTimeout(done, 500));
+      const mark = document.querySelector('#selectionLayer i.find');
+      const wrapRect = wrap.getBoundingClientRect();
+      const markRect = mark ? mark.getBoundingClientRect() : null;
+      return {
+        fresh,
+        stepped,
+        visible: markRect !== null &&
+          markRect.top < wrapRect.bottom && markRect.bottom > wrapRect.top &&
+          markRect.left < wrapRect.right && markRect.right > wrapRect.left,
+        mark: markRect ? [Math.round(markRect.left), Math.round(markRect.top)] : null,
+        wrap: [Math.round(wrapRect.left), Math.round(wrapRect.top), Math.round(wrapRect.width), Math.round(wrapRect.height)],
+      };
+    `);
+    check(
+      restart.fresh === '1 / 2' && restart.stepped === '2 / 2',
+      `a new needle starts at its first hit: ${restart.fresh} then ${restart.stepped}`,
+    );
+    check(
+      restart.visible,
+      `the active mark is scrolled into view at a larger zoom: mark ${restart.mark} in wrap ${restart.wrap}`,
+    );
+    await evaluate(`document.querySelector('#fit').click();`);
+    await new Promise((done) => setTimeout(done, 400));
+
     // The mark sits on the word, not on the line the word is part of: a hit's
     // box is its line's (`src/content.rs:1036`), so the mark is built from the
     // painted glyphs instead -- measured against the canvas's own ink here.

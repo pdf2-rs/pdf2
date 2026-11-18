@@ -4,6 +4,28 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] — 2026-11-18
+
+**The find box's arrows navigate.** Next and previous moved from the first hit every time, because
+`runFind` zeroed the index before applying the step: the first press looked right by coincidence and the
+wrap and the step back did nothing. A press is now a move within the current result — wrap included — and
+a new needle still starts at its first hit. And a needle whose matches share a line marks them
+separately: a line can only supply as many occurrences as its text holds.
+
+### Fixed
+
+- **Next/previous step through every match and wrap** — for "s" on the text sample the counter now reads
+  `1 / 2`, `2 / 2`, `1 / 2` with the mark moving each time, where it used to be `1 / 2`, `2 / 2`,
+  `2 / 2`; previous at the first hit lands on the last. A one-match needle holds `1 / 1` under both.
+- **Two matches of one needle mark two different words** — "ou" used to resolve both hits to the same
+  line, clamping the second occurrence to the first's glyphs; the marks are now 76 px apart, on
+  `spaced out` and `fourth line`. The rule is that a line only gives the occurrences its text holds,
+  which is what the 14 px disagreement between the extractor's line box and the painted baseline needed.
+- **The mark scrolls into view when stepping**, which the suite now asserts at a larger zoom.
+
+Every crate moves with the group ([ADR 0009](docs/adr/0009-one-version-per-group.md)); only the demo
+changed, so this is a patch.
+
 ## [1.7.2] — 2026-11-18
 
 **The find mark lands on the word.** A `SearchHit` carries its *line's* box
