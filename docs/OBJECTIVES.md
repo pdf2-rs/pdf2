@@ -203,6 +203,52 @@ error: the group version is 1.8.0, but:
 resolve only under `crates/pdf2-render/`. They are correct where they live; a future `xtask ledger` path
 check needs that convention decided first.
 
+## Measurements
+
+### What `moxcms` would cost the bundle (the ICC objective's missing figure)
+
+Measured in a scratch worktree (`git worktree add /tmp/pdf2-icc HEAD`), so nothing lands in a shipped
+manifest: `moxcms` 0.9.2 behind an `icc` feature on `pdf2-render`, with the conversion reachable from the
+CMYK branch of `/DCTDecode`, then
+
+```sh
+cargo build -p pdf2-wasm --release --target wasm32-unknown-unknown [--features icc]
+wasm-bindgen --target web --no-typescript --out-dir … target/…/pdf2_wasm.wasm
+```
+
+and gzip level 9 over the module plus its glue:
+
+| build | wasm raw | wasm gzip | total gzip | delta |
+| --- | --- | --- | --- | --- |
+| baseline (no `icc`) | 1 123 404 | 390 442 | **396 248** | — |
+| `icc`, `moxcms` `default-features = false` | 1 312 873 | 478 883 | **484 689** | **+88 441** |
+| `icc`, `moxcms` with its default features | 1 434 645 | 511 846 | **517 652** | **+121 404** |
+
+With `default-features = false` the dependency tree is `moxcms` → `num-traits` + `pxfm` only: no `rand`,
+no `getrandom`, which is what a wasm target needs. The npm budget is 392 KiB (**401 408** gzip), so the
+scalar build is **+83 281 over** it and the default-feature build **+116 281 over**: ICC cannot join the
+default build any more than JPX or JBIG2 could, and the decision [ADR 0007](adr/0007-decoder-features.md)
+records for the decoders is the shape it must take — a non-default feature, with the demo artefact carrying
+it and the npm package not.
+
+The number is a bound, not the finished cost: the scratch conversion parses a profile and builds one
+transform per call, so the real implementation (a transform cached per image, an `/OutputIntents` lookup)
+can come in lower — but not by an order of magnitude, and this is the figure the objective was missing.
+
+### What the Chinese CMaps would cost (already known in source, not yet packaged)
+
+| CMap | source bytes | the `.bin` it would become |
+| --- | --- | --- |
+| `90ms-RKSJ-H` (vendored) | 6 070 | 19 967 (`src/data/japan1_90ms_rksj.bin`) |
+| `UniJIS-UCS2-H` (vendored) | 168 597 | 9 294 (`src/data/japan1_unijis_ucs2.bin`) |
+| `UniGB-UCS2-H` (Adobe `Adobe-GB1-6/CMap`) | **274 383** | not measurable yet — `cargo run -q -p xtask -- cmaps` hardcodes the Japan1 pair (`crates/xtask/src/main.rs:1092-1101`) |
+| `UniCNS-UCS2-H` (Adobe `Adobe-CNS1-7/CMap`) | **326 349** | as above |
+
+A *coverage* table (both Chinese CMaps are Unicode→CID like `UniJIS-UCS2-H`) compresses to a fraction of
+its source — 168 597 → 9 294 is 5.5 % — while a byte-encoding table like `90ms-RKSJ-H` expands. So the
+packaged figure is tens of kilobytes at most, and the CMap objective's first job is to generalise `cmaps()`
+and measure rather than assume.
+
 ## Figures this document does not have yet
 
 Two numbers the ranking wants cannot be taken from here without work this objective does not own:
