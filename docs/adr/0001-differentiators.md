@@ -10,12 +10,13 @@
 ## Context
 
 The matrix says the Rust ecosystem is organised around one job per crate:
-`hayro` renders and is read-only by design (5 384 557 downloads, a 1 600+ PDF
-visual suite), `lopdf` edits (30 289 120), `pdf-extract` extracts (8 236 722,
-78 open issues), `printpdf` writes, and `pdf-rs` keeps rendering and text in
-separate repositories. Nothing in Rust reads, edits, renders and extracts from
-one model, and the C/C++ bindings that do (`pdfium-render` 3 954 648, `mupdf`
-1 786 662) cost a build system, `unsafe`, and most wasm-friendly deployments.
+`hayro` renders (5 628 585 downloads, a 1 600+ PDF visual suite) and, since
+0.9.0, its own `hayro-write` can copy pages out of a parsed file, `lopdf` edits
+(30 289 120), `pdf-extract` extracts (8 236 722, 78 open issues), `printpdf`
+writes, and `pdf-rs` keeps rendering and text in separate repositories. Nothing
+in Rust reads, edits, renders and extracts from one model, and the C/C++ bindings
+that do (`pdfium-render` 3 954 648, `mupdf` 1 786 662) cost a build system,
+`unsafe`, and most wasm-friendly deployments.
 
 Our own adoption is 1 664 downloads. A plan that begins with "be a better
 `hayro`" begins by losing a feature race against a faster, better-tested
@@ -34,10 +35,19 @@ what a page looks like, what text it holds, and what it becomes when written
 again. What the rasteriser draws is what `text()` returns, and what the writer
 emits re-opens into the same page.
 
+**Restated 2026-11-18, because the ground moved:** the distinction that survives
+`hayro-write` is not "we write and they do not", it is that a rewrite here is a
+*mutation of what was read* — `MutableDocument` overlays an opened file, keeps
+unknown objects, appends an incremental update and re-encrypts with the base's
+handler ([ADR 0006](0006-editing-mutation-model.md)) — while page extraction into
+a new file is a copy of parsed pages through someone else's writer. Reading,
+rendering, extracting and mutating from one object model is still ours alone; a
+page-level copy is not.
+
 Why this and not something else: one crate already does read, render, extract
 and write-new (`src/`, `crates/pdf2-render`), and every competitor splits them —
-`pdf-rs` into `pdf_render` and `pdf_text`, `hayro` render-only, `pdf-extract`
-extraction-only, `lopdf` rewrite-only. The claim is also the only way to beat
+`pdf-rs` into `pdf_render` and `pdf_text`, `hayro` render plus a page-copy crate,
+`pdf-extract` extraction-only, `lopdf` rewrite-only. The claim is also the only way to beat
 `pdf-extract`'s 78 issues: its failures are font-mapping failures, and the
 renderer already parses the fonts it cannot name.
 
@@ -106,10 +116,10 @@ What must become true: every dependency added for D1 or for coverage keeps
 
 ## Alternatives considered and rejected
 
-- **"Another fast renderer."** Rejected: `hayro` has 5.4M downloads, 1 600+
-  visual regression PDFs and a read-only design that buys it performance we
-  would have to earn from scratch; we would be a slower clone of a better
-  product.
+- **"Another fast renderer."** Rejected: `hayro` has 5.6M downloads, 1 600+
+  visual regression PDFs and a design that keeps one job per crate, which buys it
+  performance we would have to earn from scratch; we would be a slower clone of a
+  better product.
 - **"Editing-first, `lopdf`-shaped."** Rejected *for now*: it is the largest
   demand on the board (30.3M) and the most expensive item (gap 5, five-plus
   rounds, incremental saves and object mutation), and entering head-on against
@@ -140,7 +150,14 @@ What must become true: every dependency added for D1 or for coverage keeps
 
 ## Revisit when
 
-- `hayro` ships document manipulation or writing, closing the gap D1 relies on;
+- ~~`hayro` ships document manipulation or writing, closing the gap D1 relies on;~~
+  **Fired in part, 2026-11-02**: `hayro-write` 0.9.0 copies PDF pages into `XObjects`
+  or a new file through `pdf-writer`, and calls itself *"an internal crate and not
+  meant for external use"* (docs.rs/hayro-write). The copy half of writing is no
+  longer ours; the mutation half — which is what [ADR 0006](0006-editing-mutation-model.md)
+  decided — is, and the claim above is narrowed to say so rather than dropped. Watch
+  for the crate becoming public API and growing an object model; that would close the
+  gap for real;
 - `pdfium` becomes small and stable in wasm, weakening D2;
 - the corpus run (Q4) shows composite-font extraction costs far more than the
   scorecard's two-and-a-half rounds;

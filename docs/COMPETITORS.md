@@ -12,7 +12,8 @@ ADR: nothing here decides what we build.
 
 | Implementation | Version | Downloads (recent) | Stars | Last release / push | Licence | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| `hayro` | 0.9.0 | 5 384 557 (3 891 211) | 868 | 2026-11-02 / 2026-11-14 | Apache-2.0 | [cr] [gh] [h1] |
+| `hayro` | 0.9.0 | 5 628 585 (4 061 837) | 876 | 2026-11-02 / 2026-11-14 | Apache-2.0 | [cr] [gh] [h1] |
+| `hayro-write` | 0.9.0 | 3 257 748 (1 999 135) | — | 2026-11-02 | Apache-2.0 | [cr] [hw] |
 | `pdf` (pdf-rs) | 0.10.0 | 656 166 (80 967) | 1 724 | 2026-03-02 / 2026-11-09 | MIT | [cr] [gh] [p1] |
 | `lopdf` | 0.47.0 | 30 289 120 (14 766 962) | 2 294 | 2026-11-04 / 2026-11-12 | MIT | [cr] [gh] [l1] |
 | `printpdf` | 0.12.9 | 4 070 864 (1 776 259) | — | 2026-11-11 | MIT | [cr] [pr1] |
@@ -37,8 +38,8 @@ Legend: ✓ supported · ~ partial, experimental or with a caveat · ✗ absent 
 | Capability | hayro | pdf-rs `pdf` | lopdf | printpdf | pdfium-render | mupdf | pdf-extract | pdf.js | pdfium | pdf2 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Read / parse (xref streams, object streams) | ✓ [h1] | ✓ [p1] | ✓ [l1] | ~ [pr1] | ✓ [fr1] | ✓ [mu1] | ✓ [pe1] | ✓ [js1] | ✓ [fr1] | ✓ 1.x + 2.x [c2] |
-| Edit an opened document | ✗ [h1] | ~ [p1] | ✓ [l1] | ~ [pr1] | ✓ [fr1] | ✓ [mu1] | ✗ [pe1] | ✗ [js1] | ✓ [fr1] | ✗ [w1] |
-| Write / create from scratch | ✗ [h1] | ~ [p1] | ✓ [l1] | ✓ [pr1] | ✓ [fr1] | ✓ [mu1] | ✗ [pe1] | ✗ [js1] | ✓ [fr1] | ✓ [w1] |
+| Edit an opened document | ~ page copy [hw] | ~ [p1] | ✓ [l1] | ~ [pr1] | ✓ [fr1] | ✓ [mu1] | ✗ [pe1] | ✗ [js1] | ✓ [fr1] | ✗ [w1] |
+| Write / create from scratch | ~ new file [hw] | ~ [p1] | ✓ [l1] | ✓ [pr1] | ✓ [fr1] | ✓ [mu1] | ✗ [pe1] | ✗ [js1] | ✓ [fr1] | ✓ [w1] |
 | Text extraction | ✗ [h1] | ✗ [p1] | ✗ [l1] | ✗ [pr1] | ✓ [fr1] | ✓ [mu1] | ✓ [pe1] | ✓ [js1] | ✓ [fr1] | ~ [c1] |
 | Raster rendering | ✓ [h1] | ✗ [p1] | ✗ [l1] | ~ SVG only [pr1] | ✓ [fr1] | ✓ [mu1] | ✗ [pe1] | ✓ [js1] | ✓ [fr1] | ~ [r1] |
 | Simple fonts (Type 1 / TrueType, embedded) | ✓ [h1] | ✓ [p3] | ✗ outlines [l2] | ~ read, ✓ write [pr1] | ✓ [fr1] | ✓ [mu1] | ✓ [pe1] | ✓ [js1] | ✓ [fr1] | ✓ [r1] |
@@ -62,9 +63,14 @@ What the table says, before any decision is taken:
 - **Editing is the largest demand we do not serve at all** (`src/writer.rs` only
   builds new files), and lopdf's 30M downloads are the evidence — but lopdf is
   also the most entrenched competitor, so it is the most expensive to take on.
-- **Rendering is the most contested**: hayro is read-only, but it covers ground
-  we do not (image codecs, shadings, transparency) and is improving faster than
-  we can chase it.
+- **Rendering is the most contested**, and hayro is no longer read-only: `hayro`
+  covers ground we do not (image codecs, shadings, transparency) and is improving
+  faster than we can chase it, and its 0.9.0 release added `hayro-write`
+  (3 257 748 downloads), *"a crate for converting PDF pages into either `XObjects`
+  or a new page via `pdf-writer`"* — page extraction into a new file, which it
+  describes as *"an internal crate and not meant for external use"*. What it still
+  does not do is mutate an opened document: keep its unknown objects, append an
+  incremental update, re-encrypt with its handler ([ADR 0006](adr/0006-editing-mutation-model.md)).
 - **A licence is itself a differentiator**: the most downloaded extractor
   (`pdf-extract`, 8.2M) ships **no licence file at all**, and `mupdf` is AGPL.
   A dual-licensed crate with a written licence file is a reason to pick us that
@@ -106,7 +112,11 @@ Sources referenced in the tables:
   `recent_downloads` (90 days), `updated_at`, description, repository.
 - [gh] <https://api.github.com/repos/{owner}/{repo}> — stars, `open_issues_count`,
   `pushed_at`, licence, description.
-- [h1] <https://github.com/LaurenzV/hayro> `README.md` — read-only design, 1 600+
+- [hw] <https://docs.rs/hayro-write> — 0.9.0, *"a crate for converting PDF pages
+  into either `XObjects` or a new page via `pdf-writer`"*; *"an internal crate and
+  not meant for external use"*. Crate page: <https://crates.io/crates/hayro-write>
+  (3 257 748 downloads).
+- [h1] <https://github.com/LaurenzV/hayro> `README.md` — 1 600+
   visual regression PDFs, remaining gaps (robustness, performance, API).
 - [h2] `hayro/Cargo.toml` — `embed-fonts`, `embed-cmaps` (61 predefined CMaps,
   ~250 KB brotli).
