@@ -145,6 +145,9 @@ const state = {
   zoom: 'fit',
   renderToken: 0,
   spans: [],
+  // Painted glyph boxes per page: page-space, so a zoom or a re-render reuses
+  // the answer instead of asking the renderer to paint the page again.
+  glyphs: new Map(),
   hits: [],
   hitIndex: 0,
   canvasWidth: 0,
@@ -187,12 +190,13 @@ function scaleFor(pageWidth, pageHeight) {
 
 /// Put a selectable, transparent copy of the page's text over the canvas.
 ///
-/// The spans come from the same geometry the find box highlights: page-space
-/// rectangles turned into CSS pixels against the page box, with the y axis
-/// flipped (PDF counts from the bottom, the DOM from the top). The glyphs are not
-/// reproduced — the canvas drew those — only the selectable text and its box, and
-/// a span's own box is the unit of selection, which `ADR 0008` says is what a span
-/// is.
+/// One span per *painted glyph*, positioned where the renderer put it: the
+/// renderer knows each glyph's x, how far the pen moved and the size it used, so
+/// the layer needs no font of its own and no `scaleX` -- a browser that
+/// substitutes a proportional font for the document's can no longer drag the
+/// selection off the paint. The extractor's line boxes are what this replaces:
+/// for a base-14 font with no `/Widths` they fall back to 500/1000 em and come
+/// out a quarter too narrow, which is the bug this fixes.
 function buildTextLayer(base, pageHeight) {
   elements.textLayer.replaceChildren();
   state.spans = [];
@@ -201,44 +205,37 @@ function buildTextLayer(base, pageHeight) {
   if (!state.document) {
     return;
   }
-  let boxes;
-  let texts;
-  try {
-    boxes = state.document.spans(state.page);
-    texts = state.document.spanTexts(state.page);
-  } catch {
-    return;
+  let cached = state.glyphs.get(state.page);
+  if (!cached) {
+    try {
+      cached = {
+        numbers: state.document.glyphs(state.page),
+        texts: state.document.glyphTexts(state.page),
+      };
+    } catch {
+      return;
+    }
+    state.glyphs.set(state.page, cached);
   }
+  const numbers = cached.numbers;
+  const texts = cached.texts;
   const layer = elements.textLayer;
-  // The width is the browser's own text width, not the line's: the transform below
-  // is what makes the glyph run fill the line, and a width of the line box would be
-  // scaled too, leaving the run `box / measured` of the way across it.
-  const built = [];
   for (let index = 0; index < texts.length; index += 1) {
-    const [x0, y0, x1, y1] = Array.from(boxes.slice(index * 4, index * 4 + 4));
+    const [x, y, advance, size] = Array.from(numbers.slice(index * 4, index * 4 + 4));
+    const width = Math.max(1, advance * base);
+    const height = Math.max(1, size * base);
     const span = document.createElement('span');
     span.textContent = texts[index];
     span.dataset.index = String(index);
-    span.style.left = `${x0 * base}px`;
-    span.style.top = `${(pageHeight - y1) * base}px`;
-    span.style.width = 'max-content';
-    span.style.height = `${Math.max(1, (y1 - y0) * base)}px`;
-    span.style.fontSize = `${Math.max(1, (y1 - y0) * base)}px`;
+    span.dataset.box = width.toFixed(2);
+    span.style.left = `${x * base}px`;
+    // The baseline sits at `y`; the em box runs from there up to `y + size`.
+    span.style.top = `${(pageHeight - y - size) * base}px`;
+    span.style.width = `${width}px`;
+    span.style.height = `${height}px`;
+    span.style.fontSize = `${height}px`;
     layer.append(span);
-    built.push({ span, box: Math.max(1, (x1 - x0) * base) });
-    state.spans.push({ text: texts[index], x0, y0, x1, y1 });
-  }
-  // The invisible text is laid out with the browser's advances, which are not the
-  // page's. Scaling each span by the ratio of the painted line to the measured text
-  // puts every glyph — and with it hit-testing and `::selection` — where the canvas
-  // painted it; pdf.js's text layer scales the same way. Measured after the spans
-  // are in the document, so the whole set shares one layout pass.
-  for (const { span, box } of built) {
-    const measured = span.getBoundingClientRect().width;
-    if (measured > 0.5) {
-      span.style.transform = `scaleX(${box / measured})`;
-    }
-    span.dataset.box = box.toFixed(2);
+    state.spans.push({ text: texts[index], x0: x, y0: y, x1: x + advance, y1: y + size });
   }
   layer.style.width = `${Math.round(state.canvasWidth)}px`;
   layer.style.height = `${Math.round(state.canvasHeight)}px`;
@@ -478,6 +475,7 @@ async function showDocument(bytes, name, password, source) {
   state.pending = null;
   try {
     state.document = open(bytes, password ?? null);
+    state.glyphs.clear();
     state.bytes = bytes;
     state.name = name;
     state.password = password ?? null;

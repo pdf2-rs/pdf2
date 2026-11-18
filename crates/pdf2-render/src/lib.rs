@@ -38,4 +38,7 @@ pub use path::{Cap, Dash, Join, Path, Segment, Subpath};
 pub use pdf2::{Error, Rect, Result};
 pub use png::encode_png;
 pub use raster::{clip_mask, fill_polygons};
-pub use walk::{RenderOptions, RenderedPage, Report, render_page, render_page_number};
+pub use walk::{
+    GlyphBox, RenderOptions, RenderedPage, Report, TracedPage, render_page, render_page_number,
+    render_page_number_traced, render_page_traced,
+};

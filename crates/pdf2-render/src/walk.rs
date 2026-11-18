@@ -104,6 +104,37 @@ pub struct RenderedPage {
     pub report: Report,
 }
 
+/// One glyph the renderer painted, in page space: points, `y` growing upwards,
+/// the origin at the page's visible box -- the same convention
+/// [`pdf2::TextSpan`] uses, so a text layer can mix the two.
+///
+/// `advance` is how far the pen moved for this glyph, and `size` is the font
+/// size the renderer used for it: together they are what an invisible text
+/// layer needs to sit exactly on the paint, whatever font the browser
+/// substitutes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlyphBox {
+    /// The character this code stands for, empty when the encoding has none.
+    pub text: String,
+    /// Baseline origin, x.
+    pub x: f64,
+    /// Baseline origin, y.
+    pub y: f64,
+    /// Pen advance for this glyph, in page units.
+    pub advance: f64,
+    /// Effective font size, in page units.
+    pub size: f64,
+}
+
+/// A rendered page together with the glyphs it painted, in painting order.
+#[derive(Debug, Clone)]
+pub struct TracedPage {
+    /// The raster and its report, exactly as [`render_page`] returns them.
+    pub page: RenderedPage,
+    /// Every glyph the walker painted, in page space.
+    pub glyphs: Vec<GlyphBox>,
+}
+
 /// A document, page number (zero based) and rasterisation scale in one call.
 pub fn render_page_number(
     document: &Document,
@@ -112,6 +143,44 @@ pub fn render_page_number(
 ) -> crate::Result<RenderedPage> {
     let page = document.page(page_index)?;
     render_page(document, &page, options)
+}
+
+/// [`render_page_number`], keeping what the walker painted: the raster and the
+/// page-space box of every glyph, for the text layer over it.
+pub fn render_page_number_traced(
+    document: &Document,
+    page_index: usize,
+    options: &RenderOptions,
+) -> crate::Result<TracedPage> {
+    let page = document.page(page_index)?;
+    render_page_traced(document, &page, options)
+}
+
+/// [`render_page`], keeping the glyph boxes.
+pub fn render_page_traced(
+    document: &Document,
+    page: &Page,
+    options: &RenderOptions,
+) -> crate::Result<TracedPage> {
+    let (page, placed, base) = paint_page(document, page, options)?;
+    let inverse = base
+        .invert()
+        .ok_or_else(|| pdf2::Error::malformed("the page transform is singular"))?;
+    let glyphs = placed
+        .into_iter()
+        .map(|glyph| {
+            let start = inverse.apply(glyph.start);
+            let end = inverse.apply(glyph.end);
+            GlyphBox {
+                text: glyph.text.map(String::from).unwrap_or_default(),
+                x: start.x,
+                y: start.y,
+                advance: (end.x - start.x).hypot(end.y - start.y),
+                size: glyph.size,
+            }
+        })
+        .collect();
+    Ok(TracedPage { page, glyphs })
 }
 
 /// `/Widths` of a simple font, in 1/1000 em, with the descriptor's
@@ -220,6 +289,25 @@ pub fn render_page(
     page: &Page,
     options: &RenderOptions,
 ) -> crate::Result<RenderedPage> {
+    Ok(paint_page(document, page, options)?.0)
+}
+
+/// One glyph the walker placed, in device pixels, with the pen's two ends: the
+/// page-space conversion happens once, at [`render_page_traced`].
+struct PlacedGlyph {
+    start: Point,
+    end: Point,
+    text: Option<char>,
+    size: f64,
+}
+
+/// Render a page and keep what it painted: the raster, its report, the glyphs
+/// the walker placed, and the page-to-device transform used.
+fn paint_page(
+    document: &Document,
+    page: &Page,
+    options: &RenderOptions,
+) -> crate::Result<(RenderedPage, Vec<PlacedGlyph>, Matrix)> {
     let scale = if options.scale.is_finite() && options.scale > 0.0 {
         options.scale
     } else {
@@ -272,12 +360,17 @@ pub fn render_page(
         form_depth: 0,
         stream_starts: Vec::new(),
         uncoloured_cell: false,
+        glyphs: Vec::new(),
     };
     walker.run(&content)?;
     // Annotation appearance streams are drawn after the page content (12.5.5),
     // and are the reason a page with an empty `/Contents` can still show
     // something: 25 of the 49 silent-blank sample pages were exactly this.
     walker.draw_annotations(page)?;
+    // Take the glyphs and release the walker's borrows before the report is
+    // read again below.
+    let glyphs = core::mem::take(&mut walker.glyphs);
+    drop(walker);
     // A page that ran painting operators and produced an empty raster is not
     // "all operators supported" — it is a page that drew nothing, and a reader
     // deserves to know which. Silent blanks are the worst failure this renderer
@@ -285,7 +378,7 @@ pub fn render_page(
     if report.painted > 0 && report.unsupported.is_empty() && canvas.is_blank() {
         report.note(b"drew-nothing");
     }
-    Ok(RenderedPage { canvas, report })
+    Ok((RenderedPage { canvas, report }, glyphs, base))
 }
 
 /// The part of the graphics state that painting depends on.
@@ -381,6 +474,8 @@ struct Walker<'a> {
     /// Whether the content being run is an uncoloured pattern's cell, whose
     /// operators "shall not explicitly specify any colours" (8.7.3.3).
     uncoloured_cell: bool,
+    /// Every glyph painted so far, in device pixels: the text layer's source.
+    glyphs: Vec<PlacedGlyph>,
 }
 
 impl Walker<'_> {
@@ -825,7 +920,11 @@ impl Walker<'_> {
                     self.place_glyph(&glyph);
                 }
                 let advance = cid.advance(code) * self.state.font_size + self.state.char_spacing;
-                self.advance_text(advance * self.state.horizontal_scale);
+                let advance = advance * self.state.horizontal_scale;
+                // A composite code has no character in the font's encoding: its
+                // text comes from `/ToUnicode`, which is the extractor's job.
+                self.note_glyph(None, advance);
+                self.advance_text(advance);
             }
             return Ok(());
         }
@@ -841,7 +940,16 @@ impl Walker<'_> {
                 if code == b' ' {
                     advance += self.state.word_spacing;
                 }
-                self.advance_text(advance * self.state.horizontal_scale);
+                let advance = advance * self.state.horizontal_scale;
+                // A Type 3 font names its glyphs; the name is what a reader can
+                // quote, and a name nobody recognises leaves the box textless.
+                let text = type3
+                    .names
+                    .get(usize::from(code))
+                    .and_then(|name| name.as_deref())
+                    .and_then(pdf2::encoding::glyph_name_character);
+                self.note_glyph(text, advance);
+                self.advance_text(advance);
             }
             return Ok(());
         }
@@ -861,7 +969,9 @@ impl Walker<'_> {
             if code == b' ' {
                 advance += self.state.word_spacing;
             }
-            self.advance_text(advance * self.state.horizontal_scale);
+            let advance = advance * self.state.horizontal_scale;
+            self.note_glyph(font.character(code), advance);
+            self.advance_text(advance);
         }
         Ok(())
     }
@@ -953,6 +1063,34 @@ impl Walker<'_> {
     }
 
     /// Move the text position by `advance` in unscaled text space.
+    /// Where the glyph's baseline starts, in device pixels.
+    fn text_origin(&self) -> Point {
+        self.state
+            .text_matrix
+            .multiply(self.state.ctm)
+            .apply(Point::new(0.0, 0.0))
+    }
+
+    /// Where the pen stands after `advance` text-space units.
+    fn text_origin_after(&self, advance: f64) -> Point {
+        self.state
+            .text_matrix
+            .multiply(self.state.ctm)
+            .apply(Point::new(advance, 0.0))
+    }
+
+    /// Record one painted glyph for the text layer, before the pen moves.
+    fn note_glyph(&mut self, text: Option<char>, advance: f64) {
+        let start = self.text_origin();
+        let end = self.text_origin_after(advance);
+        self.glyphs.push(PlacedGlyph {
+            start,
+            end,
+            text,
+            size: self.state.font_size,
+        });
+    }
+
     fn advance_text(&mut self, advance: f64) {
         self.state.text_matrix =
             Matrix::new(1.0, 0.0, 0.0, 1.0, advance, 0.0).multiply(self.state.text_matrix);
@@ -1422,6 +1560,9 @@ impl Walker<'_> {
             form_depth: self.form_depth,
             stream_starts: Vec::new(),
             uncoloured_cell: false,
+            // A pattern cell's glyphs belong to the cell, not the page: the
+            // text layer over the page must not see them twice.
+            glyphs: Vec::new(),
         };
         walker.run(&content)?;
         // A `Do` inside the mask group is the page's business too: merging the
