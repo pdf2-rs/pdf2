@@ -127,10 +127,19 @@ node --no-warnings crates/pdf2-wasm-smoke/smoke.mjs
 
 | Artifact | Raw | Gzip | Gzip budget |
 | --- | --- | --- | --- |
-| browser module (`wasm32-unknown-unknown`, release) | 442 480 B | 168 959 B | 166 KiB |
-| WASI binary (`wasm32-wasip1`, release) | 508 595 B | 191 565 B | 188 KiB |
+| browser module (`wasm32-unknown-unknown`, release) | 443 820 B | 169 974 B | 170 KiB |
+| WASI binary (`wasm32-wasip1`, release) | 514 067 B | 192 662 B | 193 KiB |
 
 Measured 2026-11-15 with `rustc 1.99.1` and the release profile.
+
+**All four budgets moved on 2026-11-18 for the painted glyph boxes** (`GlyphBox`,
+`render_page_traced`, `PdfDocument.glyphs`): the walker records one entry per glyph it paints and the
+binding converts them to page space, which costs **+1 015 gzip** on the browser module (168 959 →
+169 974), **+1 097** on the WASI binary (191 565 → 192 662), **+5 561** on the npm bundle (387 275 →
+392 836 — the CJK and search tables had already taken it to within 340 bytes of 384 KiB) and **+3 262**
+on the demo bundle (531 069 → 534 331). The new ceilings are 170, 193, 388 and 528 KiB. The trade is
+the demo's selection bug: a selection over painted text covered a quarter less than the glyphs it
+crossed, because only the renderer knows where a glyph landed.
 
 **The WASI budget moved from 180 KiB to 187 KiB on 2026-11-16 for the
 two-dimensional fax decoder**: the changing-element model, its mode table and the

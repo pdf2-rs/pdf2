@@ -20,9 +20,12 @@ const FILES = {
   browser: 'target/wasm32-unknown-unknown/release/pdf2_wasm_smoke.wasm',
   wasi: 'target/wasm32-wasip1/release/pdf2-wasi-smoke.wasm',
 };
+// Raised on 2026-11-18 with the painted glyph boxes (`GlyphBox`): the trace
+// machinery costs +1 015 gzip on the browser module and +1 097 on the WASI
+// binary, and both were within a kilobyte of the budget it replaces.
 const BUDGET_GZIP = {
-  browser: 166 * 1024,
-  wasi: 188 * 1024,
+  browser: 170 * 1024,
+  wasi: 193 * 1024,
 };
 
 const here = dirname(fileURLToPath(import.meta.url));

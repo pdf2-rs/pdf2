@@ -12,7 +12,11 @@ covered: on a base-14 page — where the renderer substitutes its 5×7 alphabet 
 letter advances 6/9 em — the extractor's box is **147 px against 194 px of paint**, a ratio
 of 0.758, and the browser's proportional font then drifted inside what was left. The layer
 is now built from what the renderer actually painted: one positioned span per glyph, no
-scaling, and the browser can substitute whatever font it likes.
+scaling, and the browser can substitute whatever font it likes. Recording what it painted
+costs **+1 015 gzip** on the browser module, **+1 097** on the WASI binary, **+5 561** on the
+npm bundle and **+3 262** on the demo bundle, so all four budgets move with it
+(170 / 193 / 388 / 528 KiB) — the numbers and the reason are in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ### Added
 
