@@ -124,6 +124,7 @@ const elements = {
   minimapViewport: document.querySelector('#minimapViewport'),
   pageBox: document.querySelector('#pageBox'),
   textLayer: document.querySelector('#textLayer'),
+  selectionLayer: document.querySelector('#selectionLayer'),
   find: document.querySelector('#find'),
   findPrev: document.querySelector('#findPrev'),
   findNext: document.querySelector('#findNext'),
@@ -239,7 +240,61 @@ function buildTextLayer(base, pageHeight) {
   }
   layer.style.width = `${Math.round(state.canvasWidth)}px`;
   layer.style.height = `${Math.round(state.canvasHeight)}px`;
+  // The spans were just replaced, so whatever the overlay highlighted is stale.
+  paintSelection();
   renderMinimap();
+}
+
+/// Paint the selection as one inverted area per line, from the layer's own cells.
+///
+/// The browser's `::selection` follows the font it substituted, so its rectangles
+/// are narrower than the painted glyphs for some letters and taller for all of
+/// them: "l" got 4.6 px inside a 14 px cell. This draws the highlight from the
+/// cells the spans were positioned with, welding neighbours into one rectangle, so
+/// adjacent characters share an edge instead of leaving a sliver -- and a white
+/// rectangle in `difference` mode inverts the page instead of tinting it.
+function paintSelection() {
+  const layer = elements.selectionLayer;
+  layer.replaceChildren();
+  const selection = globalThis.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  const anchor = selection.anchorNode;
+  const node = anchor && anchor.nodeType === 1 ? anchor : anchor?.parentNode;
+  if (!node || !elements.textLayer.contains(node)) {
+    return;
+  }
+  const origin = elements.pageBox.getBoundingClientRect();
+  // One rectangle per line, welded left to right: the cells tile the line, so two
+  // that touch are one highlight.
+  const boxes = [];
+  for (const span of elements.textLayer.querySelectorAll('span')) {
+    if (!range.intersectsNode(span)) {
+      continue;
+    }
+    const rect = span.getBoundingClientRect();
+    if (rect.width < 0.5) {
+      continue;
+    }
+    const left = rect.left - origin.left;
+    const top = rect.top - origin.top;
+    const last = boxes[boxes.length - 1];
+    if (last && Math.abs(last.top - top) < 1 && left <= last.left + last.width + 0.5) {
+      last.width = left + rect.width - last.left;
+    } else {
+      boxes.push({ left, top, width: rect.width, height: rect.height });
+    }
+  }
+  for (const box of boxes) {
+    const mark = document.createElement('i');
+    mark.style.left = `${box.left}px`;
+    mark.style.top = `${box.top}px`;
+    mark.style.width = `${box.width}px`;
+    mark.style.height = `${box.height}px`;
+    layer.append(mark);
+  }
 }
 
 /// The text the browser currently has selected, inside the text layer only.
@@ -621,6 +676,7 @@ document.addEventListener('selectionchange', () => {
   const text = selectedText().trim();
   elements.copySelection.disabled = text.length === 0;
   elements.selectionInfo.textContent = text.length === 0 ? '' : text;
+  paintSelection();
 });
 
 elements.find.addEventListener('input', () => {

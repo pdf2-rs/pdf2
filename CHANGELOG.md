@@ -4,6 +4,37 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] — 2026-11-18
+
+**The selection looks like a selection.** The previous release put the highlight on the painted
+glyphs; this one throws away the browser's own `::selection` rectangles and draws the highlight
+from the same cells the layer positions. The reason is measurable: for a 14.0 px cell the browser
+painted 4.6 px of highlight over an `"l"` and 14.9 px over an `"H"` -- its own font's advances --
+and 24.0 px of height against the cell's 21.0, so a run of selected characters read as separate
+boxes with slivers instead of one band.
+
+### Changed
+
+- **The highlight inverts the page** rather than tinting it: a white overlay in
+  `mix-blend-mode: difference` turns the selected area into the negative of what is under it, with
+  `isolation: isolate` on the page box so the blend cannot reach the page behind it.
+- **Adjacent characters share one rectangle**: the overlay welds the cells it covers per line, so
+  a six-character word is one 84.0 px band from the first cell's left edge to the last one's right,
+  instead of six boxes with gaps.
+- **High contrast still reads**: `forced-colors` discards an author's blend, so the overlay paints
+  the system `Highlight` colour there instead of relying on `difference`.
+
+### Fixed
+
+- **A selection no longer looks like a serif-font highlight over monospaced text.** `demo-test.mjs`
+  measures the new behaviour: the highlight is `255 −` the canvas pixel within 2 levels on both ink
+  and background in the same cell, the canvas raster is unchanged by a selection, and the overlay
+  disappears when the selection is cleared, the page changes or another document is opened. Copying
+  is untouched -- the native selection is still what the copy button reads.
+
+Every crate moves with the group ([ADR 0009](docs/adr/0009-one-version-per-group.md)); only the demo
+changed, so this is a patch.
+
 ## [1.7.0] — 2026-11-18
 
 **Selection lands on the paint.** The demo's invisible text layer was built from the
