@@ -1,6 +1,6 @@
 [package]
 name = "pdf2"
-version = "1.5.0"
+version = "1.6.0"
 authors = ["Alexander Korolev <alexander.korolev.germany@gmail.com>"]
 edition = "2024"
 categories = ["parser-implementations", "text-processing"]

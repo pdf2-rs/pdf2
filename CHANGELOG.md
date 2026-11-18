@@ -4,7 +4,7 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.0] — in progress
+## [1.6.0] — 2026-11-18
 
 **Editing an opened document.** `MutableDocument` overlays a `Document` and saves
 *incrementally*: the saved file begins with the original bytes, carries a `/Prev` chain,
