@@ -722,29 +722,44 @@ async function main() {
       const marks = [...document.querySelectorAll('#selectionLayer i')];
       if (marks.length !== 1) return { marks: marks.length };
       const mark = marks[0].getBoundingClientRect();
-      // Scan the mark's middle row for the darkest and the lightest pixel.
-      const y = Math.round((mark.top + mark.height / 2 - canvasRect.top) * toBitmap);
-      let dark = null;
-      let light = null;
-      for (let x = Math.round((mark.left - canvasRect.left) * toBitmap);
-           x < Math.round((mark.right - canvasRect.left) * toBitmap); x += 1) {
-        const offset = (y * canvas.width + x) * 4;
-        const value = image.data[offset];
-        if (dark === null || value < dark.value) dark = { x, y, value };
-        if (light === null || value > light.value) light = { x, y, value };
+      // Sample *one CSS pixel* of the screenshot against the canvas pixels it
+      // covers, and only accept a position where those pixels agree: a 1x
+      // screenshot averages them, so a single dark pixel beside light ones would
+      // compare an average against one of its terms.
+      const sample = (x, y) => {
+        const values = [];
+        for (let bx = Math.floor((x - canvasRect.left) * toBitmap);
+             bx < Math.ceil((x + 1 - canvasRect.left) * toBitmap); bx += 1) {
+          for (let by = Math.floor((y - canvasRect.top) * toBitmap);
+               by < Math.ceil((y + 1 - canvasRect.top) * toBitmap); by += 1) {
+            values.push(image.data[(by * canvas.width + bx) * 4]);
+          }
+        }
+        return values.length > 0 ? values : [255];
+      };
+      const y = Math.round(mark.top + mark.height / 2) + 0.5;
+      const uniform = (values, low, high) => values.every((v) => v >= low && v <= high);
+      const average = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+      let ink = null;
+      let blank = null;
+      for (let x = Math.round(mark.left) + 0.5; x < mark.right - 0.5 && (ink === null || blank === null); x += 1) {
+        const values = sample(x, y);
+        if (ink === null && uniform(values, 0, 20)) ink = { x, y, value: average(values) };
+        if (blank === null && uniform(values, 240, 255)) blank = { x, y, value: average(values) };
       }
-      const probe = (pixel) => ({
-        cssX: canvasRect.left + (pixel.x + 0.5) / toBitmap,
-        cssY: canvasRect.top + (pixel.y + 0.5) / toBitmap,
-        value: pixel.value,
-      });
-      return { marks: marks.length, ink: probe(dark), blank: probe(light), rect: [mark.left, mark.top, mark.width, mark.height] };
+      return {
+        marks: marks.length,
+        ink: ink && { cssX: ink.x, cssY: ink.y, value: ink.value },
+        blank: blank && { cssX: blank.x, cssY: blank.y, value: blank.value },
+        rect: [mark.left, mark.top, mark.width, mark.height],
+      };
     `);
     check(
-      probes.marks === 1 && probes.ink.value <= 60 && probes.blank.value >= 240,
-      `the selected cell holds both ink and background: ${probes.ink?.value} and ${probes.blank?.value}`,
+      probes.marks === 1 && probes.ink !== null && probes.blank !== null,
+      `the selected cell holds a solid ink pixel and a solid background pixel: ` +
+        `${probes.ink?.value} and ${probes.blank?.value} over ${probes.marks} mark(s)`,
     );
-    if (probes.marks === 1) {
+    if (probes.ink && probes.blank) {
       const clip = {
         x: Math.max(0, Math.floor(probes.rect[0] - 2)),
         y: Math.max(0, Math.floor(probes.rect[1] - 2)),
