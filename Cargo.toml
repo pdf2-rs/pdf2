@@ -72,7 +72,7 @@ resolver = "3"
 # Bumped for every release of the group — library, renderer, CLI, wasm crate and
 # npm package all carry this number. `cargo run -q -p xtask -- versions` proves
 # nothing has drifted; the gate runs it.
-version = "1.7.2"
+version = "1.7.3"
 
 # Lint policy for every crate, so it holds in `cargo build` and `cargo test`
 # too, not only when someone remembers the flags CI uses. Keep this equal to
