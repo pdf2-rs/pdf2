@@ -62,6 +62,13 @@ documents carry are these.
 ADR 0005's 1.3.0 figures were +76 052, +62 495 and +137 502 — reproduced here within
 about two kilobytes, which is what makes this a decision rather than a quotation.
 
+**Re-measured on the 1.8.0 tree, 2026-11-18** (same commands, same gzip level, the
+`pdf2-wasm` artefact): no decoders **396 179**, `jpx` **474 353** (**+78 174**), `jbig2`
+**460 762** (**+64 583**). The baseline is ~30 KB larger than 1.4.0's because the library
+grew; the *deltas* moved by under a kilobyte, which is the quantity a budget decision
+rests on. The documents that quote a decoder price quote these: `docs/ROADMAP-NEXT.md`
+rank 9, `docs/DEFERRED.md`, `docs/FEATURES.md` and `docs/plans/jpx-jbig2.md`.
+
 **The method is part of the number.** A first attempt linked the crates by parsing
 only the codestream and page headers, and measured **+23 410** for both — because the
 decode path was unreachable and link-time dead-code elimination removed it. A decoder

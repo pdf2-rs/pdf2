@@ -49,7 +49,10 @@ three options and why the other two lost:
 | --- | --- | --- |
 | **A. Raise the budget** — rejected | `crates/pdf2-wasm/check.mjs` (`BUDGET_GZIP` 364 → ~493 KiB) and the budget paragraph in `docs/PERFORMANCE.md` | +138 481 gzip on every page load, for two codecs most PDFs never use |
 | **B. A non-default feature** — **chosen** | `crates/pdf2-render/Cargo.toml` (`jpx`/`jbig2` features), `crates/pdf2-wasm/Cargo.toml` (pass-through, off by default), `crates/xtask/src/main.rs` (`wasm_package` builds a second bundle), `crates/pdf2-wasm/check.mjs` (a budget per artefact), `crates/pdf2-wasm/demo` (which bundle to load), `.github/workflows/ci.yml` (build and size-check both in the `wasm package` job), `docs/PERFORMANCE.md` | nothing on the default bundle; a second artefact to build and test |
-| **C. JPX only, JBIG2 later** — rejected | as B, with only `jpx` enabled | +76 705 gzip, and it leaves the scanned-document case (JBIG2) broken while the feature machinery is already built |
+| **C. JPX only, JBIG2 later** — rejected | as B, with only `jpx` enabled | +78 174 gzip, and it leaves the scanned-document case (JBIG2) broken while the feature machinery is already built |
+
+Re-measured on the 1.8.0 tree on 2026-11-18, the figure the documents now quote: no
+decoders **396 179**, `jpx` **474 353** (**+78 174**), `jbig2` **460 762** (**+64 583**).
 
 Re-measured on the 1.4.0 tree before choosing (raw commands from
 `docs/PERFORMANCE.md`, gzip level 9, the same `wasm-bindgen`): no decoders **365 734**,
