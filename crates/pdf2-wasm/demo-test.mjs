@@ -96,6 +96,10 @@ async function launchChrome() {
       '--no-first-run',
       '--no-default-browser-check',
       '--window-size=1200,900',
+      // A screenshot is compared channel by channel with canvas values, so the
+      // compositor must work in sRGB: without this the profile of the machine
+      // decides (macOS passed, a Linux runner turned 255 into 241).
+      '--force-color-profile=srgb',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
       'about:blank',
@@ -582,7 +586,17 @@ async function main() {
       const range = document.createRange();
       range.setStartBefore(word[0]);
       range.setEndAfter(word[word.length - 1]);
-      const selection = range.getBoundingClientRect();
+      const native = window.getSelection();
+      native.removeAllRanges();
+      native.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((done) => requestAnimationFrame(done));
+      // What a reader sees is the overlay, not the browser's own rect.
+      const marks = [...document.querySelectorAll('#selectionLayer i')].map((mark) => mark.getBoundingClientRect());
+      const selection = marks.length === 1
+        ? marks[0]
+        : { left: Math.min(...marks.map((m) => m.left)), right: Math.max(...marks.map((m) => m.right)),
+            top: Math.min(...marks.map((m) => m.top)), bottom: Math.max(...marks.map((m) => m.bottom)) };
       const text = word.map((span) => span.textContent).join('');
       // Ink inside that rectangle, in canvas pixels.
       const x0 = Math.floor((selection.left - canvasRect.left) * toBitmap);
@@ -632,6 +646,218 @@ async function main() {
           `inside selection ${alignment.selection.map((v) => v.toFixed(1))}, ` +
           `left gap ${leftDelta.toFixed(1)} px, overflow ${overflow.toFixed(1)} px`,
       );
+    }
+
+    // The highlight is ours: one rectangle per line, welded from the glyph cells,
+    // so adjacent characters share an edge. The browser's own `::selection` is
+    // transparent -- it follows the font it substituted (4.6 px for an "l" inside
+    // a 14 px cell) and would show slivers between the letters.
+    const merge = await evaluate(`
+      const spans = [...document.querySelectorAll('#textLayer span')];
+      const word = spans.slice(0, 6);
+      const range = document.createRange();
+      range.setStartBefore(word[0]);
+      range.setEndAfter(word[word.length - 1]);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((done) => requestAnimationFrame(done));
+      const marks = [...document.querySelectorAll('#selectionLayer i')];
+      const cells = word.map((span) => span.getBoundingClientRect());
+      const mark = marks[0] ? marks[0].getBoundingClientRect() : null;
+      return {
+        text: word.map((span) => span.textContent).join(''),
+        marks: marks.length,
+        width: mark ? mark.width : 0,
+        sum: cells.reduce((total, cell) => total + cell.width, 0),
+        left: mark ? mark.left : 0,
+        firstLeft: cells[0].left,
+        right: mark ? mark.right : 0,
+        lastRight: cells[cells.length - 1].right,
+        height: mark ? mark.height : 0,
+        cellHeight: cells[0].height,
+      };
+    `);
+    check(
+      merge.marks === 1,
+      `the ${JSON.stringify(merge.text)} selection is one rectangle per line: ${merge.marks} mark(s)`,
+    );
+    check(
+      Math.abs(merge.width - merge.sum) <= 0.5,
+      `its width is the cells it welds: ${merge.width.toFixed(1)} against ${merge.sum.toFixed(1)} px`,
+    );
+    check(
+      Math.abs(merge.left - merge.firstLeft) <= 0.5 && Math.abs(merge.right - merge.lastRight) <= 0.5,
+      `it runs from the first cell to the last: ${merge.left.toFixed(1)}..${merge.right.toFixed(1)} ` +
+        `against ${merge.firstLeft.toFixed(1)}..${merge.lastRight.toFixed(1)}`,
+    );
+    check(
+      Math.abs(merge.height - merge.cellHeight) <= 0.5,
+      `its height is the glyph's cell, not the font's metrics: ${merge.height.toFixed(1)} against ` +
+        `${merge.cellHeight.toFixed(1)} px`,
+    );
+
+    // It is an inversion, not a tint: under the overlay the page is the `255 -`
+    // of itself. The sample below finds an inked pixel and a blank one inside the
+    // *same* cell, reads both from the canvas, then reads the same two spots off a
+    // screenshot -- the only way to see what the blend composed.
+    const probes = await evaluate(`
+      const spans = [...document.querySelectorAll('#textLayer span')];
+      const word = spans.slice(0, 6);
+      const range = document.createRange();
+      range.setStartBefore(word[0]);
+      range.setEndAfter(word[word.length - 1]);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((done) => requestAnimationFrame(done));
+
+      const canvas = document.querySelector('#canvas');
+      const context = canvas.getContext('2d');
+      const canvasRect = canvas.getBoundingClientRect();
+      const toBitmap = canvas.width / canvasRect.width;
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const marks = [...document.querySelectorAll('#selectionLayer i')];
+      if (marks.length !== 1) return { marks: marks.length };
+      const mark = marks[0].getBoundingClientRect();
+      // Sample *one CSS pixel* of the screenshot against the canvas pixels it
+      // covers, and only accept a position where those pixels agree: a 1x
+      // screenshot averages them, so a single dark pixel beside light ones would
+      // compare an average against one of its terms.
+      const sample = (x, y) => {
+        const values = [];
+        for (let bx = Math.floor((x - canvasRect.left) * toBitmap);
+             bx < Math.ceil((x + 1 - canvasRect.left) * toBitmap); bx += 1) {
+          for (let by = Math.floor((y - canvasRect.top) * toBitmap);
+               by < Math.ceil((y + 1 - canvasRect.top) * toBitmap); by += 1) {
+            values.push(image.data[(by * canvas.width + bx) * 4]);
+          }
+        }
+        return values.length > 0 ? values : [255];
+      };
+      const y = Math.round(mark.top + mark.height / 2) + 0.5;
+      const uniform = (values, low, high) => values.every((v) => v >= low && v <= high);
+      const average = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+      let ink = null;
+      let blank = null;
+      for (let x = Math.round(mark.left) + 0.5; x < mark.right - 0.5 && (ink === null || blank === null); x += 1) {
+        const values = sample(x, y);
+        if (ink === null && uniform(values, 0, 20)) ink = { x, y, value: average(values) };
+        if (blank === null && uniform(values, 240, 255)) blank = { x, y, value: average(values) };
+      }
+      return {
+        marks: marks.length,
+        ink: ink && { cssX: ink.x, cssY: ink.y, value: ink.value },
+        blank: blank && { cssX: blank.x, cssY: blank.y, value: blank.value },
+        rect: [mark.left, mark.top, mark.width, mark.height],
+      };
+    `);
+    check(
+      probes.marks === 1 && probes.ink !== null && probes.blank !== null,
+      `the selected cell holds a solid ink pixel and a solid background pixel: ` +
+        `${probes.ink?.value} and ${probes.blank?.value} over ${probes.marks} mark(s)`,
+    );
+    if (probes.ink && probes.blank) {
+      const clip = {
+        x: Math.max(0, Math.floor(probes.rect[0] - 2)),
+        y: Math.max(0, Math.floor(probes.rect[1] - 2)),
+        width: Math.ceil(probes.rect[2] + 4),
+        height: Math.ceil(probes.rect[3] + 4),
+        scale: 1,
+      };
+      const shot = await send('Page.captureScreenshot', { format: 'png', clip });
+      const inverted = await evaluate(`
+        const bytes = Uint8Array.from(atob(${JSON.stringify(shot.data)}), (c) => c.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+        const offscreen = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const context = offscreen.getContext('2d');
+        context.drawImage(bitmap, 0, 0);
+        const read = (cssX, cssY) => {
+          const pixel = context.getImageData(Math.round(cssX - ${clip.x}), Math.round(cssY - ${clip.y}), 1, 1).data;
+          return [pixel[0], pixel[1], pixel[2]];
+        };
+        return {
+          ink: read(${probes.ink.cssX}, ${probes.ink.cssY}),
+          blank: read(${probes.blank.cssX}, ${probes.blank.cssY}),
+          size: [bitmap.width, bitmap.height],
+        };
+      `);
+      const expectInverted = (shown, canvasValue) =>
+        shown.every((channel) => Math.abs(channel - (255 - canvasValue)) <= 2);
+      check(
+        expectInverted(inverted.ink, probes.ink.value),
+        `ink inverts: ${JSON.stringify(inverted.ink)} under canvas ${probes.ink.value}`,
+      );
+      check(
+        expectInverted(inverted.blank, probes.blank.value),
+        `the blank part of the cell inverts too: ${JSON.stringify(inverted.blank)} under canvas ${probes.blank.value}`,
+      );
+    }
+
+    // The overlay is DOM, so the page's own pixels cannot move because of it.
+    const untouched = await evaluate(`
+      const canvas = document.querySelector('#canvas');
+      const context = canvas.getContext('2d');
+      const sample = () => {
+        const image = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        const values = [];
+        for (let index = 0; index < image.length; index += 997) values.push(image[index]);
+        return values;
+      };
+      const before = sample();
+      window.getSelection().removeAllRanges();
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((done) => requestAnimationFrame(done));
+      const after = sample();
+      return { equal: before.length === after.length && before.every((v, i) => v === after[i]), count: before.length };
+    `);
+    check(untouched.equal, `the canvas raster did not change with the selection: ${untouched.count} samples`);
+
+    // High contrast throws an author's blend away, so the overlay must paint a
+    // system colour there instead -- and the emulation has to come off again for
+    // every check that follows.
+    await send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'forced-colors', value: 'active' }],
+    });
+    try {
+      const contrast = await evaluate(`
+        const spans = [...document.querySelectorAll('#textLayer span')];
+        const word = spans.slice(0, 6);
+        const range = document.createRange();
+        range.setStartBefore(word[0]);
+        range.setEndAfter(word[word.length - 1]);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new Event('selectionchange'));
+        await new Promise((done) => requestAnimationFrame(done));
+        const mark = document.querySelector('#selectionLayer i');
+        const probe = document.createElement('i');
+        probe.style.background = 'Highlight';
+        document.body.append(probe);
+        const highlight = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        const style = mark ? getComputedStyle(mark) : null;
+        return {
+          forced: matchMedia('(forced-colors: active)').matches,
+          blend: style ? style.mixBlendMode : 'none',
+          background: style ? style.backgroundColor : 'none',
+          highlight,
+        };
+      `);
+      check(contrast.forced, 'the page reports forced colours active');
+      check(
+        contrast.blend === 'normal',
+        `the overlay drops the blend in high contrast: ${contrast.blend}`,
+      );
+      check(
+        contrast.background === contrast.highlight,
+        `it paints the system Highlight instead: ${contrast.background} against ${contrast.highlight}`,
+      );
+    } finally {
+      await send('Emulation.setEmulatedMedia', { features: [] });
     }
 
     // A drag across the line still reads the line: per-glyph spans must not
@@ -687,7 +913,16 @@ async function main() {
       const range = document.createRange();
       range.setStartBefore(word[0]);
       range.setEndAfter(word[word.length - 1]);
-      const selection = range.getBoundingClientRect();
+      const native = window.getSelection();
+      native.removeAllRanges();
+      native.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((done) => requestAnimationFrame(done));
+      const marks = [...document.querySelectorAll('#selectionLayer i')].map((mark) => mark.getBoundingClientRect());
+      const selection = marks.length === 1
+        ? marks[0]
+        : { left: Math.min(...marks.map((m) => m.left)), right: Math.max(...marks.map((m) => m.right)),
+            top: Math.min(...marks.map((m) => m.top)), bottom: Math.max(...marks.map((m) => m.bottom)) };
       const x0 = Math.floor((selection.left - canvasRect.left) * toBitmap);
       const x1 = Math.ceil((selection.right - canvasRect.left) * toBitmap);
       const y0 = Math.max(0, Math.floor((selection.top - canvasRect.top) * toBitmap));
@@ -760,6 +995,98 @@ async function main() {
     check(
       typeof copied === 'string' && copied.trim() === selected.text.trim(),
       `the copy button passes the selection on: ${JSON.stringify(copied)}`,
+    );
+
+    // The overlay lives exactly as long as the selection: a click elsewhere, a
+    // page change and a new document each leave no inverted band on the page.
+    const lifetime = await evaluate(`
+      const count = () => document.querySelectorAll('#selectionLayer i').length;
+      const list = [...document.querySelectorAll('#textLayer span')];
+      const range = document.createRange();
+      range.setStartBefore(list[0]);
+      range.setEndAfter(list[1]);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((done) => requestAnimationFrame(done));
+      const selected = count();
+      selection.removeAllRanges();
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise((done) => requestAnimationFrame(done));
+      return { selected, afterDeselect: count() };
+    `);
+    check(
+      lifetime.selected > 0 && lifetime.afterDeselect === 0,
+      `the overlay disappears with the selection: ${lifetime.selected} then ${lifetime.afterDeselect} mark(s)`,
+    );
+
+    // A page change rebuilds the layer, so the old highlight must not survive it.
+    // `calibration.pdf` has eleven pages and only some carry text -- page 6 does.
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      const option = [...select.options].find((o) => /Calibration/.test(o.textContent));
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(`document.querySelector('#factName').textContent === 'calibration.pdf'`, 'the calibration sample');
+    for (let page = 2; page <= 6; page += 1) {
+      await evaluate(`document.querySelector('#next').click();`);
+      await waitFor(
+        `document.querySelector('#pageInfo').textContent.startsWith('${page} /')`,
+        `the calibration sample to reach page ${page}`,
+      );
+    }
+    await new Promise((done) => setTimeout(done, 300));
+    await evaluate(`
+      const list = [...document.querySelectorAll('#textLayer span')];
+      const range = document.createRange();
+      range.setStartBefore(list[0]);
+      range.setEndAfter(list[Math.min(3, list.length - 1)]);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+    `);
+    await new Promise((done) => setTimeout(done, 100));
+    const overlayBeforePage = await evaluate(`return document.querySelectorAll('#selectionLayer i').length;`);
+    await evaluate(`document.querySelector('#next').click();`);
+    await waitFor(
+      `document.querySelector('#pageInfo').textContent.startsWith('7 /')`,
+      'the calibration sample to page forward',
+    );
+    await new Promise((done) => setTimeout(done, 300));
+    const overlayAfterPage = await evaluate(`return document.querySelectorAll('#selectionLayer i').length;`);
+    check(
+      overlayBeforePage > 0 && overlayAfterPage === 0,
+      `a page change leaves no mark behind: ${overlayBeforePage} then ${overlayAfterPage}`,
+    );
+
+    // And neither does loading another document.
+    await evaluate(`
+      const list = [...document.querySelectorAll('#textLayer span')];
+      const range = document.createRange();
+      range.setStartBefore(list[0]);
+      range.setEndAfter(list[Math.min(3, list.length - 1)]);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+    `);
+    await new Promise((done) => setTimeout(done, 100));
+    const overlayBeforeDocument = await evaluate(`return document.querySelectorAll('#selectionLayer i').length;`);
+    await evaluate(`
+      const select = document.querySelector('#sample');
+      const option = [...select.options].find((o) => /Text and accents/.test(o.textContent));
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+    await waitFor(`document.querySelector('#factName').textContent === 'text.pdf'`, 'the text sample again');
+    await new Promise((done) => setTimeout(done, 300));
+    const overlayAfterDocument = await evaluate(`return document.querySelectorAll('#selectionLayer i').length;`);
+    check(
+      overlayBeforeDocument > 0 && overlayAfterDocument === 0,
+      `a new document leaves no mark behind: ${overlayBeforeDocument} then ${overlayAfterDocument}`,
     );
 
     // The find box reads the library's search: the counter, one mark per hit, and

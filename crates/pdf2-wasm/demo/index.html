@@ -143,8 +143,10 @@
         max-height: 78vh;
       }
       /* The canvas and its text layer share one positioned box, so a span's page
-         coordinates become CSS pixels against the same origin the page is drawn at. */
-      .page-box { position: relative; flex: none; margin: auto; }
+         coordinates become CSS pixels against the same origin the page is drawn at.
+         `isolate` keeps the selection overlay's difference blend inside this box:
+         without it the blend would reach the page behind the canvas. */
+      .page-box { position: relative; flex: none; margin: auto; isolation: isolate; }
       /* The text is there for selection and copying, not for reading: transparent,
          over the pixels the canvas already drew. */
       .text-layer {
@@ -161,7 +163,32 @@
         line-height: 1;
         transform-origin: 0 0;
       }
-      .text-layer span::selection { background: rgba(43, 108, 176, 0.35); }
+      /* The browser paints `::selection` over the *shaped* text, so its rectangles
+         follow the font it substituted (4.6 px for an "l" where the page painted
+         14 px). The highlight is drawn by `.selection-layer` from the layer's own
+         glyph cells instead; the native selection stays for copying. */
+      .text-layer span::selection { background: transparent; }
+      .selection-layer {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      /* A white overlay in `difference` mode inverts whatever is beneath it, which
+         is how a selection reads on a page of any colour. */
+      .selection-layer i {
+        position: absolute;
+        background: #fff;
+        mix-blend-mode: difference;
+      }
+      /* High contrast discards an author's blend (MDN, forced-colors), so the
+         overlay paints a system highlight there rather than a bare white box. */
+      @media (forced-colors: active) {
+        .selection-layer i {
+          background: Highlight;
+          mix-blend-mode: normal;
+        }
+      }
       .find-mark {
         position: absolute;
         background: rgba(255, 214, 0, 0.45);
@@ -350,6 +377,7 @@
             <div class="page-box" id="pageBox">
               <canvas id="canvas" width="0" height="0"></canvas>
               <div class="text-layer" id="textLayer"></div>
+              <div class="selection-layer" id="selectionLayer" aria-hidden="true"></div>
             </div>
           </div>
           <div class="minimap" id="minimapBox" aria-hidden="true">
