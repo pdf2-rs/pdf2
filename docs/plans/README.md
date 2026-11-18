@@ -8,6 +8,10 @@ The rule from the objective stands: **nothing here is an implementation**. These
 plans, written so that a later objective can be cut from them without re-reading the
 register or the standard.
 
+[`docs/OBJECTIVES.md`](../OBJECTIVES.md) is the other half: it lists every open item in
+this repository as a ranked sequence of objectives and says, for each, which plan it is
+cut from — and which objectives still have no plan file at all.
+
 ## The template
 
 Every plan has these five headings, in this order. Each exists because of a way a plan
