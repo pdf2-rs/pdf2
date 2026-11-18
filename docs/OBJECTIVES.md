@@ -21,69 +21,65 @@ ls docs/plans/*.md                   # 11 files: 10 plans + README
 ledger: 114 rows, 21 roadmap items, every item owned and every shipped row evidenced
 ```
 
-`docs/FEATURES.md` holds **117 status rows**: 59 `shipped`, 2 `shipped (partial)`, 5 `not applicable`,
-1 `deferred`, 8 `refused`, **14 `scheduled`** and **28 `unplanned`** — the 42 open ones are listed below.
-`docs/ROADMAP-NEXT.md` carries 21 ranks, of which **8 are open** (`4, 5, 9, 10, 10b, 10c, 12, 13`) and 13
-are marked shipped. `docs/DEFERRED.md` holds **4 open items** (ICC, mesh shadings, forms filling, validation), 5 refusals
-with an ADR line, and **3 rows that still read as deferred although the code shipped them** (tiling
-patterns, colour-key `/Mask`, the `Tr` 4-7 clipping half — `tests/tiling.rs`, `tests/colour_key.rs`,
-`tests/tr_clip.rs`, `tests/tr_clip_type3.rs`), which the corrections queue below picks up. `docs/plans/` holds 10 plans and a template readme.
+`docs/FEATURES.md` holds **117 status rows**: 51 `shipped`, 15 `shipped (partial)`, 2 partly-shipped rows
+with a bare `partial`, 5 `not applicable`, 1 `deferred`, 8 `refused`, **11 `scheduled`** and **24
+`unplanned`** — the 35 open ones are listed below. `docs/ROADMAP-NEXT.md` carries 21 ranks, of which **7 are
+open** (`5, 9, 10, 10b, 10c, 12, 13`) and 14 are marked shipped. `docs/DEFERRED.md` holds **4 open items**
+(ICC, mesh shadings, forms filling, validation) and 5 refusals with an ADR line; the three rows that used to
+read as deferred although the code shipped them (tiling patterns, colour-key `/Mask`, the `Tr` 4-7 clipping
+half) are struck through with their tests named, as the JPX and JBIG2 row already was. `docs/plans/` holds
+10 plans and a template readme.
 
-## Open rows in `docs/FEATURES.md` (42)
+The ten contradictions this inventory started with were corrected in PR #160 (`bc9b72e`), which also made
+`crates/xtask/src/main.rs`'s usage text name invocations that exist — see "Corrections applied" at the end.
 
-| line | item | status | note |
+## Open rows in `docs/FEATURES.md` (35)
+
+| line | item | status | owner |
 | --- | --- | --- | --- |
-| 71 | Object streams at scale (65k objects, budgeted time) | scheduled 8 | rank 8 is shipped in `ROADMAP-NEXT.md` — Q2 correction |
-| 72 | Damaged files: repair/rebuild policy beyond error reporting | unplanned |  |
-| 74 | Linearisation (write) | unplanned |  |
-| 78 | 7.10 Functions used for anything else | scheduled 10 |  |
-| 79 | 7.11 Embedded files and file specifications (/EmbeddedFiles, /Filespec) | unplanned |  |
-| 80 | 7.12 Extensions dictionary | unplanned |  |
-| 97 | Images above 8 bits per component | unplanned |  |
-| 100 | /Interpolate beyond bilinear | unplanned |  |
-| 109 | ICC colour management (profiles actually applied) | scheduled 10b |  |
-| 125 | Predefined CMaps (other than Japan1 90ms-RKSJ-H) | scheduled 5 |  |
-| 127 | /FontFile Type 1 (PFB/PFA) programs | scheduled 4 | code ships it (`crates/pdf2-render/src/type1.rs`) — Q2 correction |
-| 129 | Type 3 fonts | scheduled 10 |  |
-| 130 | Vertical writing mode | unplanned |  |
-| 148 | Shadings and patterns | scheduled 10 |  |
-| 149 | Transparency groups, soft masks, blend modes (11) | scheduled 10 |  |
-| 150 | 8.10 Form XObjects (/Subtype /Form) | scheduled 10d | code ships it (`crates/pdf2-render/src/walk.rs:1152`) — Q2 correction |
-| 153 | 8.11 Optional content (layers, /OCProperties) | unplanned |  |
-| 180 | 12.2 Viewer preferences | unplanned |  |
-| 181 | 12.3 Document-level navigation — outlines, destinations, /OpenAction | unplanned |  |
-| 182 | 12.4 Page-level navigation — link annotations and /Dest | scheduled 12 |  |
-| 183 | 12.5 Annotations — read, render, appearance streams | scheduled 12 |  |
-| 184 | 12.6 Actions — /GoTo, /URI, JavaScript | unplanned |  |
-| 185 | 12.7 Forms — read, render, fill | scheduled 12 |  |
-| 187 | 12.9 Measurement properties (PDF 2.0) | unplanned |  |
-| 188 | 12.10 Geospatial features (PDF 2.0) | unplanned |  |
-| 189 | 12.11 Document requirements (PDF 2.0) | unplanned |  |
-| 197 | 13.2 Multimedia, 13.7 Rich media | unplanned |  |
-| 198 | 13.3 Sounds | unplanned |  |
-| 199 | 13.4 Movies | unplanned |  |
-| 200 | 13.5 Alternate presentations | unplanned |  |
-| 210 | 14.4 File identifiers (/ID) | unplanned | code writes it (`src/edit.rs`) — Q2 correction |
-| 211 | 14.5 Page-piece dictionaries | unplanned |  |
-| 212 | 14.6 Marked content — BMC/BDC/EMC, /ActualText, /Artifact | unplanned | code reads it (`src/content.rs`) — Q2 correction |
-| 215 | 14.11 Prepress — output intents, separations | unplanned |  |
-| 216 | 14.12 Document parts | unplanned |  |
-| 217 | 14.13 Associated files | scheduled 12 |  |
-| 231 | O Fragment identifiers | unplanned |  |
-| 232 | Q Method for determining transparency on a page | unplanned |  |
-| 242 | Encryption on write | unplanned | incremental save carries encryption (`src/edit.rs`); what a new document cannot do needs a check in Q2 |
-| 254 | CLI render subcommand | unplanned |  |
-| 256 | wasm/npm API growth (spans, page boxes, structured errors) | unplanned | `spans`, `spansTexts` and `glyphs` exist in `crates/pdf2-wasm/src/lib.rs`; page boxes exist, structured errors do not — narrow in Q2 |
-| 262 | Validation (PDF/A, PDF 2.0 conformance) | scheduled 13 |  |
+| 72 | Damaged files: repair/rebuild policy beyond error reporting | unplanned | — |
+| 74 | Linearisation (write) | unplanned | — |
+| 78 | 7.10 Functions used for anything else | scheduled 10 | 10 |
+| 79 | 7.11 Embedded files and file specifications (/EmbeddedFiles, /Filespec) | unplanned | — |
+| 80 | 7.12 Extensions dictionary | unplanned | — |
+| 97 | Images above 8 bits per component | unplanned | — |
+| 100 | /Interpolate beyond bilinear | unplanned | — |
+| 109 | ICC colour management (profiles actually applied) | scheduled 10b | 10b |
+| 125 | Predefined CMaps (other than Japan1 90ms-RKSJ-H) | scheduled 5 | 5 |
+| 129 | Type 3 fonts | scheduled 10 | 10 |
+| 130 | Vertical writing mode | unplanned | — |
+| 148 | Shadings and patterns | scheduled 10 | 10 |
+| 149 | Transparency groups, soft masks, blend modes (11) | scheduled 10 | 10 |
+| 153 | 8.11 Optional content (layers, /OCProperties) | unplanned | — |
+| 180 | 12.2 Viewer preferences | unplanned | — |
+| 181 | 12.3 Document-level navigation — outlines, destinations, /OpenAction | unplanned | — |
+| 182 | 12.4 Page-level navigation — link annotations and /Dest | scheduled 12 | 12 |
+| 183 | 12.5 Annotations — read, render, appearance streams | scheduled 12 | 12 |
+| 184 | 12.6 Actions — /GoTo, /URI, JavaScript | unplanned | — |
+| 185 | 12.7 Forms — read, render, fill | scheduled 12 | 12 |
+| 187 | 12.9 Measurement properties (PDF 2.0) | unplanned | — |
+| 188 | 12.10 Geospatial features (PDF 2.0) | unplanned | — |
+| 189 | 12.11 Document requirements (PDF 2.0) | unplanned | — |
+| 197 | 13.2 Multimedia, 13.7 Rich media | unplanned | — |
+| 198 | 13.3 Sounds | unplanned | — |
+| 199 | 13.4 Movies | unplanned | — |
+| 200 | 13.5 Alternate presentations | unplanned | — |
+| 211 | 14.5 Page-piece dictionaries | unplanned | — |
+| 215 | 14.11 Prepress — output intents, separations | unplanned | — |
+| 216 | 14.12 Document parts | unplanned | — |
+| 217 | 14.13 Associated files | scheduled 12 | 12 |
+| 231 | O Fragment identifiers | unplanned | — |
+| 232 | Q Method for determining transparency on a page | unplanned | — |
+| 254 | CLI render subcommand | unplanned | — |
+| 262 | Validation (PDF/A, PDF 2.0 conformance) | scheduled 13 | 13 |
 
-## Open ranks in `docs/ROADMAP-NEXT.md` (8)
+## Open ranks in `docs/ROADMAP-NEXT.md` (7)
 
 The roadmap's own columns are kept, so an objective's effort and its proof strategy can be read without
 opening the file. Ranks marked **✓** there are shipped and are not repeated here.
 
 | line | rank | what remains | effort | proof (done when) | depends on |
 | --- | --- | --- | --- | --- | --- |
-| 38 | 4 | CFF / Type 1 outlines — CFF shipped 2026-11-15, Type 1 (/FontFile) still scheduled | 2 | No font:FontFile report on the corpus CFF files, and their pages pass the oracle check from item 1 | 1 (to verify), D2's dependency verdict |
 | 39 | 5 | Predefined CMaps and CJK text — one CMap (90ms-RKSJ-H) shipped 2026-11-15, the rest data work | 2 | The CJK sample extracts its text; the shipped data is measured against the wasm budget | 2, and the licence first: Adobe's CMaps are BSD-3-Clause and deny.toml allows no BSD licence (docs/FEATURES.md §Outside facts), so the allow-list entry and notice — or a home outside the crate — come before the data |
 | 45 | 9 | Image decoders behind features — DCT (RGB and CMYK) and CCITT 1-D/2-D shipped; JPEG 2000 and JBIG2 unblocked 2026-11-17 by the 1.100 floor and now a s | 3 | Those four pages have ink and pass the oracle check, with the budget decision recorded — raise the npm budget to ~499 KiB, or ship behind a non-defaul | 1 (to verify) |
 | 46 | 10 | Painting completeness — shadings, functions, /Separation, /DeviceN, /PatternType 2, cs/scn, Type 3 and CFF fonts shipped 2026-11-16; tiling patterns a | 7 | Oracle diff on those corpus pages; docs/RENDERING.md's "still unproven" list shrinks to /UserUnit and >8-bit images | 1 |
@@ -97,9 +93,9 @@ opening the file. Ranks marked **✓** there are shipped and are not repeated he
 | line | item | state | plan or evidence |
 | --- | --- | --- | --- |
 | 37 | ICC colour management (`10b`) | open | [plan](plans/icc.md) |
-| 38 | Tiling patterns (`/PatternType 1`) | **shipped 1.4.0** — row is stale (Q2) | `tests/tiling.rs`, `tests/pattern.rs` |
-| 39 | Colour-key `/Mask` | **shipped 1.4.0** — row is stale (Q2) | `tests/colour_key.rs` |
-| 40 | The clipping half of `Tr` modes 4-7 | **shipped 1.5.0** — row is stale (Q2) | `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` |
+| 38 | Tiling patterns (`/PatternType 1`) | **shipped 1.4.0**, row struck through in Q2 | `tests/tiling.rs`, `tests/pattern.rs` |
+| 39 | Colour-key `/Mask` | **shipped 1.4.0**, row struck through in Q2 | `tests/colour_key.rs`; a stream `/Mask` stencil is still refused (`crates/pdf2-render/src/image.rs:89`) |
+| 40 | The clipping half of `Tr` modes 4-7 | **shipped 1.5.0**, row struck through in Q2 | `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` |
 | (mesh) | Mesh shadings `/ShadingType` 4-7 | open | [plan](plans/mesh-shadings.md), refused by name at `crates/pdf2-render/src/shading.rs:125-129` |
 | 24 | Editing an opened document | **shipped 1.6.0** | `src/edit.rs`, `tests/edit.rs` |
 | 25 | Forms filling and annotation authoring | open | [plan](plans/forms.md) |
@@ -166,29 +162,34 @@ strategy.
 | `/Linearized` | 1 | bug_jpx.pdf |
 | `/Metadata` | 11 | ShowText-ShadingPattern.pdf, alphatrans.pdf |
 
-## Corrections queue (Q2)
+## Corrections applied (Q2, PR #160 `bc9b72e`)
 
-Ten rows state a status the code contradicts (seven of them in `docs/FEATURES.md`), and two more need
-narrowing rather than correction. Each is a `file:line` a later round can check directly:
+The inventory found ten rows that described work which had shipped, and the gate could not see them:
+`cargo run -q -p xtask -- ledger` proves every row has an owner and a rank, not that a status matches the
+tree. They are corrected, each with the file and the test that proves it:
 
-| where | says | the code says |
+| where | was | now |
 | --- | --- | --- |
-| `docs/FEATURES.md:127` | Type 1 "scheduled 4 / Not parsed" | `crates/pdf2-render/src/type1.rs`, `tests/type1.rs`, `tests/fixtures/type1.pdf` |
-| `docs/FEATURES.md:150` | `8.10` Form XObjects "not drawn at all" | `crates/pdf2-render/src/walk.rs:1152` |
-| `docs/FEATURES.md:210` | `/ID` "not read or written" | `src/edit.rs:245-423`, and row 75 of the same file |
-| `docs/FEATURES.md:212` | `/ActualText` "never replaces what extraction returns" | `src/content.rs:400-738` |
-| `docs/FEATURES.md:160` | render-time budget "shipped" | `docs/ROADMAP-NEXT.md:52` says no page-count timing exists |
-| `docs/FEATURES.md:71` | "scheduled 8" | `docs/ROADMAP-NEXT.md:44` marks rank 8 shipped |
-| `docs/FEATURES.md:150` | "scheduled 10d" | `docs/ROADMAP-NEXT.md` marks 10d shipped |
-| `docs/ROADMAP-NEXT.md:38` | Type 1 "still scheduled" | as row 127 |
-| `docs/FEATURES.md:242, :256` | encryption on write, wasm API growth "unplanned" | partly shipped; narrow the statement rather than flip it |
-| `docs/DEFERRED.md:38` | tiling patterns deferred | drawn since 1.4.0 — `tests/tiling.rs`, `tests/pattern.rs` |
-| `docs/DEFERRED.md:39` | colour-key `/Mask` deferred | drawn since 1.4.0 — `tests/colour_key.rs` |
-| `docs/DEFERRED.md:40` | `Tr` 4-7 clipping deferred | drawn since 1.5.0 — `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` |
+| `docs/FEATURES.md:71` | 65k-object document "scheduled 8" | `shipped` — `crates/pdf2-bench/src/corpus.rs:91,195`, `objects-65000` in `docs/PERFORMANCE.md`, `DEFAULT_OBJECT_LIMIT` at `src/document.rs:37` |
+| `docs/FEATURES.md:127` | Type 1 "scheduled 4 / Not parsed" | `shipped` — `crates/pdf2-render/src/type1.rs`, `tests/type1.rs`, `tests/fixtures/type1.pdf` |
+| `docs/FEATURES.md:150` | `8.10` Form XObjects "not drawn at all" | `shipped` — `crates/pdf2-render/src/walk.rs:1152`, `MAX_FORM_DEPTH` |
+| `docs/FEATURES.md:160` | render-time budget "shipped" | `shipped (partial)` — the budget shipped, a page-count timing did not |
+| `docs/FEATURES.md:210` | `/ID` "not read or written" | `shipped (partial)` — read and carried by an incremental save (`src/edit.rs:373-378`, ADR 0006 §5); `Document::new` emits none |
+| `docs/FEATURES.md:212` | `/ActualText` "never replaces what extraction returns" | `shipped (partial)` — it does (`src/content.rs:400-738`); `/Artifact` is still extracted as text |
+| `docs/FEATURES.md:242` | "encryption on write: unplanned" | `shipped (partial)` — updates are re-encrypted with the base's handler; a new document is not |
+| `docs/FEATURES.md:256` | wasm API growth "unplanned" | `shipped (partial)` — `spans`, `span_texts`, `glyphs`, `glyph_texts`, `page_size`, `search*`, `metadata` exist; errors are still strings |
+| `docs/ROADMAP-NEXT.md:38` | rank 4 "Type 1 still scheduled" | `4 ✓`, shipped 2026-11-16 |
+| `docs/DEFERRED.md:38,39,40` | tiling patterns, colour-key `/Mask`, `Tr` 4-7 "deferred" | struck through as shipped, with `tests/tiling.rs`, `tests/pattern.rs`, `tests/colour_key.rs`, `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` named |
 
-Five shipped rows also cite crate-relative paths (`tests/ext_gstate.rs`, `tests/shading.rs`,
-`tests/blend_modes.rs`, `tests/annotations.rs` twice) that resolve only under `crates/pdf2-render/` —
-recorded here because a future `xtask ledger` path check needs the convention decided first.
+`crates/xtask/src/main.rs`'s usage text also advertised `cargo xtask <chore>`, which is not a command — only
+`gate`, `fixtures` and `bless` have an alias in `.cargo/config.toml`. It now names the three aliases and
+`cargo run -q -p xtask -- <chore>` for everything else, because every exit criterion in the sequence below
+is copied from there.
+
+**Still open as a note, not a correction**: five shipped rows cite crate-relative paths
+(`tests/ext_gstate.rs`, `tests/shading.rs`, `tests/blend_modes.rs`, `tests/annotations.rs` twice) that
+resolve only under `crates/pdf2-render/`. They are correct where they live; a future `xtask ledger` path
+check needs that convention decided first.
 
 ## Figures this document does not have yet
 
