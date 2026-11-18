@@ -252,6 +252,13 @@ expect(
   const manifest = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'));
   expect(stamp.version === manifest.version, `build.json names version ${manifest.version}`);
   expect(/\/^[0-9]+$/.test('') || /^[0-9]+$/.test(stamp.build), 'build.json carries a build stamp');
+  // The revision says which commit the build came from, and `-dirty` says the
+  // tree had changes beyond it; `unknown` is the honest answer when there is no
+  // git to ask. Anything else is a writer that guessed.
+  expect(
+    /^(?:[0-9a-f]{12}(?:-dirty)?|unknown)$/.test(stamp.rev ?? ''),
+    `build.json carries a revision, not "${stamp.rev}"`,
+  );
 
   const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((match) => match[1]));
   const demoPkg = readdirSync(join(demo, 'pkg'));
