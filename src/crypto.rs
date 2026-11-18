@@ -27,7 +27,8 @@
 use alloc::vec::Vec;
 
 use aes::cipher::{
-    BlockDecrypt, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, block_padding::NoPadding,
+    BlockDecrypt, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit,
+    block_padding::{NoPadding, Pkcs7},
 };
 use aes::{Aes128, Aes256};
 use sha2::{Digest, Sha256, Sha384, Sha512};
@@ -394,6 +395,88 @@ impl Encryption {
         self.decrypt(stream.data(), id)
     }
 
+    /// Encrypt a string that belongs to object `id`.
+    ///
+    /// The inverse of [`Encryption::decrypt_string_at`], for the objects an
+    /// incremental update appends: revisions 2–4 key each string per object, so
+    /// the number is not optional there.
+    pub fn encrypt_string_at(&self, data: &[u8], id: ObjectId) -> Result<Vec<u8>> {
+        self.encrypt(data, Some(id))
+    }
+
+    /// Encrypt a stream payload that belongs to object `id`.
+    ///
+    /// Honours the same exceptions as decryption: a cross-reference stream is
+    /// never encrypted, and `/Metadata` stays in the clear when
+    /// `/EncryptMetadata` is false (§7.6.1).
+    pub fn encrypt_stream_at(&self, stream: &Stream, id: ObjectId) -> Result<Vec<u8>> {
+        match stream.dict().get(b"Type").and_then(Object::as_name) {
+            Some(name) if name == b"XRef" => return Ok(stream.data().to_vec()),
+            Some(name) if name == b"Metadata" && !self.encrypt_metadata => {
+                return Ok(stream.data().to_vec());
+            }
+            _ => {}
+        }
+        self.encrypt(stream.data(), Some(id))
+    }
+
+    /// Encrypt every string and stream payload in an object graph.
+    ///
+    /// What [`Encryption::decrypt_object_at`] undoes: an object written by an
+    /// incremental update has to reach the file in exactly the form the base
+    /// document holds its own objects, or the appended section reads as noise.
+    pub fn encrypt_object_at(&self, object: &Object, id: ObjectId) -> Result<Object> {
+        match object {
+            Object::String(string) => Ok(Object::String(crate::object::PdfString::literal(
+                self.encrypt(string.as_bytes(), Some(id))?,
+            ))),
+            Object::Array(items) => {
+                let mut encrypted = Vec::with_capacity(items.len());
+                for item in items {
+                    encrypted.push(self.encrypt_object_at(item, id)?);
+                }
+                Ok(Object::Array(encrypted))
+            }
+            Object::Dictionary(dict) => Ok(Object::Dictionary(self.encrypt_dictionary(dict, id)?)),
+            Object::Stream(stream) => {
+                let dict = self.encrypt_dictionary(stream.dict(), id)?;
+                let data = self.encrypt_stream_at(stream, id)?;
+                Ok(Object::Stream(Stream::new(dict, data)))
+            }
+            other => Ok(other.clone()),
+        }
+    }
+
+    /// Encrypt a payload with whichever cipher the document uses.
+    fn encrypt(&self, data: &[u8], id: Option<ObjectId>) -> Result<Vec<u8>> {
+        match &self.kind {
+            Kind::Identity => Ok(data.to_vec()),
+            Kind::Aes256 { file_key } => aes256_cbc_encrypt(file_key, data),
+            Kind::Legacy { file_key, aes } => {
+                let Some(id) = id else {
+                    return Err(Error::Malformed {
+                        what: "revisions 2 to 4 need the object number to derive a key",
+                        offset: None,
+                    });
+                };
+                let key = object_key(file_key, id.number, id.generation, *aes);
+                if *aes {
+                    aes128_cbc_encrypt(&key, id, data)
+                } else {
+                    Ok(rc4(&key, data))
+                }
+            }
+        }
+    }
+
+    fn encrypt_dictionary(&self, dict: &Dictionary, id: ObjectId) -> Result<Dictionary> {
+        let mut encrypted = Dictionary::new();
+        for (name, value) in dict.iter() {
+            encrypted.insert(name.to_vec(), self.encrypt_object_at(value, id)?);
+        }
+        Ok(encrypted)
+    }
+
     /// Decrypt every string inside an object graph.
     ///
     /// Stream *payloads* are left alone for `/V 5` — they are decrypted when the
@@ -715,6 +798,60 @@ fn aes256_cbc_decrypt(file_key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
             offset: None,
         })?;
     Ok(unpad(plaintext))
+}
+
+/// AES-128-CBC encryption: an IV, then PKCS#7 padding and the ciphertext.
+fn aes128_cbc_encrypt(key: &[u8], id: ObjectId, data: &[u8]) -> Result<Vec<u8>> {
+    let iv = iv_for(key, &id, data);
+    cbc::Encryptor::<Aes128>::new_from_slices(key, &iv)
+        .map_err(|_| Error::malformed("AES-128 key or IV length"))
+        .and_then(|cipher| finish_encryption(cipher, iv, data))
+}
+
+fn aes256_cbc_encrypt(file_key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
+    // Revisions 5 and 6 key with the file key itself, so the IV can only be
+    // derived from it and the payload.
+    let iv = iv_for(file_key, &ObjectId::new(0, 0), data);
+    cbc::Encryptor::<Aes256>::new_from_slices(file_key, &iv)
+        .map_err(|_| Error::malformed("AES-256 key or IV length"))
+        .and_then(|cipher| finish_encryption(cipher, iv, data))
+}
+
+/// Pad, encrypt, and put the IV in front of the ciphertext.
+fn finish_encryption<C>(cipher: C, iv: [u8; 16], data: &[u8]) -> Result<Vec<u8>>
+where
+    C: BlockEncryptMut,
+{
+    let mut buffer = alloc::vec![0_u8; data.len() + 16];
+    buffer[..data.len()].copy_from_slice(data);
+    let ciphertext = cipher
+        .encrypt_padded_mut::<Pkcs7>(&mut buffer, data.len())
+        .map_err(|_| Error::malformed("AES padding failed"))?;
+    let mut out = Vec::with_capacity(16 + ciphertext.len());
+    out.extend_from_slice(&iv);
+    out.extend_from_slice(ciphertext);
+    Ok(out)
+}
+
+/// The 16-byte IV an update uses: SHA-256 over the key, the object number and
+/// the payload, truncated.
+///
+/// Derived rather than drawn from a random source, because the library has none
+/// (`no_std`, and a random source is not something a PDF reader should decide
+/// for its caller). It is unique per object and payload, and deterministic — so
+/// the same edit saved twice is byte-identical, the same property `/ID`'s second
+/// string has — at the cost of revealing that two appends carried the same
+/// bytes for the same object, which an update never does.
+fn iv_for(key: &[u8], id: &ObjectId, data: &[u8]) -> [u8; 16] {
+    let mut hash = Sha256::new();
+    hash.update(key);
+    hash.update(id.number.to_le_bytes());
+    hash.update(id.generation.to_le_bytes());
+    hash.update(data);
+    let digest = hash.finalize();
+    let mut iv = [0_u8; 16];
+    iv.copy_from_slice(&digest[..16]);
+    iv
 }
 
 /// MD5 (RFC 1321), used only by revisions 2–4 key derivation.
@@ -1046,6 +1183,74 @@ mod nist {
                 u8::from_str_radix(core::str::from_utf8(pair).expect("hex"), 16).expect("hex")
             })
             .collect()
+    }
+
+    /// What appending costs under each cipher: RC4 keeps the payload's length,
+    /// AES adds a 16-byte IV and a whole padding block, so a reader can size the
+    /// ciphertext from the plaintext.
+    #[test]
+    fn encryption_adds_the_iv_and_padding_the_cipher_needs() {
+        let handler = |kind| super::Encryption {
+            kind,
+            encrypt_metadata: true,
+        };
+        let id = crate::object::ObjectId::new(42, 0);
+        let rc4_handler = handler(super::Kind::Legacy {
+            file_key: alloc::vec![1, 2, 3, 4, 5],
+            aes: false,
+        });
+        let aes128_handler = handler(super::Kind::Legacy {
+            // `/Length 128`: AES-128 needs a 16-byte file key, so its per-object
+            // key is 16 bytes too.
+            file_key: alloc::vec![1; 16],
+            aes: true,
+        });
+        let aes256_handler = handler(super::Kind::Aes256 {
+            file_key: [7; super::KEY_LENGTH],
+        });
+
+        for payload_len in [0_usize, 1, 15, 16, 17, 100] {
+            let plaintext = alloc::vec![b'a'; payload_len];
+            let rc4 = rc4_handler.encrypt(&plaintext, Some(id)).expect("rc4");
+            assert_eq!(rc4.len(), payload_len, "RC4 is a stream cipher");
+            assert_eq!(
+                rc4_handler.decrypt(&rc4, Some(id)).expect("back"),
+                plaintext
+            );
+            for handler in [&aes128_handler, &aes256_handler] {
+                let encrypted = handler.encrypt(&plaintext, Some(id)).expect("aes");
+                let blocks = payload_len / 16 + 1;
+                assert_eq!(
+                    encrypted.len(),
+                    16 + blocks * 16,
+                    "AES: an IV and PKCS#7 padding over {payload_len} bytes"
+                );
+                assert_eq!(
+                    handler.decrypt(&encrypted, Some(id)).expect("back"),
+                    plaintext
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_same_payload_encrypts_to_the_same_bytes() {
+        let handler = super::Encryption {
+            kind: super::Kind::Aes256 {
+                file_key: [9; super::KEY_LENGTH],
+            },
+            encrypt_metadata: true,
+        };
+        let id = crate::object::ObjectId::new(3, 0);
+        let first = handler.encrypt(b"a payload", Some(id)).expect("encrypt");
+        let second = handler.encrypt(b"a payload", Some(id)).expect("encrypt");
+        assert_eq!(first, second, "the IV is derived, so the bytes are stable");
+        let other = handler.encrypt(b"a payloan", Some(id)).expect("encrypt");
+        assert_ne!(
+            first[..16],
+            other[..16],
+            "a different payload gets a different IV"
+        );
     }
 
     #[test]

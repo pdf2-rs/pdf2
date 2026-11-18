@@ -425,3 +425,71 @@ fn a_save_past_the_object_ceiling_returns_too_many_and_produces_no_bytes() {
         "nothing was lost: the ceiling stopped the save, not the edit"
     );
 }
+
+/// Open an encrypted fixture with its user password.
+fn opened_encrypted(bytes: &[u8]) -> Document {
+    Document::open_with_password(bytes, b"user").expect("the fixture opens with its user password")
+}
+
+/// Add a page, save, and reopen with the same password: the appended objects
+/// have to decrypt with the key the base's encryption dictates.
+fn encrypted_round_trip(bytes: &[u8], expected: &str) {
+    let base = opened_encrypted(bytes);
+    let pages = base.page_count().expect("the base has pages");
+    let first_page_before = base
+        .extract_text(&base.page(0).expect("the first page reads"))
+        .expect("the first page's text extracts");
+    let mut edit = MutableDocument::new(base);
+    edit.add_page(format!("BT /F1 18 Tf 72 700 Td ({expected}) Tj ET"))
+        .expect("the page is added");
+    let saved = edit.save_incremental().expect("the edit saves");
+
+    assert!(
+        saved.starts_with(bytes),
+        "the saved bytes start with the base bytes"
+    );
+    let appended = String::from_utf8_lossy(&saved[bytes.len()..]).to_string();
+    assert!(
+        !appended.contains(expected),
+        "the appended page's text is not in the clear:\n{appended}"
+    );
+
+    let reopened = opened_encrypted(&saved[..]);
+    assert_eq!(
+        reopened.page_count().expect("the saved file counts"),
+        pages + 1,
+        "the page is there after reopening"
+    );
+    assert_eq!(
+        reopened
+            .extract_text(&reopened.page(0).expect("the first page reads"))
+            .expect("the first page's text extracts"),
+        first_page_before,
+        "the base pages still decrypt to what they did"
+    );
+    assert_eq!(
+        reopened
+            .extract_text(&reopened.page(pages).expect("the added page is last"))
+            .expect("the added page's text extracts"),
+        expected,
+        "the appended page decrypts to its own text"
+    );
+}
+
+#[test]
+fn an_r4_aes_base_round_trips_through_the_save() {
+    const ENCRYPTED: &[u8] = include_bytes!("fixtures/encrypted-r4-aes.pdf");
+    encrypted_round_trip(ENCRYPTED, "added to an rc4 and aes revision 4 file");
+}
+
+#[test]
+fn an_r4_rc4_base_round_trips_through_the_save() {
+    const ENCRYPTED: &[u8] = include_bytes!("fixtures/encrypted-r4-rc4.pdf");
+    encrypted_round_trip(ENCRYPTED, "added to a revision 4 rc4 file");
+}
+
+#[test]
+fn an_r6_aes256_base_round_trips_through_the_save() {
+    const ENCRYPTED: &[u8] = include_bytes!("fixtures/encrypted-r6.pdf");
+    encrypted_round_trip(ENCRYPTED, "added to a revision 6 file");
+}

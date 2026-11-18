@@ -244,15 +244,12 @@ impl MutableDocument {
     /// for the deleted ones), a trailer carrying `/Size`, `/Prev` and the base's
     /// first `/ID` string, then `startxref` and its own `%%EOF`.
     ///
-    /// An encrypted base is refused for now: appending an object that has not
-    /// been encrypted with the base's per-object key would produce a file that
-    /// opens but reads as garbage, and a refusal says so.
+    /// An encrypted base is written encrypted: each appended object goes through
+    /// the base's handler with its own object number, because revisions 2–4
+    /// derive the key from it (§7.6.4, ADR 0006 §5). An object taken from an
+    /// encrypted base and set back untouched is encrypted again, so a caller
+    /// changing a stream should write the payload it means to store.
     pub fn save_incremental(&self) -> Result<Vec<u8>> {
-        if self.base.base_encryption().is_some() {
-            return Err(Error::Unsupported {
-                what: "saving an incremental update to an encrypted document",
-            });
-        }
         // The ceiling comes before the bytes: a save that would write a document
         // this crate then refuses to read is a bug, and a caller cannot see the
         // file, so there is nothing to do with the bytes but discard them.
@@ -272,6 +269,13 @@ impl MutableDocument {
         let mut written: BTreeMap<u32, (usize, u16)> = BTreeMap::new();
         for (id, object) in &self.changes {
             let offset = out.len();
+            // An encrypted base encrypts what is appended to it with the same
+            // handler and, for revisions 2–4, the same per-object key: the
+            // trailer still names `/Encrypt`, so a reader will decrypt these.
+            let object = match self.base.base_encryption() {
+                Some(handler) => &handler.encrypt_object_at(object, *id)?,
+                None => object,
+            };
             match object {
                 Object::Stream(stream) => {
                     crate::writer::write_stream_object(id.number, stream, &mut out);
