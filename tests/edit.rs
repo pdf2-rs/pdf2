@@ -493,3 +493,160 @@ fn an_r6_aes256_base_round_trips_through_the_save() {
     const ENCRYPTED: &[u8] = include_bytes!("fixtures/encrypted-r6.pdf");
     encrypted_round_trip(ENCRYPTED, "added to a revision 6 file");
 }
+
+// ---------------------------------------------------------------- external reader
+
+/// Where a test writes its scratch files, under the target directory.
+fn scratch(name: &str) -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    // Empty, so a previous run's renders cannot be mistaken for this one's.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the scratch directory");
+    dir
+}
+
+/// Whether a program is on `PATH`, so the external check can skip rather than
+/// fail on a machine that has no PDF engines installed.
+fn on_path(program: &str) -> bool {
+    std::process::Command::new(program)
+        .arg("-v")
+        .output()
+        .is_ok()
+}
+
+/// The darkest sample in a binary PNM (`P5` gray or `P6` colour), after its
+/// header — 255 means the page is blank, anything lower means ink.
+fn darkest_in_pnm(bytes: &[u8]) -> u8 {
+    let mut fields = 0;
+    let mut index = 0;
+    while fields < 4 && index < bytes.len() {
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if index < bytes.len() && bytes[index] == b'#' {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+        while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        fields += 1;
+    }
+    index += 1;
+    bytes[index.min(bytes.len())..]
+        .iter()
+        .copied()
+        .min()
+        .unwrap_or(255)
+}
+
+/// Run one external renderer over `path`'s page `page` and return the bytes it
+/// wrote, discovering the file by prefix rather than guessing how the tool pads
+/// page numbers.
+fn render(tool: &str, path: &std::path::Path, page: usize, directory: &std::path::Path) -> Vec<u8> {
+    let prefix = directory.join(tool);
+    let run = match tool {
+        "pdftoppm" => std::process::Command::new("pdftoppm")
+            .args([
+                "-r",
+                "72",
+                "-f",
+                &page.to_string(),
+                "-l",
+                &page.to_string(),
+                "-gray",
+            ])
+            .arg(path)
+            .arg(&prefix)
+            .output(),
+        _ => std::process::Command::new("mutool")
+            .args(["draw", "-r", "72", "-o"])
+            .arg(directory.join("mutool.pnm"))
+            .arg(path)
+            .arg(page.to_string())
+            .output(),
+    }
+    .expect("the tool runs");
+    assert!(
+        run.status.success(),
+        "{tool} rejected the saved file: status {:?}\nstdout: {}\nstderr: {}",
+        run.status.code(),
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr),
+    );
+
+    let mut written: Vec<std::path::PathBuf> = std::fs::read_dir(directory)
+        .expect("the scratch directory lists")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|candidate| {
+            candidate
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(tool) && !name.ends_with(".pdf"))
+        })
+        .collect();
+    written.sort();
+    let file = written
+        .first()
+        .unwrap_or_else(|| panic!("{tool} wrote no output into {}", directory.display()));
+    std::fs::read(file).expect("the rendered file reads")
+}
+
+#[test]
+fn poppler_and_mupdf_render_the_saved_file() {
+    let tools: Vec<&str> = ["pdftoppm", "mutool"]
+        .into_iter()
+        .filter(|tool| on_path(tool))
+        .collect();
+    if tools.is_empty() {
+        println!(
+            "skipped: neither pdftoppm nor mutool is on PATH (the oracle job has both; \
+             finding (8) in the plan says a developer machine has neither)"
+        );
+        return;
+    }
+
+    let base = opened();
+    let pages = base.page_count().expect("text.pdf has pages");
+    let mut edit = MutableDocument::new(base);
+    edit.add_page(b"BT /F1 24 Tf 72 700 Td (added, and visible) Tj ET")
+        .expect("the page is added");
+    let saved = edit.save_incremental().expect("the edit saves");
+    let directory = scratch("external-reader");
+    let path = directory.join("edited.pdf");
+    std::fs::write(&path, &saved).expect("the saved file is written");
+
+    // The page the edit added, rendered by a program that has never seen this
+    // crate: an appended section a third-party reader rejects is not a save.
+    for tool in &tools {
+        let darkest = darkest_in_pnm(&render(tool, &path, pages + 1, &directory));
+        println!(
+            "{tool} rendered page {} of the saved file: darkest {darkest} of 255, {} bytes appended",
+            pages + 1,
+            saved.len() - TEXT.len()
+        );
+        assert!(
+            darkest < 250,
+            "{tool} rendered a blank page for the added page: darkest {darkest} of 255"
+        );
+    }
+}
+
+#[test]
+fn the_pnm_reader_finds_ink_and_clears_blank_pages() {
+    // The external check's own oracle: the header parse is what decides "blank",
+    // so it is tested without an engine — a blank gray page and an inked one.
+    let blank = b"P5\n4 2\n255\n\xff\xff\xff\xff\xff\xff\xff\xff".to_vec();
+    assert_eq!(darkest_in_pnm(&blank), 255, "a blank page has no ink");
+    let inked = b"P5\n4 2\n255\n\xff\xff\xff\xff\x00\xff\xff\xff".to_vec();
+    assert_eq!(darkest_in_pnm(&inked), 0, "one black pixel is ink");
+    let comment = b"P6\n# written by a tool\n2 1\n255\n\x10\x20\x30\x40\x50\x60".to_vec();
+    assert_eq!(
+        darkest_in_pnm(&comment),
+        0x10,
+        "a comment line is skipped, and colour is read the same way"
+    );
+}

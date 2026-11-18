@@ -254,6 +254,13 @@ jobs:
             --summary corpus/oracle-summary.csv
           cat corpus/oracle-summary.csv
 
+      # Editing's external check: the saved file is handed to the two engines
+      # that do not share a line of code with this crate. It lives in the oracle
+      # job because that is where poppler and mupdf are installed; the Gate job
+      # runs the same test and skips it.
+      - name: An external reader accepts an incrementally updated file
+        run: cargo +stable test -p pdf2 --test edit -- --nocapture
+
       # The 4x4 comparison above cannot see anti-aliasing; at 1x1 it can, and
       # the ceilings in corpus/aa-ceilings.tsv are what make its absence a
       # failure rather than a note (docs/RENDERING-QUALITY.md).
