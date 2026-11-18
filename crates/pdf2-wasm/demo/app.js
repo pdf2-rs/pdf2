@@ -7,6 +7,10 @@
 // a blank page where the current renderer draws text.
 const stamp = await fetch('build.json', { cache: 'no-store' }).then((response) => response.json());
 const module = await import(`./pkg/pdf2_wasm.js?v=${encodeURIComponent(stamp.build)}`);
+// The page says which build it is, from the same file the import stamp came
+// from: a version alone cannot tell two builds of one release apart.
+document.querySelector('#appVersion').textContent =
+  `pdf2-wasm ${stamp.version} (${stamp.rev ?? 'unknown'})`;
 const init = module.default;
 const open = module.open;
 
