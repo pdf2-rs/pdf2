@@ -45,19 +45,20 @@ for a crate that already exists.
    publish order and per-crate tags into `publish.yml` is Q10 in
    `rounds/ROADMAP.md`.
 
-Current state (2026-11-14):
+Current state (2026-11-18):
 
-| Crate | Version | First publish |
-| --- | --- | --- |
-| `pdf2` | `0.7.0-rc.1` | trusted publishing from a `pdf2-v*` tag |
-| `pdf2-render` | `0.1.0-rc.1` | manual, token |
-| `pdf2-cli` | `0.1.0-rc.1` | manual, token |
-| `pdf2-wasm` | `0.1.0-rc.1` | manual, token |
+| Crate | Version | Published by | Tag |
+| --- | --- | --- | --- |
+| `pdf2` | `1.6.0` | trusted publishing | `pdf2-v1.6.0` |
+| `pdf2-render` | `1.6.0` | trusted publishing | `render-v1.6.0` |
+| `pdf2-cli` | `1.6.0` | trusted publishing | `cli-v1.6.0` |
+| `pdf2-wasm` | `1.4.0` (crate and npm) | trusted publishing | `wasm-v1.4.0`, `npm-v1.4.0` |
 
-Trusted publishers still need adding on crates.io for `pdf2-cli`,
-`pdf2-render` and `pdf2-wasm` (same repository, workflow `publish.yml`,
-environment `release`); crates.io only accepts the configuration once the crate
-exists, which is why the first version of each went out by hand.
+Every crate has a trusted publisher on crates.io now (same repository, workflow
+`publish.yml`, environment `release`), so no token is stored anywhere; npm
+publishes the same way from `npm.yml`. Versions move independently: a change to
+the library alone bumps `pdf2` and the tools that repackage it, and `pdf2-wasm`
+or the npm package is republished only when its own API or its wasm build moves.
 
 ### Order matters
 
