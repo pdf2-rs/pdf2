@@ -585,14 +585,22 @@ fn ledger() -> Result<(), String> {
         .map_err(|error| format!("docs/FEATURES.md: {error}"))?;
     let roadmap = std::fs::read_to_string("docs/ROADMAP-NEXT.md")
         .map_err(|error| format!("docs/ROADMAP-NEXT.md: {error}"))?;
+    let objectives = std::fs::read_to_string("docs/OBJECTIVES.md")
+        .map_err(|error| format!("docs/OBJECTIVES.md: {error}"))?;
     let items = ledger::roadmap_items(&roadmap);
     let rows = ledger::rows(&ledger);
-    let problems = ledger::problems(&rows, &items);
+    let citations = citations::parse(&objectives);
+    let mut problems = ledger::problems(&rows, &items);
+    problems.extend(citations::problems(&citations, |path| {
+        std::fs::read_to_string(path).map_err(|error| error.to_string())
+    }));
     if problems.is_empty() {
         println!(
-            "ledger: {} rows, {} roadmap items, every item owned and every shipped row evidenced",
+            "ledger: {} rows, {} roadmap items, {} citations, every item owned, every shipped row \
+             evidenced and every citation resolvable",
             rows.len(),
-            items.len()
+            items.len(),
+            citations.len()
         );
         return Ok(());
     }
@@ -805,6 +813,201 @@ mod ledger {
                     .any(|problem| problem.contains("no evidence")),
                 "{problems:?}"
             );
+        }
+    }
+}
+
+/// The citation contract with `docs/OBJECTIVES.md`: every `` `path:line` `` that
+/// document cites must land inside a file that exists.
+///
+/// This is the half the ledger cannot do for itself — `ledger::problems` reads
+/// statuses and ranks, not prose — and it is deliberately narrow: existence, not
+/// meaning. A citation that lands on the wrong line is only catchable once the
+/// document cites an anchor instead of a number (the objective's next step), so
+/// this check is the floor that stops a citation rotting into a missing file or a
+/// line past the end.
+mod citations {
+    /// One `` `path:line` `` found in a document.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Citation {
+        /// The line of the document the citation appears on, 1-based.
+        pub at: usize,
+        /// The repository-relative path it names.
+        pub path: String,
+        /// The first line it names, 1-based.
+        pub start: usize,
+        /// The last line it names, 1-based; equal to `start` for a single line.
+        pub end: usize,
+    }
+
+    /// The prefixes a citation may name. A backticked `https://…` or a crate name
+    /// is not a citation, and neither is `` `src/data/` `` without a line.
+    const ROOTS: [&str; 5] = ["docs/", "src/", "crates/", "tests/", "corpus/"];
+
+    /// Every citation in `text`, in document order.
+    pub fn parse(text: &str) -> Vec<Citation> {
+        let mut found = Vec::new();
+        for (index, line) in text.lines().enumerate() {
+            let mut rest = line;
+            while let Some(open) = rest.find('`') {
+                let after = &rest[open + 1..];
+                let Some(close) = after.find('`') else {
+                    break;
+                };
+                found.extend(one(&after[..close], index + 1));
+                rest = &after[close + 1..];
+            }
+        }
+        found
+    }
+
+    /// The citations in one backticked span — empty when it is not a citation.
+    ///
+    /// A span may list several lines: the document writes `docs/DEFERRED.md:38,39,40`
+    /// for three rows in one table and `crates/pdf2-bench/src/corpus.rs:91,195` for
+    /// two functions, so a comma list is as many citations as it has elements.
+    fn one(inner: &str, at: usize) -> Vec<Citation> {
+        let Some((path, spec)) = inner.rsplit_once(':') else {
+            return Vec::new();
+        };
+        if !ROOTS.iter().any(|root| path.starts_with(root)) {
+            return Vec::new();
+        }
+        let mut found = Vec::new();
+        for element in spec.split(',') {
+            let (start, end) = match element.split_once('-') {
+                Some((start, end)) => (start, end),
+                None => (element, element),
+            };
+            let (Ok(start), Ok(end)) = (start.parse::<usize>(), end.parse::<usize>()) else {
+                return Vec::new();
+            };
+            // `0` is not a line, and a backwards range names nothing.
+            if start == 0 || end < start {
+                return Vec::new();
+            }
+            found.push(Citation {
+                at,
+                path: path.to_owned(),
+                start,
+                end,
+            });
+        }
+        found
+    }
+
+    /// Everything wrong with the citations, given a way to read a path.
+    ///
+    /// The reader is a parameter so the check is testable without a working
+    /// directory or a fixture tree: production passes `std::fs::read_to_string`.
+    pub fn problems(
+        citations: &[Citation],
+        read: impl Fn(&str) -> Result<String, String>,
+    ) -> Vec<String> {
+        let mut problems = Vec::new();
+        for citation in citations {
+            let text = match read(&citation.path) {
+                Ok(text) => text,
+                Err(error) => {
+                    problems.push(format!(
+                        "line {}: `{}` cannot be read ({error})",
+                        citation.at, citation.path
+                    ));
+                    continue;
+                }
+            };
+            let lines = text.lines().count();
+            if citation.end > lines {
+                problems.push(format!(
+                    "line {}: `{}:{}` is past the end of a file with {lines} line(s)",
+                    citation.at, citation.path, citation.end
+                ));
+            }
+        }
+        problems
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Citation, parse, problems};
+
+        const DOC: &str = "\
+The gate runs (`cargo gate`); the parser lives at `crates/xtask/src/main.rs:17`,
+the range form at `docs/FEATURES.md:71-79`, and a URL at `https://example.com:8080/x`.
+";
+
+        #[test]
+        fn a_backticked_path_and_line_is_a_citation() {
+            let found = parse(DOC);
+            assert_eq!(found.len(), 2, "{found:?}");
+            assert_eq!(found[0].path, "crates/xtask/src/main.rs");
+            assert_eq!((found[0].at, found[0].start, found[0].end), (1, 17, 17));
+            assert_eq!((found[1].at, found[1].start, found[1].end), (2, 71, 79));
+        }
+
+        #[test]
+        fn a_url_or_a_bare_command_is_not_a_citation() {
+            // The URL is skipped by its prefix; `cargo gate` has no line at all.
+            assert!(parse("see `https://example.com:8080/x`").is_empty());
+            assert!(parse("run `cargo gate`").is_empty());
+        }
+
+        #[test]
+        fn a_citation_inside_its_file_has_no_problems() {
+            let found = parse("`docs/FEATURES.md:2`");
+            let reported = problems(&found, |_| Ok("one\ntwo\n".to_owned()));
+            assert!(reported.is_empty(), "{reported:?}");
+        }
+
+        #[test]
+        fn a_missing_file_is_reported_with_the_document_line() {
+            let found = parse("text\n`docs/GONE.md:1`");
+            let reported = problems(&found, |_| Err("no such file".to_owned()));
+            assert_eq!(reported.len(), 1, "{reported:?}");
+            assert!(
+                reported[0].starts_with("line 2: `docs/GONE.md`"),
+                "{reported:?}"
+            );
+        }
+
+        #[test]
+        fn a_line_past_the_end_is_reported() {
+            let found = parse("`src/edit.rs:373`");
+            let reported = problems(&found, |_| Ok("one\ntwo\n".to_owned()));
+            assert_eq!(reported.len(), 1, "{reported:?}");
+            assert!(
+                reported[0].contains("past the end of a file with 2 line(s)"),
+                "{reported:?}"
+            );
+        }
+
+        #[test]
+        fn a_comma_list_is_one_citation_per_element() {
+            let found = parse("`docs/DEFERRED.md:38,39,40`");
+            assert_eq!(found.len(), 3, "{found:?}");
+            assert_eq!(
+                found.iter().map(|c| c.start).collect::<Vec<_>>(),
+                vec![38, 39, 40]
+            );
+            assert!(
+                found
+                    .iter()
+                    .all(|c| c.at == 1 && c.path == "docs/DEFERRED.md")
+            );
+        }
+
+        #[test]
+        fn a_range_is_checked_at_its_end() {
+            let found = parse("`docs/FEATURES.md:1-3`");
+            assert!(problems(&found, |_| Ok("one\ntwo\nthree\n".to_owned())).is_empty());
+            let reported = problems(&found, |_| Ok("one\ntwo\n".to_owned()));
+            assert!(reported[0].contains(":3`"), "{reported:?}");
+        }
+
+        #[test]
+        fn the_parsed_citation_carries_its_document_line() {
+            let found: Vec<Citation> = parse("`src/edit.rs:1`\n\n`src/edit.rs:2`");
+            assert_eq!(found.iter().map(|c| c.at).collect::<Vec<_>>(), vec![1, 3]);
         }
     }
 }

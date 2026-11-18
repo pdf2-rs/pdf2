@@ -178,7 +178,7 @@ tree. They are corrected, each with the file and the test that proves it:
 | `docs/FEATURES.md:212` | `/ActualText` "never replaces what extraction returns" | `shipped (partial)` — it does (`src/content.rs:400-738`); `/Artifact` is still extracted as text |
 | `docs/FEATURES.md:242` | "encryption on write: unplanned" | `shipped (partial)` — updates are re-encrypted with the base's handler; a new document is not |
 | `docs/FEATURES.md:256` | wasm API growth "unplanned" | `shipped (partial)` — `spans`, `span_texts`, `glyphs`, `glyph_texts`, `page_size`, `search*`, `metadata` exist; errors are still strings |
-| `docs/ROADMAP-NEXT.md:38` | rank 4 "Type 1 still scheduled" | `4 ✓`, shipped 2026-11-16 |
+| `docs/ROADMAP-NEXT.md:43` | rank 4 "Type 1 still scheduled" | `4 ✓`, shipped 2026-11-16 |
 | `docs/DEFERRED.md:38,39,40` | tiling patterns, colour-key `/Mask`, `Tr` 4-7 "deferred" | struck through as shipped, with `tests/tiling.rs`, `tests/pattern.rs`, `tests/colour_key.rs`, `tests/tr_clip.rs`, `tests/tr_clip_type3.rs` named |
 
 `crates/xtask/src/main.rs`'s usage text also advertised `cargo xtask <chore>`, which is not a command — only
@@ -241,7 +241,7 @@ can come in lower — but not by an order of magnitude, and this is the figure t
 | --- | --- | --- |
 | `90ms-RKSJ-H` (vendored) | 6 070 | 19 967 (`src/data/japan1_90ms_rksj.bin`) |
 | `UniJIS-UCS2-H` (vendored) | 168 597 | 9 294 (`src/data/japan1_unijis_ucs2.bin`) |
-| `UniGB-UCS2-H` (Adobe `Adobe-GB1-6/CMap`) | **274 383** | not measurable yet — `cargo run -q -p xtask -- cmaps` hardcodes the Japan1 pair (`crates/xtask/src/main.rs:1092-1101`) |
+| `UniGB-UCS2-H` (Adobe `Adobe-GB1-6/CMap`) | **274 383** | not measurable yet — `cargo run -q -p xtask -- cmaps` hardcodes the Japan1 pair (`crates/xtask/src/main.rs:1344-1350`) |
 | `UniCNS-UCS2-H` (Adobe `Adobe-CNS1-7/CMap`) | **326 349** | as above |
 
 A *coverage* table (both Chinese CMaps are Unicode→CID like `UniJIS-UCS2-H`) compresses to a fraction of
@@ -335,7 +335,7 @@ Two numbers the ranking wants cannot be taken from here without work this object
 - **the packaged cost of the Chinese CMaps** — the two source files are 274 383 B (`UniGB-UCS2-H`) and
   326 349 B (`UniCNS-UCS2-H`), and the two `.bin`s already in `src/data/` were 19 967 B and 9 294 B from
   6 070 B and 168 597 B of CMap text; the packaged figure needs `cargo run -q -p xtask -- cmaps`
-  generalised past its hardcoded Japan1 pair (`crates/xtask/src/main.rs:1092-1101`), which is the CMap
+  generalised past its hardcoded Japan1 pair (`crates/xtask/src/main.rs:1344-1350`), which is the CMap
   objective's first task;
 - **a page-count render time** — `book.pdf` page 1 renders in 4.3 ms against a 900 ms
   `corpus/render-budget.tsv` entry, and nothing times a document by page count; writing that harness is the
