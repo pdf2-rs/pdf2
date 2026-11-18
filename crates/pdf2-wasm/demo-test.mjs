@@ -96,6 +96,10 @@ async function launchChrome() {
       '--no-first-run',
       '--no-default-browser-check',
       '--window-size=1200,900',
+      // A screenshot is compared channel by channel with canvas values, so the
+      // compositor must work in sRGB: without this the profile of the machine
+      // decides (macOS passed, a Linux runner turned 255 into 241).
+      '--force-color-profile=srgb',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
       'about:blank',
