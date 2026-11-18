@@ -1,6 +1,6 @@
 [package]
 name = "pdf2-cli"
-version = "1.6.0"
+version.workspace = true
 edition = "2024"
 rust-version = "1.100"
 description = "Command-line front end for the pdf2 crate: inspect PDF 2.0 files."

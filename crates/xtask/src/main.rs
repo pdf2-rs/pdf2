@@ -14,7 +14,9 @@
 
 use std::process::{Command, ExitCode};
 
-const GATE_STEPS: &[&str] = &["format", "clippy", "test", "features", "docs", "ledger"];
+const GATE_STEPS: &[&str] = &[
+    "format", "clippy", "test", "features", "docs", "ledger", "versions",
+];
 
 fn main() -> ExitCode {
     // Every chore names paths relative to the workspace root (`docs/…`,
@@ -37,6 +39,7 @@ fn main() -> ExitCode {
         "test" => step("test"),
         "docs" => step("docs"),
         "ledger" => ledger(),
+        "versions" => versions(),
         "no-std" => no_std(),
         "wasm" => wasm(),
         "wasm-package" => wasm_package(),
@@ -81,6 +84,7 @@ Usage:
   cargo xtask tier-b <dir>...
                         measure a Tier B tree and write a failure histogram
   cargo xtask ledger    check that docs/FEATURES.md and the roadmap agree
+  cargo xtask versions  check the one version the whole shipped group carries
   cargo xtask bench     measure and compare with docs/performance-baseline.json
   cargo xtask fixtures  regenerate tests/fixtures/*.pdf
   cargo run -q -p xtask -- cmaps
@@ -97,6 +101,98 @@ fn enter_workspace_root() -> Result<(), String> {
         .map_err(|error| format!("workspace root {}: {error}", root.display()))?;
     std::env::set_current_dir(&root)
         .map_err(|error| format!("changing to {}: {error}", root.display()))
+}
+
+/// The crates that ship: the library and the three tools built from it.
+const SHIPPED: &[&str] = &["pdf2", "pdf2-render", "pdf2-cli", "pdf2-wasm"];
+
+/// `cargo pkgid`'s answer for a package, which ends in `#<version>`.
+fn package_version(package: &str) -> Result<String, String> {
+    let output = Command::new("cargo")
+        .args(["pkgid", "-p", package])
+        .output()
+        .map_err(|error| format!("running cargo pkgid for {package}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "cargo pkgid -p {package} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let answer = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    answer
+        .rsplit_once('#')
+        .map(|(_, version)| version.to_owned())
+        .ok_or_else(|| format!("cargo pkgid -p {package} answered {answer:?}"))
+}
+
+/// One version for the whole shipped group (ADR 0009).
+///
+/// The manifests inherit `[workspace.package] version`, so they cannot drift;
+/// `crates/pdf2-wasm/package.json` and the CHANGELOG heading are copies Cargo
+/// cannot reach, and this is what keeps them in step.
+fn versions() -> Result<(), String> {
+    let mut problems = Vec::new();
+    let group = package_version("pdf2")?;
+    for package in SHIPPED {
+        let manifest = match *package {
+            "pdf2" => "Cargo.toml".to_owned(),
+            other => format!("crates/{other}/Cargo.toml"),
+        };
+        let text = std::fs::read_to_string(&manifest)
+            .map_err(|error| format!("reading {manifest}: {error}"))?;
+        // A literal here would be a second copy of the number, which is the
+        // drift this check exists to prevent.
+        if !text
+            .lines()
+            .any(|line| line.trim() == "version.workspace = true")
+        {
+            problems.push(format!(
+                "{manifest}: `version.workspace = true` is missing, so this crate carries its own copy"
+            ));
+        }
+        let version = package_version(package)?;
+        if version != group {
+            problems.push(format!("{package} is {version}, the group is {group}"));
+        }
+    }
+
+    let manifest = std::fs::read_to_string("crates/pdf2-wasm/package.json")
+        .map_err(|error| format!("reading package.json: {error}"))?;
+    let npm = manifest
+        .split("\"version\": \"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .ok_or_else(|| "package.json has no version".to_owned())?;
+    if npm != group {
+        problems.push(format!(
+            "crates/pdf2-wasm/package.json is {npm}, the group is {group}"
+        ));
+    }
+
+    let changelog = std::fs::read_to_string("CHANGELOG.md")
+        .map_err(|error| format!("reading CHANGELOG.md: {error}"))?;
+    let newest = changelog
+        .lines()
+        .find_map(|line| line.strip_prefix("## ["))
+        .and_then(|rest| rest.split(']').next())
+        .ok_or_else(|| "CHANGELOG.md has no `## [version]` heading".to_owned())?;
+    if newest != group {
+        problems.push(format!(
+            "CHANGELOG.md's newest section is {newest}, the group is {group}"
+        ));
+    }
+
+    if !problems.is_empty() {
+        return Err(format!(
+            "the group version is {group}, but:\n  {}",
+            problems.join("\n  ")
+        ));
+    }
+    println!(
+        "versions: {group} across {}, package.json and CHANGELOG.md",
+        SHIPPED.join(", ")
+    );
+    Ok(())
 }
 
 fn gate(full: bool) -> Result<(), String> {
@@ -140,6 +236,7 @@ fn step(name: &str) -> Result<(), String> {
             &[("RUSTDOCFLAGS", "-D warnings")],
         ),
         "ledger" => ledger(),
+        "versions" => versions(),
         other => Err(format!("unknown gate step `{other}`")),
     }
 }

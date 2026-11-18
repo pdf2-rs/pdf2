@@ -8,8 +8,8 @@ name: Publish to npm
 #      `npm.yml` and environment `release`. The run then needs no token and
 #      provenance is generated automatically.
 #
-# Tags are `npm-v<version>`, where the version is `package.json`'s and may be
-# ahead of the crate's (a packaging-only release bumps only the package).
+# Tags are `npm-v<version>`, where the version is `package.json`'s and is the
+# same number as the crate's: the group moves together (ADR 0009).
 #   2. `NPM_TOKEN` repository secret (an npm automation token), used as
 #      `NODE_AUTH_TOKEN` by setup-node.
 # The very first version of a package has to be published by hand: npm only
