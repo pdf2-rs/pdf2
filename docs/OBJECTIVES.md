@@ -186,6 +186,18 @@ tree. They are corrected, each with the file and the test that proves it:
 `cargo run -q -p xtask -- <chore>` for everything else, because every exit criterion in the sequence below
 is copied from there.
 
+The **eight `version` pins** were the same class of defect one level down: `AGENTS.md`'s checklist bumps
+them, `cargo run -q -p xtask -- versions` was documented as the proof, and `versions()` read each package's
+own version through `cargo pkgid` and never the requirement beside `path` — so the gate was green with every
+pin at 1.6.0 against a 1.8.0 group. PR #161 (`95f8719`) bumped all eight and made `versions()` walk the root
+manifest and every `crates/*/Cargo.toml`, read each dependency's inline table, and fail on a pin that
+disagrees with the group or on a path dependency with no `version` at all. Proven by breaking it on purpose:
+
+```text
+error: the group version is 1.8.0, but:
+  crates/pdf2-render/Cargo.toml:36: a path dependency pins version 1.6.0, the group is 1.8.0
+```
+
 **Still open as a note, not a correction**: five shipped rows cite crate-relative paths
 (`tests/ext_gstate.rs`, `tests/shading.rs`, `tests/blend_modes.rs`, `tests/annotations.rs` twice) that
 resolve only under `crates/pdf2-render/`. They are correct where they live; a future `xtask ledger` path
