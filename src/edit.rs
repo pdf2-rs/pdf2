@@ -7,12 +7,19 @@
 //!
 //! ```
 //! # fn main() -> pdf2::Result<()> {
-//! let base = pdf2::Document::open(std::fs::read("tests/fixtures/text.pdf")?)?;
+//! let bytes = std::fs::read("tests/fixtures/text.pdf")?;
+//! let base = pdf2::Document::open(bytes.clone())?;
 //! let before = base.page_count()?;
+//!
 //! let mut edit = pdf2::MutableDocument::new(base);
 //! edit.add_page(b"BT /F1 12 Tf 72 720 Td (a page added by an edit) Tj ET")?;
 //! assert_eq!(edit.page_count()?, before + 1);
 //! assert_eq!(edit.base().page_count()?, before);
+//!
+//! let saved = edit.save_incremental()?;
+//! assert!(saved.starts_with(&bytes), "an update appends, it never rewrites");
+//! let reopened = pdf2::Document::open(&saved[..])?;
+//! assert_eq!(reopened.page_count()?, before + 1);
 //! # Ok(())
 //! # }
 //! ```
@@ -22,12 +29,13 @@
 //! never modified.
 
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::document::{Document, ObjectSource};
+use crate::document::{Document, ObjectSource, XrefEntry};
 use crate::error::{Error, Result};
-use crate::object::{Dictionary, Object, ObjectId, Stream};
+use crate::object::{Dictionary, Object, ObjectId, PdfString, Stream};
 use crate::page::Page;
 
 /// A document being edited, overlaid on the one that was opened.
@@ -227,6 +235,136 @@ impl MutableDocument {
         Ok(page_id)
     }
 
+    /// Save the edits as an incremental update (§7.5.6).
+    ///
+    /// The returned bytes begin with the base document's bytes, byte for byte —
+    /// which is what keeps a signature over the original valid and makes a failed
+    /// save harmless — and continue with each changed or added object, one
+    /// classic cross-reference section covering exactly those numbers (`f` rows
+    /// for the deleted ones), a trailer carrying `/Size`, `/Prev` and the base's
+    /// first `/ID` string, then `startxref` and its own `%%EOF`.
+    ///
+    /// An encrypted base is refused for now: appending an object that has not
+    /// been encrypted with the base's per-object key would produce a file that
+    /// opens but reads as garbage, and a refusal says so.
+    pub fn save_incremental(&self) -> Result<Vec<u8>> {
+        if self.base.base_encryption().is_some() {
+            return Err(Error::Unsupported {
+                what: "saving an incremental update to an encrypted document",
+            });
+        }
+        let mut out = self.base.base_bytes().to_vec();
+        if !out.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+
+        let mut written: BTreeMap<u32, (usize, u16)> = BTreeMap::new();
+        for (id, object) in &self.changes {
+            let offset = out.len();
+            match object {
+                Object::Stream(stream) => {
+                    crate::writer::write_stream_object(id.number, stream, &mut out);
+                }
+                other => {
+                    out.extend_from_slice(
+                        format!("{} {} obj\n", id.number, id.generation).as_bytes(),
+                    );
+                    other.write_to(&mut out);
+                    out.extend_from_slice(b"\nendobj\n");
+                }
+            }
+            written.insert(id.number, (offset, id.generation));
+        }
+
+        let xref_offset = out.len();
+        self.write_appended_xref(&mut out, &written);
+        let trailer = self.appended_trailer(&out);
+        out.extend_from_slice(b"trailer\n");
+        Object::Dictionary(trailer).write_to(&mut out);
+        out.extend_from_slice(format!("\nstartxref\n{xref_offset}\n%%EOF\n").as_bytes());
+        Ok(out)
+    }
+
+    /// One classic cross-reference section over exactly the numbers this save
+    /// wrote: `n` rows for the new copies, `f` rows for the deletions, grouped
+    /// into consecutive subsections (`7.5.4`).
+    fn write_appended_xref(&self, out: &mut Vec<u8>, written: &BTreeMap<u32, (usize, u16)>) {
+        let mut freed: BTreeMap<u32, u16> = BTreeMap::new();
+        for number in &self.deleted {
+            // A deletion increments the generation, which is what stops a stale
+            // reference from resolving to whatever occupies the number next.
+            let generation = match self.base.base_xref().get(number) {
+                Some(XrefEntry::InUse { generation, .. })
+                | Some(XrefEntry::Free { generation }) => generation.saturating_add(1),
+                _ => 1,
+            };
+            freed.insert(*number, generation);
+        }
+        let mut numbers: Vec<u32> = written.keys().chain(freed.keys()).copied().collect();
+        numbers.sort_unstable();
+        numbers.dedup();
+
+        out.extend_from_slice(b"xref\n");
+        let mut index = 0;
+        while index < numbers.len() {
+            let mut end = index;
+            while end + 1 < numbers.len() && numbers[end + 1] == numbers[end] + 1 {
+                end += 1;
+            }
+            out.extend_from_slice(format!("{} {}\n", numbers[index], end - index + 1).as_bytes());
+            for number in &numbers[index..=end] {
+                match written.get(number) {
+                    Some((offset, generation)) => out.extend_from_slice(
+                        format!("{offset:010} {generation:05} n\r\n").as_bytes(),
+                    ),
+                    None => {
+                        let generation = freed.get(number).copied().unwrap_or(1);
+                        out.extend_from_slice(
+                            format!("0000000000 {generation:05} f\r\n").as_bytes(),
+                        );
+                    }
+                }
+            }
+            index = end + 1;
+        }
+    }
+
+    /// The base trailer minus `/Prev`, with `/Size`, `/Prev` and `/ID` composed
+    /// the way `14.4` and `7.5.6` require: the first identifier string survives
+    /// the update unchanged, the second is new.
+    fn appended_trailer(&self, written: &[u8]) -> Dictionary {
+        let mut trailer = Dictionary::new();
+        for (key, value) in self.base.trailer().iter() {
+            if key == b"Prev" {
+                continue;
+            }
+            trailer.insert(key.to_vec(), value.clone());
+        }
+        let highest = self
+            .changes
+            .keys()
+            .map(|id| id.number + 1)
+            .max()
+            .unwrap_or(0);
+        let size = match self.base.trailer().get(b"Size") {
+            Some(Object::Integer(size)) => (*size as u32).max(self.next_object),
+            _ => self.next_object,
+        }
+        .max(highest);
+        trailer.insert("Size", Object::Integer(size as i64));
+        if let Ok(previous) = self.base.base_startxref() {
+            trailer.insert("Prev", Object::Integer(previous as i64));
+        }
+        if let Some(Object::Array(mut ids)) = self.base.trailer().get(b"ID").cloned()
+            && ids.len() == 2
+        {
+            let digest = fingerprint(written);
+            ids[1] = Object::String(PdfString::hex(digest.to_vec()));
+            trailer.insert("ID", Object::Array(ids));
+        }
+        trailer
+    }
+
     /// The page tree node's id, reached through the catalog.
     fn pages_id(&self) -> Result<ObjectId> {
         let catalog = match self.get_object(self.root_id()?)? {
@@ -265,4 +403,23 @@ impl core::fmt::Display for MutableDocument {
             self.deleted.len()
         )
     }
+}
+
+/// Sixteen bytes derived from what this save appended, for `/ID`'s second
+/// string: two FNV-1a passes with different seeds. Deterministic on purpose, so
+/// the same edit saved twice produces the same file.
+fn fingerprint(data: &[u8]) -> [u8; 16] {
+    let mut out = [0u8; 16];
+    for (half, seed) in [0xcbf2_9ce4_8422_2325_u64, 0x9e37_79b9_7f4a_7c15]
+        .into_iter()
+        .enumerate()
+    {
+        let mut hash = seed;
+        for byte in data {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        out[half * 8..half * 8 + 8].copy_from_slice(&hash.to_be_bytes());
+    }
+    out
 }

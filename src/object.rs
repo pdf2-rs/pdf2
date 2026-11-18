@@ -154,6 +154,16 @@ impl Dictionary {
             .map(|(_, value)| value)
     }
 
+    /// Remove `name`'s entry, returning the value it held.
+    ///
+    /// An edit that drops a reference needs this: a key cannot be "set to
+    /// absent" by writing `null`, because a reader distinguishes a missing key
+    /// (inherit, fall back) from an explicit `null` (present, empty).
+    pub fn remove(&mut self, name: &[u8]) -> Option<Object> {
+        let position = self.entries.iter().position(|(key, _)| key == name)?;
+        Some(self.entries.remove(position).1)
+    }
+
     /// Whether `name` has an entry.
     pub fn contains_key(&self, name: &[u8]) -> bool {
         self.get(name).is_some()

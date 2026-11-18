@@ -158,3 +158,140 @@ fn adding_past_the_page_ceiling_is_refused_before_anything_changes() {
     assert!(edit.changes().is_empty(), "nothing was written");
     assert_eq!(edit.next_object(), next_before, "no number was consumed");
 }
+
+#[test]
+fn a_saved_edit_starts_with_the_base_and_reopens_with_the_page() {
+    let base = opened();
+    let pages_before = base.page_count().expect("text.pdf has pages");
+    let first_page_before = base
+        .extract_text(&base.page(0).expect("the first page reads"))
+        .expect("the first page's text extracts");
+    let mut edit = MutableDocument::new(base);
+    edit.add_page(b"BT /F1 18 Tf 72 720 Td (a page added by an edit) Tj ET")
+        .expect("the page is added");
+
+    let saved = edit.save_incremental().expect("the edit saves");
+
+    assert!(
+        saved.starts_with(TEXT),
+        "the saved bytes start with the base bytes: {} appended",
+        saved.len() - TEXT.len()
+    );
+    let reopened = Document::open(&saved[..]).expect("the saved file opens");
+    assert_eq!(
+        reopened.page_count().expect("the saved file counts"),
+        pages_before + 1,
+        "one page more than the base"
+    );
+    assert_eq!(
+        reopened
+            .extract_text(&reopened.page(0).expect("the first page reads"))
+            .expect("the first page's text extracts"),
+        first_page_before,
+        "the first page still extracts what it did"
+    );
+    let added = reopened.page(pages_before).expect("the added page is last");
+    assert_eq!(
+        reopened
+            .extract_text(&added)
+            .expect("the added page's text extracts"),
+        "a page added by an edit",
+        "the added page's own text extracts"
+    );
+}
+
+#[test]
+fn a_deleted_object_is_a_free_row_and_the_saved_file_still_opens() {
+    // A base with an object nothing references: deleting a live one would leave
+    // the page pointing at a free entry, which is a broken document, not a test.
+    // The builder gives a file whose spare object can go without touching the
+    // page's text.
+    let mut builder = Document::new();
+    builder.add_page(
+        pdf2::Rect::new(0.0, 0.0, 612.0, 792.0),
+        "BT /F1 18 Tf 72 700 Td (a page worth keeping) Tj ET",
+    );
+    let spare = builder.add_object(Object::Integer(1234));
+    let base_bytes = builder.save().expect("the base saves");
+    let base = Document::open(&base_bytes[..]).expect("the base opens");
+    assert!(base.contains_object(spare), "the spare object is live");
+    let text_before = base
+        .extract_text(&base.page(0).expect("the page reads"))
+        .expect("the page's text extracts");
+
+    let mut edit = MutableDocument::new(base);
+    edit.delete_object(ObjectId::new(spare, 0));
+    assert!(
+        edit.get_object(ObjectId::new(spare, 0)).is_err(),
+        "deleted in the overlay"
+    );
+
+    let saved = edit.save_incremental().expect("the edit saves");
+    assert!(
+        saved.starts_with(&base_bytes[..]),
+        "the saved bytes start with the base bytes"
+    );
+    let section = String::from_utf8_lossy(&saved[base_bytes.len()..]).to_string();
+    assert!(
+        section.contains("0000000000 00001 f"),
+        "the deletion is a free row in the appended section:\n{section}"
+    );
+
+    let reopened = Document::open(&saved[..]).expect("the saved file opens");
+    assert!(
+        !reopened.contains_object(spare),
+        "the deleted number is free in the saved file"
+    );
+    assert_eq!(
+        reopened
+            .extract_text(&reopened.page(0).expect("the page reads"))
+            .expect("the page's text still extracts"),
+        text_before,
+        "the page is untouched by the deletion"
+    );
+}
+
+#[test]
+fn a_saved_edit_can_be_opened_edited_and_saved_again() {
+    // A second update over the first: the appended section has to be readable as
+    // a base, with its own `/Prev` chain, or editing is a one-shot operation.
+    let first = {
+        let mut edit = MutableDocument::new(opened());
+        edit.add_page(b"BT /F1 18 Tf 72 700 Td (first edit) Tj ET")
+            .expect("the first page is added");
+        edit.save_incremental().expect("the first edit saves")
+    };
+    let second = {
+        let base = Document::open(&first[..]).expect("the first save opens");
+        let mut edit = MutableDocument::new(base);
+        edit.add_page(b"BT /F1 18 Tf 72 600 Td (second edit) Tj ET")
+            .expect("the second page is added");
+        edit.save_incremental().expect("the second edit saves")
+    };
+
+    assert!(
+        second.starts_with(&first[..]),
+        "each save appends to what it opened"
+    );
+    let reopened = Document::open(&second[..]).expect("the second save opens");
+    assert_eq!(
+        reopened.page_count().expect("the second save counts"),
+        3,
+        "one page from the base and one from each edit"
+    );
+    let texts: Vec<String> = (0..3)
+        .map(|index| {
+            reopened
+                .extract_text(&reopened.page(index).expect("the page reads"))
+                .expect("the page's text extracts")
+        })
+        .collect();
+    assert!(
+        texts[1].contains("first edit"),
+        "the first edit is intact: {texts:?}"
+    );
+    assert!(
+        texts[2].contains("second edit"),
+        "the second edit is there: {texts:?}"
+    );
+}
