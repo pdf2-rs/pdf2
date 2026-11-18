@@ -4,7 +4,26 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.1] — in progress
+## [1.6.0] — in progress
+
+**Editing an opened document.** `MutableDocument` overlays a `Document` and saves
+*incrementally*: the saved file begins with the original bytes, carries a `/Prev` chain,
+keeps the first `/ID` string, and appends only what changed
+([ADR 0006](docs/adr/0006-editing-mutation-model.md), [plan](docs/plans/editing.md)).
+An opened file is never modified, so a reader can keep using it and a signature over the
+original stays valid. Deletions are free rows rather than byte edits, an encrypted base is
+appended to *encrypted* (RC4, AES-128 and AES-256), and a save that would write more
+objects than the document's `object_limit` is refused before it produces a byte.
+
+### Added
+
+- `MutableDocument`: `new`, `base`, `changes`, `deleted`, `next_object`, `get_object`,
+  `set_object`, `add_object`, `delete_object`, `pages`/`page_count`/`page`, `add_page`
+  and `save_incremental`.
+- `Dictionary::remove` — an edit that drops a reference cannot write `null` for "absent",
+  because a reader distinguishes a missing key from an explicit one.
+- `Encryption::encrypt_string_at`/`encrypt_stream_at`/`encrypt_object_at`, the mirror of
+  the decrypt trio, so an update to a protected file is written with the same handler.
 
 ### Fixed
 

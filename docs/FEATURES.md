@@ -62,7 +62,7 @@ behaviour.
 
 ## File structure and objects
 
-Checked 2026-11-15 — `cargo test --workspace` (322 tests, including `tests/document.rs`, `tests/xref_streams.rs`, `tests/writer.rs`); `cargo run -p pdf2-cli -- info tests/fixtures/classic-xref.pdf` (incremental update) and `… info corpus/tier-a/bug_jpx.pdf` (the one committed file that declares `/Linearized`).
+Checked 2026-11-17 — `cargo test --workspace` (including `tests/edit.rs`, which asserts the incremental update and drives `pdftoppm`/`mutool` over a saved file when they are installed); `cargo run -p pdf2-cli -- info tests/fixtures/classic-xref.pdf` (incremental update) and `… info corpus/tier-a/bug_jpx.pdf` (the one committed file that declares `/Linearized`).
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ Checked 2026-11-15 — `cargo test --workspace` (322 tests, including `tests/doc
 | Damaged files: repair/rebuild policy beyond error reporting | unplanned | We report and stop. Demand unmeasured; a `--repair` mode would need a corpus of damaged files first. |
 | Linearised files (read) | shipped | `corpus/tier-a/bug_jpx.pdf` declares `/Linearized` and the CLI reads it (`pdf2 check`, 2026-11-15); linearisation is an ordering, so the parser reads it by construction |
 | Linearisation (write) | unplanned | No demand evidence; `qpdf` owns the use case |
-| Incremental update (write) | scheduled 11 | `src/writer.rs` builds new documents only |
+| Incremental update (write) | shipped | `MutableDocument::save_incremental` (`src/edit.rs`): append, one classic xref section with `f` rows for deletions, trailer with `/Prev`/`/Size`/`/ID` (first string frozen), encrypted with the base's handler. Proved by `tests/edit.rs` — the round trip, the trailer to `14.4`, encryption on all three fixtures, and `pdftoppm`/`mutool` rendering the appended page (2026-11-17). Owner: item 11 |
 | `7.9` Common data structures — dates, names, strings, rectangles | shipped, partial | `Rect` and the name/string objects are modelled (`src/object.rs`); **dates are not**: no `Date` type exists, so `/CreationDate` and `/ModDate` are unread strings |
 | `7.10` Functions (types 0–4) | shipped (partial) | `crates/pdf2-render/src/function.rs` parses and evaluates **type 0** (sampled, bit-unpacked, multilinear), **type 2** (exponential), **type 3** (stitching, with `/Bounds` and `/Encode`) and **type 4** (the PostScript calculator: Table 42's operators, `if`/`ifelse` over procs, bounded to 4096 steps and 128 stack entries). Type 1 is refused by name as the deprecated form. Every `/Function` in the five shading pages parses and evaluates (`function.rs` tests); **nothing paints with them yet** — `sh` is item 10's next child. Owner: item 10 (functions, 2026-11-16) |
 | `7.10` Functions used for anything else | scheduled 10 | Nothing evaluates PDF functions; shadings cannot be drawn without them, so the row rides with item 10. Owner: item 10 |
@@ -244,12 +244,12 @@ Checked 2026-11-15 — `cargo test -p pdf2 --test encryption`; the corpus's `enc
 
 ## API, tooling, proof
 
-Checked 2026-11-15 — `cargo test --workspace`; `cargo run -p pdf2-cli -- info|pages|text|check`; `cargo run -q -p xtask -- wasm-package` (API smoke test and size budget: 206 823 B gzip of 266 240); `cargo run -q -p xtask -- corpus`; five fuzz targets, last nightly run green 2026-11-15; the oracle gate's last run green 2026-11-15.
+Checked 2026-11-17 — `cargo test --workspace` (editing's 16 tests in `tests/edit.rs`); `cargo run -p pdf2-cli -- info|pages|text|check`; `cargo run -q -p xtask -- wasm-package` (API smoke test and size budget: 206 823 B gzip of 266 240); `cargo run -q -p xtask -- corpus`; five fuzz targets, last nightly run green 2026-11-15; the oracle gate's last run green 2026-11-15.
 
 | Feature | Status | Evidence / owner |
 | --- | --- | --- |
 | `Document`, `Page` model, lazy objects, caching, `Result`-only errors | shipped | `src/` |
-| Editing API (mutate an opened document) | scheduled 11 | **Scheduled 2026-11-17** by the owner, not deferred: the mutation model is [ADR 0006](adr/0006-editing-mutation-model.md) (copy-on-write overlay, incremental saves, `/Prev` chain, `/ID` frozen) and the sequence is [plan](plans/editing.md). Owner: item 11 |
+| Editing API (mutate an opened document) | shipped | `MutableDocument` (`src/edit.rs`) overlays a `Document` — `set_object`/`add_object`/`delete_object`/`add_page`, reads through the overlay, the base untouched — and saves incrementally per [ADR 0006](adr/0006-editing-mutation-model.md). `tests/edit.rs` (16 tests): overlay reads, the page tree, the `14.4` trailer, the write-side ceiling, and the round trip on plain and encrypted files, with poppler and mupdf rendering the appended page (2026-11-17). Owner: item 11 |
 | CLI: `info`, `pages`, `text`, `check`, `--json`, `--password` | shipped | `crates/pdf2-cli` |
 | CLI `render` subcommand | unplanned | The corpus run uses the renderer's golden binary; a batch render was not needed yet |
 | wasm: open, page count/size, text, metadata, render to pixels/canvas, render report | shipped | `crates/pdf2-wasm` |
