@@ -25,7 +25,7 @@ pub mod page;
 pub mod parser;
 pub mod writer;
 
-pub use content::{PageHits, SearchHit, TextSpan};
+pub use content::{PageHits, PageMatches, SearchHit, SearchMatch, TextSpan};
 pub use crypto::Encryption;
 pub use document::{DEFAULT_OBJECT_LIMIT, DEFAULT_PAGE_LIMIT, Document};
 pub use edit::MutableDocument;

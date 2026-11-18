@@ -150,6 +150,121 @@ fn line_breaks_come_from_positioning_operators() {
 }
 
 #[test]
+fn a_simple_fonts_stated_widths_size_the_line() {
+    // Two codes, 500 and 1000 units at 10 pt: the line is 15 units wide. Without
+    // the widths the box would fall back to the documented 0.5 em estimate and be
+    // 10 units -- the difference a search hit inherits.
+    let content = "BT /F1 10 Tf 10 10 Td (AB) Tj ET";
+    let document = doc(&[
+        (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+        (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+        (
+            3,
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>",
+        ),
+        (
+            4,
+            &format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            ),
+        ),
+        (
+            5,
+            "<< /Type /Font /Subtype /Type1 /BaseFont /X /Encoding /WinAnsiEncoding \
+             /FirstChar 65 /Widths [500 1000] >>",
+        ),
+    ]);
+    let page = document.page(0).expect("page");
+    let spans = document.spans(&page).expect("spans");
+    let span = spans.first().expect("one span");
+    assert_eq!(span.text, "AB");
+    assert!(
+        (span.bounds.width() - 15.0).abs() < 0.01,
+        "the stated widths size the line: {} against 15",
+        span.bounds.width()
+    );
+}
+
+#[test]
+fn an_embedded_fonts_line_is_as_wide_as_its_stated_widths() {
+    // `book.pdf` states `/Widths` for its serif: the line's box must be the sum of
+    // those widths, character by character, and not the half-em estimate.
+    const BOOK: &[u8] = include_bytes!("fixtures/book.pdf");
+    let document = open(BOOK);
+    let page = document.page(0).expect("page");
+    let span = document
+        .spans(&page)
+        .expect("spans")
+        .into_iter()
+        .next()
+        .expect("one span");
+    let resources = page.resources.clone().expect("/Resources");
+    let value = |object: &pdf2::Object| match object {
+        pdf2::Object::Reference(id) => document.get_object(*id).expect("object reads"),
+        other => other.clone(),
+    };
+    let fonts = value(resources.get(b"Font").expect("/Font"));
+    let pdf2::Object::Dictionary(fonts) = fonts else {
+        panic!("/Font is not a dictionary");
+    };
+    let (_, font) = fonts.iter().next().expect("a font");
+    let pdf2::Object::Dictionary(font) = value(font) else {
+        panic!("the font is not a dictionary");
+    };
+    let first = font
+        .get(b"FirstChar")
+        .and_then(pdf2::Object::as_integer)
+        .unwrap_or(0);
+    let pdf2::Object::Array(widths) = value(font.get(b"Widths").expect("/Widths")) else {
+        panic!("/Widths is not an array");
+    };
+    let size = span.bounds.height();
+    let expected: f64 = span
+        .text
+        .chars()
+        .filter(|character| character.is_ascii())
+        .map(|character| {
+            let index = usize::try_from(i64::from(character as u32) - first).unwrap_or(0);
+            widths
+                .get(index)
+                .and_then(pdf2::Object::as_real)
+                .unwrap_or(0.0)
+                / 1000.0
+                * size
+        })
+        .sum();
+    assert!(
+        (span.bounds.width() - expected).abs() < 0.05,
+        "the box is the stated widths: {} against {expected}",
+        span.bounds.width()
+    );
+    assert!(
+        (span.bounds.width() - 0.5 * size * span.text.chars().count() as f64).abs() > 1.0,
+        "and not the estimate: {}",
+        span.bounds.width()
+    );
+}
+
+#[test]
+fn a_font_without_widths_keeps_the_documented_estimate() {
+    // `text.pdf`'s Helvetica states no `/Widths`, so the half-em estimate stands:
+    // 14 characters at 18 pt is 126 units. (The renderer paints 6/9 em instead,
+    // which is why a rendered mark still welds glyph cells -- ADR 0002's note.)
+    let document = open(TEXT);
+    let page = document.page(0).expect("page");
+    let spans = document.spans(&page).expect("spans");
+    let span = spans.first().expect("one span");
+    assert_eq!(span.text, "Hello, PDF 2.0");
+    assert!(
+        (span.bounds.width() - 126.0).abs() < 0.01,
+        "the estimate stands at 14 x 0.5 em x 18 pt: {} against 126",
+        span.bounds.width()
+    );
+}
+
+#[test]
 fn unsupported_operators_are_ignored_not_fatal() {
     // Graphics operators around the text must not disturb extraction.
     assert_eq!(
@@ -510,4 +625,65 @@ fn search_does_not_match_across_a_line_break_and_an_empty_needle_matches_nothing
         document.search("nothing here").expect("search").is_empty(),
         "a missing phrase is not a hit"
     );
+}
+
+#[test]
+fn a_match_reports_the_rectangle_of_the_characters_it_names() {
+    // `text.pdf`'s fourth line is "fourth line": the word starts at character 7, so
+    // its own box begins seven half-em advances (9 units each at 18 pt) after the
+    // line's origin and ends four advances later -- inside the line, and narrower.
+    let document = open(TEXT);
+    let matches = document.search_matches("line").expect("matches");
+    let fourth = matches
+        .iter()
+        .flat_map(|page| page.matches.iter())
+        .find(|hit| hit.line.y0 > 600.0 && hit.line.y0 < 640.0)
+        .expect("the fourth line's hit");
+    assert_eq!(fourth.text, "line");
+    assert_eq!((fourth.start, fourth.end), (7, 11));
+    assert!(
+        (fourth.bounds.x0 - (fourth.line.x0 + 7.0 * 9.0)).abs() < 0.01,
+        "the box starts at the word's advance: {} against {}",
+        fourth.bounds.x0,
+        fourth.line.x0 + 63.0
+    );
+    assert!(
+        (fourth.bounds.width() - 4.0 * 9.0).abs() < 0.01,
+        "and is four advances wide: {} against 36",
+        fourth.bounds.width()
+    );
+    assert!(
+        fourth.bounds.width() < fourth.line.width(),
+        "the match is narrower than its line: {} against {}",
+        fourth.bounds.width(),
+        fourth.line.width()
+    );
+}
+
+#[test]
+fn a_one_character_match_is_one_advance_wide() {
+    // The short needle PyMuPDF's own docs warn about: its box is a single advance,
+    // at the character's own position rather than the line's.
+    let document = open(TEXT);
+    let matches = document.search_matches("P").expect("matches");
+    let hit = &matches[0].matches[0];
+    assert_eq!(hit.text, "P");
+    assert_eq!(hit.end - hit.start, 1);
+    assert!(
+        (hit.bounds.width() - 9.0).abs() < 0.01,
+        "one half-em advance at 18 pt: {}",
+        hit.bounds.width()
+    );
+}
+
+#[test]
+fn a_match_without_stated_widths_still_falls_inside_its_line() {
+    // `text.pdf` states no `/Widths`, so the box comes from the half-em estimate --
+    // it must still be inside the line's own box and start where the estimate says.
+    let document = open(TEXT);
+    let matches = document.search_matches("PDF").expect("matches");
+    let hit = &matches[0].matches[0];
+    assert!(hit.bounds.x0 >= hit.line.x0 - 0.01);
+    assert!(hit.bounds.x1 <= hit.line.x1 + 0.01);
+    assert_eq!((hit.start, hit.end), (7, 10));
 }

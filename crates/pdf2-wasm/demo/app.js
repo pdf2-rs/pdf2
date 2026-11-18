@@ -152,6 +152,10 @@ const state = {
   // The needle `hits` and `hitIndex` belong to, so an arrow press steps from
   // where the reader is while new text starts again at the first hit.
   needle: null,
+  // Each hit's own rectangle and character offsets, in the same order as `hits`.
+  matches: [],
+  // The library's line texts per page, for putting a hit's offsets on a painted run.
+  spanTexts: new Map(),
   hits: [],
   hitIndex: 0,
   canvasWidth: 0,
@@ -390,127 +394,116 @@ function paintedLines(page) {
   return lines;
 }
 
-/// How many times `needle` (already folded) occurs in `text` (already folded).
-function countOccurrences(text, needle) {
-  if (needle.length === 0) {
-    return 0;
-  }
-  let count = 0;
-  let from = 0;
-  while (from <= text.length - needle.length) {
-    const at = text.indexOf(needle, from);
-    if (at < 0) {
-      break;
+/// The library's own text for the line the hit sits on.
+///
+/// `search_matches` counts characters in the extractor's line, and the extractor may
+/// insert a space the painter has no glyph for; this is the string those offsets
+/// index, found by the same geometric rule the painted run uses.
+function spanTextFor(hit) {
+  let cached = state.spanTexts.get(hit.page);
+  if (!cached) {
+    try {
+      cached = {
+        boxes: state.document.spans(hit.page),
+        texts: state.document.spanTexts(hit.page),
+      };
+    } catch {
+      return null;
     }
-    count += 1;
-    from = at + needle.length;
+    state.spanTexts.set(hit.page, cached);
   }
-  return count;
+  const [x0, y0, , y1] = hit.box;
+  const middle = (y0 + y1) / 2;
+  let best = null;
+  for (let index = 0; index < cached.texts.length; index += 1) {
+    const [sx0, sy0, , sy1] = Array.from(cached.boxes.slice(index * 4, index * 4 + 4));
+    const distance = Math.abs((sy0 + sy1) / 2 - middle) + Math.abs(sx0 - x0) * 0.01;
+    if (best === null || distance < best.distance) {
+      best = { distance, text: cached.texts[index] };
+    }
+  }
+  return best ? best.text : null;
 }
 
-/// The line a hit belongs to: the nearest run whose text still *has* the hit to give.
+/// The painted run a hit belongs to: the one nearest its line box.
 ///
-/// Text first, position second, because the two engines do not always agree on
-/// where a line sits: on `text.pdf` the extractor puts "fourth line" at 638..656
-/// while the renderer paints it at baseline 624, a 14 px disagreement, while the
-/// line above agrees exactly. A nearest-wins rule then ties -- 14 px to one line,
-/// 14 px to the other -- and picks whichever comes first, which for a second hit of
-/// the same needle means re-marking the first word. So a line is only a candidate
-/// while it has an occurrence left: searching "ou" marks `spaced out` and then
-/// `fourth line`.
-function lineOf(lines, hit, consumed) {
-  const needle = hit.text.toLocaleLowerCase();
+/// The library's hit names its line's box and the characters it matched; the run is
+/// chosen geometrically, not by searching its text, because the extractor and the
+/// renderer need not agree on a line's y (they differ by 14 px on one line of
+/// `text.pdf`) and searching text again is what made two hits mark the same word.
+function paintedLineFor(lines, hit, match, spanText) {
   const [x0, y0, , y1] = hit.box;
   const middle = (y0 + y1) / 2;
   let best = null;
   for (const line of lines) {
-    const text = line.text.toLocaleLowerCase();
-    if (countOccurrences(text, needle) <= (consumed.get(line) ?? 0)) {
+    // A candidate must be able to place the offsets: the extractor's line text and
+    // the painted run are not always the same string (a `TJ` gap is a space in one
+    // and nothing in the other), and that alignment is also what tells two
+    // equidistant runs apart — the extractor's y and the renderer's differ by 14 px
+    // on one line of `text.pdf`.
+    const aligned = alignOffsets(spanText, line, match.start, match.end);
+    if (!aligned) {
       continue;
     }
     const vertical = Math.abs(line.y0 + line.height / 2 - middle);
     const horizontal = Math.abs(line.x0 - x0);
-    if (!best || vertical < best.vertical || (vertical === best.vertical && horizontal < best.horizontal)) {
-      best = { line, vertical, horizontal };
+    const better =
+      best === null ||
+      vertical < best.vertical - 0.01 ||
+      (Math.abs(vertical - best.vertical) <= 0.01 && horizontal < best.horizontal);
+    if (better) {
+      best = { line, aligned, vertical, horizontal };
     }
   }
-  return best ? best.line : null;
+  return best;
 }
 
-/// Which occurrence of its text each hit is, in hit order.
+/// Where the extractor's character offsets land in a painted run.
 ///
-/// Hits arrive left to right and top to bottom (`src/content.rs:1020-1040`), so on
-/// one line they consume that line's occurrences in order: two "line" hits on one
-/// page must not resolve to the same glyphs.
-function hitOccurrences(lines) {
-  // Per line, how many of its occurrences the hits so far have taken: a line
-  // cannot supply more than its text holds, and a hit that would overrun it must
-  // look at the next candidate instead.
-  const consumed = new Map();
-  const resolved = [];
-  for (let index = 0; index < state.hits.length; index += 1) {
-    const hit = state.hits[index];
-    const line = lineOf(lines, hit, consumed);
-    if (!line) {
-      resolved.push(null);
-      continue;
-    }
-    const occurrence = consumed.get(line) ?? 0;
-    consumed.set(line, occurrence + 1);
-    resolved.push({ line, occurrence });
-  }
-  return resolved;
-}
-
-/// The glyph run a hit names, as page-space cells, or null when it cannot be
-/// mapped (a code with no character leaves that part of the line unspellable).
-///
-/// The hit carries its *line's* box (`src/content.rs:1036`), so the line comes from
-/// the box and the occurrence from the hits before it; the cells are the glyphs
-/// that spell the matched text.
-function hitCells(hit) {
-  const lines = paintedLines(hit.page);
-  if (!lines || lines.length === 0) {
-    return null;
-  }
-  const resolved = hitOccurrences(lines)[state.hitIndex];
-  if (!resolved) {
-    return null;
-  }
-  const { line, occurrence } = resolved;
-  const needle = hit.text.toLocaleLowerCase();
-  if (needle.length === 0) {
-    return null;
-  }
-  const haystack = line.text.toLocaleLowerCase();
-  const found = [];
-  let from = 0;
-  while (from <= haystack.length - needle.length) {
-    const at = haystack.indexOf(needle, from);
-    if (at < 0) {
-      break;
-    }
-    found.push(at);
-    from = at + Math.max(1, needle.length);
-  }
-  if (found.length === 0) {
-    return null;
-  }
-  const start = found[Math.min(occurrence, found.length - 1)];
-  let first = -1;
-  for (let index = 0; index < line.glyphs.length; index += 1) {
-    if (line.starts[index] <= start) {
-      first = index;
+/// The two texts are not always the same string: the extractor inserts a space
+/// where a `TJ` adjustment or a gap separates two runs, and the painter has no glyph
+/// there. Walking both once gives the mapping without searching for the needle
+/// again; a real mismatch (a different character) returns null, and the caller falls
+/// back.
+function alignOffsets(spanText, line, start, end) {
+  const from = spanText.toLocaleLowerCase();
+  const to = line.text.toLocaleLowerCase();
+  const map = new Array(from.length);
+  let at = 0;
+  for (let index = 0; index < from.length; index += 1) {
+    const character = from[index];
+    if (at < to.length && to[at] === character) {
+      map[index] = at;
+      at += 1;
+    } else if (character === ' ') {
+      // A space the painter does not hold: the offsets stay where they are.
+      map[index] = at;
     } else {
-      break;
+      return null;
     }
   }
-  if (first < 0) {
+  if (end > from.length || start >= end) {
+    return null;
+  }
+  const first = map[start];
+  const last = map[end - 1];
+  if (first === undefined || last === undefined || last < first) {
+    return null;
+  }
+  return { start: first, end: last + 1 };
+}
+
+/// The glyph cells of `line` covering the character offsets `[start, end)`.
+function cellsForOffsets(line, start, end) {
+  if (start < 0 || end <= start || end > line.text.length) {
     return null;
   }
   const cells = [];
-  let covered = 0;
-  for (let index = first; index < line.glyphs.length && covered < needle.length; index += 1) {
+  for (let index = 0; index < line.glyphs.length; index += 1) {
+    const at = line.starts[index];
+    if (at < start || at >= end) {
+      continue;
+    }
     const glyph = line.glyphs[index];
     cells.push({
       left: glyph.x,
@@ -518,9 +511,8 @@ function hitCells(hit) {
       width: Math.max(1, glyph.advance),
       height: glyph.size,
     });
-    covered += glyph.text.length;
   }
-  return cells;
+  return cells.length > 0 ? cells : null;
 }
 
 function paintHits() {
@@ -538,14 +530,25 @@ function paintHits() {
   // once, and a zoom since then has moved on from that value.
   const [, pageHeight] = state.document.pageSize(hit.page);
   const base = scaleFor(...state.document.pageSize(hit.page));
-  const cells = hitCells(hit);
+  // The library says which characters matched; the painted run they belong to is
+  // chosen by geometry, and the glyphs are taken at those offsets -- no search of
+  // the run's text.
+  const match = state.matches[state.hitIndex];
+  const lines = paintedLines(hit.page);
+  let cells = null;
+  if (lines && match) {
+    const spanText = spanTextFor(hit);
+    const candidate = spanText === null ? null : paintedLineFor(lines, hit, match, spanText);
+    if (candidate) {
+      cells = cellsForOffsets(candidate.line, candidate.aligned.start, candidate.aligned.end);
+    }
+  }
   if (!cells) {
-    // Defensive, and unreachable from any fixture in the tree: a glyph carries no
-    // text only when its code has no `/ToUnicode` (a composite font), and the one
-    // page with such a glyph (`tr-clip-type3.pdf`) has no extractable text at all,
-    // so `search` never returns a hit there. If it ever does, the line box is what
-    // a reader gets -- the geometry this file replaces -- rather than no mark.
-    const [x0, y0, x1, y1] = hit.box;
+    // A hit whose offsets cannot be placed on a painted run falls back to the
+    // library's own rectangle for the match (or its line), rather than vanishing:
+    // the two engines need not agree on a line's y, and the offsets are characters
+    // of the extractor's text, which a run that lost or gained a space would shift.
+    const [x0, y0, x1, y1] = match ? match.bounds : hit.box;
     paintMarks('find', [
       {
         left: x0 * base,
@@ -559,6 +562,7 @@ function paintHits() {
     }
     return;
   }
+  globalThis.__findDebug = { ...globalThis.__findDebug, cells: cells.length, aligned: cells[0] };
   paintMarks(
     'find',
     weldCells(
@@ -570,6 +574,20 @@ function paintHits() {
       })),
     ),
   );
+  // The library's own rectangle for the match, in the same units the mark uses:
+  // where the document's advances and the paint agree, the two coincide, and a
+  // test can say so without reaching into the module.
+  const [mx0, my0, mx1, my1] = match.bounds;
+  for (const mark of elements.selectionLayer.querySelectorAll('i.find')) {
+    mark.dataset.match = [
+      mx0 * base,
+      (pageHeight - my1) * base,
+      (mx1 - mx0) * base,
+      (my1 - my0) * base,
+    ]
+      .map((value) => value.toFixed(2))
+      .join(',');
+  }
 }
 
 /// Run the current needle, moving to the first hit's page when it is elsewhere.
@@ -591,17 +609,24 @@ async function runFind(needle, move = 0) {
   }
   let boxes;
   let texts;
+  let matches;
   try {
     boxes = state.document.search(needle);
     texts = state.document.searchTexts(needle);
+    matches = state.document.searchMatches(needle);
   } catch {
     elements.findInfo.textContent = '0 / 0';
     return;
   }
   const count = Math.floor(boxes.length / 5);
+  state.matches = [];
   for (let index = 0; index < count; index += 1) {
     const [page, x0, y0, x1, y1] = Array.from(boxes.slice(index * 5, index * 5 + 5));
     state.hits.push({ page, text: texts[index], box: [x0, y0, x1, y1] });
+    const [mx0, my0, mx1, my1, start, end] = Array.from(
+      matches.slice(index * 6, index * 6 + 6),
+    );
+    state.matches.push({ bounds: [mx0, my0, mx1, my1], start, end });
   }
   if (state.hits.length === 0) {
     state.hitIndex = 0;
@@ -787,6 +812,7 @@ async function showDocument(bytes, name, password, source) {
   try {
     state.document = open(bytes, password ?? null);
     state.glyphs.clear();
+    state.spanTexts.clear();
     state.bytes = bytes;
     state.name = name;
     state.password = password ?? null;

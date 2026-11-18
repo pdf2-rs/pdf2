@@ -164,6 +164,34 @@ impl PdfDocument {
             .collect())
     }
 
+    /// Every match's own rectangle and character offsets: `[x0, y0, x1, y1,
+    /// start, end, …]`, six numbers per match, in the same order as `search`.
+    ///
+    /// `search` gives each hit's *line*; this gives the rectangle of the matched
+    /// characters, which is what a mark wants when the document's advances are the
+    /// ones on the page. The offsets are character indices into the line's text.
+    #[wasm_bindgen(js_name = searchMatches)]
+    pub fn search_matches(&self, needle: &str) -> Result<Vec<f64>, JsError> {
+        let mut out = Vec::new();
+        for page in self
+            .document
+            .search_matches(needle)
+            .map_err(|error| JsError::new(&error.to_string()))?
+        {
+            for hit in page.matches {
+                out.extend_from_slice(&[
+                    hit.bounds.x0,
+                    hit.bounds.y0,
+                    hit.bounds.x1,
+                    hit.bounds.y1,
+                    hit.start as f64,
+                    hit.end as f64,
+                ]);
+            }
+        }
+        Ok(out)
+    }
+
     /// Every search hit in the document as `[page, x0, y0, x1, y1, …]`, four box
     /// numbers after each page index, case-insensitively.
     ///
