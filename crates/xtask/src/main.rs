@@ -612,6 +612,13 @@ fn ledger() -> Result<(), String> {
 
 /// Parsing and checks for the feature ledger, kept apart so they can be tested.
 mod ledger {
+    /// One rank of the roadmap: its number and whether the roadmap marks it ✓.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Item {
+        pub rank: String,
+        pub shipped: bool,
+    }
+
     /// One table row: its first cell, its status, and the rest of the row.
     #[derive(Debug, Clone, PartialEq)]
     pub struct Row {
@@ -622,18 +629,25 @@ mod ledger {
     }
 
     /// The roadmap's ranks, in the order the table lists them.
-    pub fn roadmap_items(roadmap: &str) -> Vec<String> {
+    pub fn roadmap_items(roadmap: &str) -> Vec<Item> {
         roadmap
             .lines()
             .filter_map(|line| {
                 let rest = line.strip_prefix("| ")?;
                 let rank = rest.split(' ').next()?;
                 let numeric = rank.trim_end_matches(|c: char| c.is_ascii_alphabetic());
-                if !numeric.is_empty() && numeric.bytes().all(|b| b.is_ascii_digit()) {
-                    Some(rank.to_owned())
-                } else {
-                    None
+                if numeric.is_empty() || !numeric.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
                 }
+                // `| 4 ✓ |` is a shipped rank; `| 5 (half) |` and `| 13 |` are open.
+                let shipped = rest
+                    .split('|')
+                    .next()
+                    .is_some_and(|cell| cell.contains('✓'));
+                Some(Item {
+                    rank: rank.to_owned(),
+                    shipped,
+                })
             })
             .collect()
     }
@@ -709,7 +723,7 @@ mod ledger {
     }
 
     /// Everything wrong with the ledger against the plan.
-    pub fn problems(rows: &[Row], items: &[String]) -> Vec<String> {
+    pub fn problems(rows: &[Row], items: &[Item]) -> Vec<String> {
         let mut problems = Vec::new();
         for row in rows {
             if row.status.starts_with("shipped") && row.evidence.trim().is_empty() {
@@ -719,20 +733,34 @@ mod ledger {
                 ));
             }
             for item in named_items(row) {
-                if !items.contains(&item) {
+                if !items.iter().any(|known| known.rank == item) {
                     problems.push(format!(
                         "line {}: `{}` names roadmap item {item}, which does not exist",
                         row.line, row.name
                     ));
                 }
             }
+            // The roadmap says whether a rank is finished; a row scheduling work
+            // under a finished rank is the contradiction PR #160 fixed by hand
+            // (rows 71 and 150 were `scheduled 8` and `scheduled 10d`).
+            if let Some(range) = row.status.strip_prefix("scheduled ") {
+                let rank = range.split_whitespace().next().unwrap_or("");
+                if items.iter().any(|item| item.rank == rank && item.shipped) {
+                    problems.push(format!(
+                        "line {}: `{}` is scheduled under roadmap item {rank}, which the roadmap marks \
+                         shipped",
+                        row.line, row.name
+                    ));
+                }
+            }
         }
         for item in items {
-            let owned = rows
-                .iter()
-                .any(|row| named_items(row).iter().any(|named| named == item));
+            let owned = rows.iter().any(|row| named_items(row).contains(&item.rank));
             if !owned {
-                problems.push(format!("roadmap item {item} has no row in the ledger"));
+                problems.push(format!(
+                    "roadmap item {} has no row in the ledger",
+                    item.rank
+                ));
             }
         }
         problems
@@ -747,6 +775,7 @@ mod ledger {
 | --- | --- |
 | 1 | oracle |
 | 2b | quality |
+| 3 ✓ | shipped rank |
 ";
 
         const GOOD: &str = "\
@@ -754,17 +783,63 @@ mod ledger {
 | --- | --- | --- |
 | Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
 | Quality | scheduled 2b | `src/content.rs` |
+| Shipped rank | shipped | `src/x.rs`, owner: item 3 |
 ";
 
         #[test]
-        fn the_roadmap_ranks_are_read_in_order() {
-            assert_eq!(roadmap_items(ROADMAP), vec!["1", "2b"]);
+        fn the_roadmap_ranks_are_read_in_order_and_know_which_shipped() {
+            let items = roadmap_items(ROADMAP);
+            let ranks: Vec<&str> = items.iter().map(|item| item.rank.as_str()).collect();
+            assert_eq!(ranks, vec!["1", "2b", "3"]);
+            assert_eq!(
+                items.iter().map(|item| item.shipped).collect::<Vec<_>>(),
+                vec![false, false, true]
+            );
+        }
+
+        #[test]
+        fn a_scheduled_row_under_a_shipped_rank_is_a_contradiction() {
+            let drifted = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `src/content.rs` |
+| Ghost | scheduled 3 | `src/ghost.rs` |
+";
+            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP));
+            assert!(
+                problems.iter().any(|problem| problem.contains(
+                    "`Ghost` is scheduled under roadmap item 3, which the roadmap marks shipped"
+                )),
+                "{problems:?}"
+            );
+        }
+
+        #[test]
+        fn a_scheduled_row_under_an_open_rank_is_fine() {
+            let planned = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `src/content.rs` |
+| Only | scheduled 3 | `src/x.rs` |
+";
+            let problems = problems(&rows(planned), &roadmap_items(ROADMAP));
+            // `3` is shipped, so this row *is* a contradiction; 2b is open and is not.
+            assert_eq!(
+                problems
+                    .iter()
+                    .filter(|problem| problem.contains("roadmap marks shipped"))
+                    .count(),
+                1,
+                "{problems:?}"
+            );
         }
 
         #[test]
         fn a_consistent_ledger_has_no_problems() {
             let rows = rows(GOOD);
-            assert_eq!(rows.len(), 2, "{rows:?}");
+            assert_eq!(rows.len(), 3, "{rows:?}");
             assert!(problems(&rows, &roadmap_items(ROADMAP)).is_empty());
         }
 
