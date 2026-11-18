@@ -593,7 +593,7 @@ fn ledger() -> Result<(), String> {
     let rows = ledger::rows(&ledger);
     let citations = citations::parse(&objectives);
     let report = objective_report()?;
-    let mut problems = ledger::problems(&rows, &items);
+    let mut problems = ledger::problems(&rows, &items, |path| std::path::Path::new(path).exists());
     problems.extend(citations::problems(&citations, |path| {
         std::fs::read_to_string(path).map_err(|error| error.to_string())
     }));
@@ -727,9 +727,63 @@ mod ledger {
     }
 
     /// Everything wrong with the ledger against the plan.
-    pub fn problems(rows: &[Row], items: &[Item]) -> Vec<String> {
+    /// The roots a backticked span can name and still be a repository path.
+    const PATH_ROOTS: [&str; 9] = [
+        "docs/",
+        "src/",
+        "crates/",
+        "tests/",
+        "corpus/",
+        "vendor/",
+        "examples/",
+        "fuzz/",
+        "scripts/",
+    ];
+
+    /// The repository paths a row's evidence cites.
+    ///
+    /// A span counts when it starts at one of the roots and is not a command: a
+    /// `:373` or `:373-378` suffix and a `#snippet` anchor are stripped first, and
+    /// `MutableDocument::save_incremental` is not a path at all.
+    pub fn cited_paths(row: &Row) -> Vec<String> {
+        let mut paths = Vec::new();
+        let mut rest = row.evidence.as_str();
+        while let Some(open) = rest.find('`') {
+            let after = &rest[open + 1..];
+            let Some(close) = after.find('`') else {
+                break;
+            };
+            let span = &after[..close];
+            let path = span.split('#').next().unwrap_or(span);
+            let path = path
+                .rsplit_once(':')
+                .filter(|(_, suffix)| {
+                    !suffix.is_empty()
+                        && suffix
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || b == b'-' || b == b',')
+                })
+                .map(|(path, _)| path)
+                .unwrap_or(path);
+            if PATH_ROOTS.iter().any(|root| path.starts_with(root)) {
+                paths.push(path.to_owned());
+            }
+            rest = &after[close + 1..];
+        }
+        paths
+    }
+
+    pub fn problems(rows: &[Row], items: &[Item], exists: impl Fn(&str) -> bool) -> Vec<String> {
         let mut problems = Vec::new();
         for row in rows {
+            for path in cited_paths(row) {
+                if !exists(&path) {
+                    problems.push(format!(
+                        "line {}: `{}` cites `{path}`, which does not exist",
+                        row.line, row.name
+                    ));
+                }
+            }
             if row.status.starts_with("shipped") && row.evidence.trim().is_empty() {
                 problems.push(format!(
                     "line {}: `{}` is shipped but has no evidence cell",
@@ -772,7 +826,7 @@ mod ledger {
 
     #[cfg(test)]
     mod tests {
-        use super::{problems, roadmap_items, rows};
+        use super::{Row, cited_paths, problems, roadmap_items, rows};
 
         const ROADMAP: &str = "\
 | Rank | Item |
@@ -802,6 +856,44 @@ mod ledger {
         }
 
         #[test]
+        fn a_cited_path_is_taken_apart_but_a_symbol_is_not_one() {
+            let row = Row {
+                name: "Shadings".to_owned(),
+                status: "shipped".to_owned(),
+                evidence: "`crates/pdf2-render/tests/shading.rs:1-9`, `src/edit.rs#b\"ID\"`, \
+                           `MutableDocument::save_incremental`, `cargo gate`"
+                    .to_owned(),
+                line: 7,
+            };
+            assert_eq!(
+                cited_paths(&row),
+                vec![
+                    "crates/pdf2-render/tests/shading.rs".to_owned(),
+                    "src/edit.rs".to_owned()
+                ]
+            );
+        }
+
+        #[test]
+        fn a_cited_path_that_does_not_exist_is_reported() {
+            let wrong = "\
+| Feature | Status | Evidence / owner |
+| --- | --- | --- |
+| Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
+| Quality | scheduled 2b | `tests/shading.rs` |
+| Shipped rank | shipped | `src/x.rs`, owner: item 3 |
+";
+            let problems = problems(&rows(wrong), &roadmap_items(ROADMAP), |path| {
+                path != "tests/shading.rs"
+            });
+            assert!(
+                problems.iter().any(|problem| problem
+                    .contains("line 4: `Quality` cites `tests/shading.rs`, which does not exist")),
+                "{problems:?}"
+            );
+        }
+
+        #[test]
         fn a_scheduled_row_under_a_shipped_rank_is_a_contradiction() {
             let drifted = "\
 | Feature | Status | Evidence / owner |
@@ -810,7 +902,7 @@ mod ledger {
 | Quality | scheduled 2b | `src/content.rs` |
 | Ghost | scheduled 3 | `src/ghost.rs` |
 ";
-            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP), |_| true);
             assert!(
                 problems.iter().any(|problem| problem.contains(
                     "`Ghost` is scheduled under roadmap item 3, which the roadmap marks shipped"
@@ -828,7 +920,7 @@ mod ledger {
 | Quality | scheduled 2b | `src/content.rs` |
 | Only | scheduled 3 | `src/x.rs` |
 ";
-            let problems = problems(&rows(planned), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(planned), &roadmap_items(ROADMAP), |_| true);
             // `3` is shipped, so this row *is* a contradiction; 2b is open and is not.
             assert_eq!(
                 problems
@@ -844,7 +936,7 @@ mod ledger {
         fn a_consistent_ledger_has_no_problems() {
             let rows = rows(GOOD);
             assert_eq!(rows.len(), 3, "{rows:?}");
-            assert!(problems(&rows, &roadmap_items(ROADMAP)).is_empty());
+            assert!(problems(&rows, &roadmap_items(ROADMAP), |_| true).is_empty());
         }
 
         #[test]
@@ -856,7 +948,7 @@ mod ledger {
 | Quality | scheduled 2b | `src/content.rs` |
 | Ghost | scheduled 99 | nothing |
 ";
-            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(drifted), &roadmap_items(ROADMAP), |_| true);
             assert!(
                 problems.iter().any(|problem| problem.contains("item 99")),
                 "{problems:?}"
@@ -870,7 +962,7 @@ mod ledger {
 | --- | --- | --- |
 | Oracle | shipped | `crates/pdf2-oracle`, owner: item 1 |
 ";
-            let problems = problems(&rows(missing), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(missing), &roadmap_items(ROADMAP), |_| true);
             assert!(
                 problems.iter().any(|problem| problem.contains("item 2b")),
                 "{problems:?}"
@@ -885,7 +977,7 @@ mod ledger {
 | Oracle | shipped |  |
 | Quality | scheduled 2b | `src/content.rs` |
 ";
-            let problems = problems(&rows(bare), &roadmap_items(ROADMAP));
+            let problems = problems(&rows(bare), &roadmap_items(ROADMAP), |_| true);
             assert!(
                 problems
                     .iter()
