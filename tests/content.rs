@@ -573,6 +573,78 @@ fn a_composite_font_reads_through_its_to_unicode_map() {
     assert_eq!(document.extract_text(&page).expect("text"), "ADabcxyz A");
 }
 
+/// A one-page PDF whose text is shown in a composite font mapped by `to_unicode`.
+///
+/// The font has no program on purpose: with an Identity encoding and a `/ToUnicode`
+/// map the text is readable without one, which is the case this pins.
+fn composite_with(to_unicode: &str, content: &str) -> Vec<u8> {
+    let stream = |body: &str| format!("<< /Length {} >>\nstream\n{body}\nendstream", body.len());
+    let map = stream(to_unicode);
+    let page = stream(content);
+    pdf(&[
+        (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+        (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+        (
+            3,
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>",
+        ),
+        (4, &page),
+        (
+            5,
+            "<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H \
+             /DescendantFonts [6 0 R] /ToUnicode 7 0 R >>",
+        ),
+        (
+            6,
+            "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /DW 1000 >>",
+        ),
+        (7, &map),
+    ])
+}
+
+/// A `/ToUnicode` CMap whose `bfchar` and `bfrange` targets are several characters.
+fn ligature_map() -> &'static str {
+    concat!(
+        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n",
+        "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n",
+        // One code, three characters: the ligature case a writer states.
+        "1 beginbfchar\n<0001> <006600660069>\nendbfchar\n",
+        // A range whose array targets are two characters each.
+        "1 beginbfrange\n<0010> <0012> [<00660066> <006C006C> <00740074>]\nendbfrange\n",
+        "endcmap\nend\nend\n"
+    )
+}
+
+#[test]
+fn a_to_unicode_target_of_several_characters_is_those_characters() {
+    // A ligature is one glyph whose text is several characters, and a reader who
+    // copies it expects "ffi", not the single code point U+FB03 that a search for
+    // "office" would never match. MuPDF makes this a flag — TEXT_PRESERVE_LIGATURES
+    // = 1 is on by default and expands a fixed table of seven — while here the
+    // `/ToUnicode` map decides, which is wider and needs no table.
+    let bytes = composite_with(ligature_map(), "BT /F1 12 Tf 10 50 Td <0001> Tj ET");
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "ffi");
+    assert_eq!(
+        document.search("ffi").expect("search").len(),
+        1,
+        "the decomposed text is searchable"
+    );
+}
+
+#[test]
+fn a_to_unicode_range_with_several_character_targets_is_those_characters() {
+    let bytes = composite_with(
+        ligature_map(),
+        "BT /F1 12 Tf 10 50 Td <0010> Tj <0011> Tj <0012> Tj ET",
+    );
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "fflltt");
+}
+
 #[test]
 fn composite_fonts_we_cannot_read_are_refused_by_name() {
     for (font, expected) in [
