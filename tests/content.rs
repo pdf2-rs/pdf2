@@ -504,6 +504,61 @@ fn a_search_finds_the_text_actual_text_states() {
 }
 
 #[test]
+fn an_artifact_marked_with_bmc_contributes_no_text() {
+    // `/Artifact` is furniture (ISO 32000-2, 14.8.2.2.2): a running header is not
+    // content, so it is not text a reader can copy. The body around it still is.
+    let bytes =
+        page_with("BT /F1 12 Tf 10 50 Td (Body ) Tj /Artifact BMC (HDR) Tj EMC (end) Tj ET");
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "Body end");
+    assert!(
+        document.search("HDR").expect("search").is_empty(),
+        "an artefact is not searchable"
+    );
+}
+
+#[test]
+fn an_artifact_marked_with_bdc_and_a_property_list_contributes_no_text() {
+    // The shape a writer actually emits: a `BDC` whose tag is `/Artifact` and whose
+    // property list names the kind of furniture.
+    let bytes = page_with(
+        "BT /F1 12 Tf 10 50 Td (Stamp) Tj \
+         /Artifact << /Type /Pagination >> BDC (7) Tj EMC ET",
+    );
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "Stamp");
+}
+
+#[test]
+fn an_artifact_nested_in_a_body_sequence_contributes_no_text() {
+    let bytes = page_with(
+        "BT /F1 12 Tf 10 50 Td /Document BMC (Body ) Tj /Artifact BMC (X) Tj EMC (tail) Tj EMC ET",
+    );
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "Body tail");
+}
+
+#[test]
+fn actual_text_inside_an_artifact_produces_nothing() {
+    // The outer rule wins: an `/ActualText` inside furniture is furniture too, and
+    // the stack still unwinds so the text after the sequence is read normally.
+    let bytes = page_with(
+        "BT /F1 12 Tf 10 50 Td (Keep ) Tj \
+         /Artifact BMC /Span << /ActualText (fi) >> BDC (X) Tj EMC EMC (after) Tj ET",
+    );
+    let document = open(&bytes);
+    let page = document.page(0).expect("page");
+    assert_eq!(document.extract_text(&page).expect("text"), "Keep after");
+    assert!(
+        document.search("fi").expect("search").is_empty(),
+        "the replacement belongs to the furniture"
+    );
+}
+
+#[test]
 fn a_composite_font_reads_through_its_to_unicode_map() {
     // The fixture's codes bear no relation to their text, and its second run is
     // placed 120 units right of where the first stopped: the text can only be
