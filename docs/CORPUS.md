@@ -1,9 +1,10 @@
-# The corpus run: what this library does with 23 real files
+# The corpus run: what this library does with 25 real files
 
 First measurement of the proof strategy in [`docs/PROOF.md`](PROOF.md): Tier A,
 25 files from the pdf.js test suite, pinned and hashed in
-[`corpus/manifest.json`](../corpus/manifest.json), run on 2026-11-14 with
-`pdf2 1.0.0` and `pdf2-render 1.1.0`.
+[`corpus/manifest.json`](../corpus/manifest.json). The first run was on 2026-11-14 with
+`pdf2 1.0.0` and `pdf2-render 1.1.0` over the 23 files that existed then; the two that
+joined later are in the re-measurement below, which is the one to read.
 
 ## The result, before and after opening the header gate
 
@@ -22,7 +23,8 @@ PDF 1.4–1.7.
 
 **After** the spike relaxed that one condition (accept `1.x` and `2.x`, refuse
 everything else; no other code is version-gated), measured with
-`cargo xtask corpus`:
+`cargo xtask corpus` **over the 23 files of that day** — the numbers have moved since,
+see the re-measurement below:
 
 | Measure | Files | Note |
 | --- | --- | --- |
@@ -37,6 +39,28 @@ Failure taxonomy, and every class maps to a gap already in the scorecard:
 
 | `unsupported: composite (Type0) fonts without a /ToUnicode map` | 1 | `arial_unicode_en_cidfont.pdf` — its embedded program carries neither a `cmap` nor a `post` table, so there is no mapping to find |
 
+
+### Re-measured 2026-11-18, after `/Artifact` became furniture
+
+The corpus has 25 files now (two joined for tiling patterns and colour-key masks), and
+this is what the committed tree reports — the run every round since has been measured
+against:
+
+```text
+$ cargo run -q -p xtask -- corpus
+25 files: 24 fully readable, 25 rendered
+   1 x composite (Type0) fonts without a /ToUnicode map
+```
+
+The same one file, and it is **absent data rather than absent code**:
+`arial_unicode_en_cidfont.pdf`'s embedded program carries neither a `cmap` nor a `post`
+table and its page carries no `/ToUnicode`, so there is no code→text mapping anywhere in
+the file. What would fix it is a glyph-name fallback, which needs the renderer's font
+stack (a TrueType/CFF program parser) inside the library — the reason `pdf2` refuses
+this class by name instead of guessing, and out of scope for extraction work. The other
+**6 of 16** failures in the 200-file pdf.js sample are the same class
+(`docs/CORPUS.md`, the Tier B section below), so this objective measures and names the
+residue rather than promising to close it.
 
 **History, so the movement is auditable**: the first run stopped all 23 files at
 the header (`only PDF 2.x is supported`); opening the header gate gave 21 parsed
@@ -187,7 +211,7 @@ above compatibility and radical blocks, which is how the page reads
 
 ## Tier B: other projects' corpora, counted by class
 
-Tier A is 23 committed files with known answers. Tier B is the survey: whole
+Tier A is 25 committed files with known answers. Tier B is the survey: whole
 trees from other projects, measured the same way, with the failures grouped into
 classes instead of listed per file. It runs weekly
 (`.github/workflows/tier-b.yml`) and can be dispatched with a file cap.

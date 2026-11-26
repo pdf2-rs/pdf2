@@ -32,8 +32,8 @@ disagree — `cargo run -q -p xtask -- objective` prints exactly this:
 
 ```text
 status rows: 117
-  shipped              51
-  shipped (partial)    15
+  shipped              52
+  shipped (partial)    14
   partial              2
   not applicable       5
   deferred             1
@@ -46,7 +46,7 @@ deferred open: 3, refusals: 5
 plans: 10
 ```
 
-Read it as: **117 status rows** in `docs/FEATURES.md` (51 `shipped`, 15 `shipped (partial)`, 2 bare
+Read it as: **117 status rows** in `docs/FEATURES.md` (52 `shipped`, 14 `shipped (partial)`, 2 bare
 `partial`, 5 `not applicable`, 1 `deferred`, 8 `refused`, 11 `scheduled`, 24 `unplanned`), of which the
 **35 open** ones are listed below; **21 roadmap ranks, 7 open** (`5, 9, 10, 10b, 10c, 12, 13`); **3 deferred
 rows still open** in `docs/DEFERRED.md` (ICC, forms filling, validation — mesh shadings is a paragraph there,

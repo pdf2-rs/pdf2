@@ -397,12 +397,26 @@ struct TextInterpreter<'a> {
     ctm_stack: Vec<Matrix>,
     /// The text matrix, which `BT` resets and `Tm`/`Td`/`TD`/`T*` move (`9.4.2`).
     text_matrix: Matrix,
-    /// The open marked-content sequences, each with its `/ActualText` when it has
-    /// one — a stack, because `BDC` nests.
-    captures: Vec<Option<Capture>>,
+    /// The open marked-content sequences — a stack, because `BDC` nests.
+    captures: Vec<Marked>,
     /// Whether to record each character's advance. Off for extraction, which pays
     /// for every allocation; on for a caller that needs a run's geometry.
     positions: bool,
+}
+
+/// One open marked-content sequence, as far as extraction is concerned.
+///
+/// `/ActualText` (`14.9.4`) and `/Artifact` (`14.8.2.2.2`) are the two tags that
+/// change what the text means: the first replaces the codes, the second says there
+/// are no characters here at all — a running header, a page number, an OCR overlay
+/// a scanner drew over an image.
+enum Marked {
+    /// A sequence extraction reads normally.
+    Plain,
+    /// A sequence whose `/ActualText` replaces whatever the codes say.
+    Text(Capture),
+    /// A sequence tagged `/Artifact`: furniture, not content.
+    Artifact,
 }
 
 /// One `/ActualText` sequence being collected.
@@ -510,13 +524,19 @@ impl<'a> TextInterpreter<'a> {
         self.lines.last_mut().unwrap()
     }
 
-    /// `BDC` whose properties carry `/ActualText`: what the writer says the
-    /// content means, in place of what the glyph codes would give (`14.9.4`).
+    /// `BMC`/`BDC`: the tag decides what the sequence means, the properties may say
+    /// more (`14.6`, `14.8.2.2.2`, `14.9.4`).
     ///
     /// The replacement is remembered rather than substituted immediately, because
     /// the text it replaces is only known once the sequence closes — and a
     /// ligature glyph is exactly one code whose text is two characters.
-    fn enter_marked(&mut self, properties: Option<&Object>) -> Result<()> {
+    fn enter_marked(&mut self, tag: Option<&Object>, properties: Option<&Object>) -> Result<()> {
+        if let Some(Object::Name(name)) = tag
+            && name == b"Artifact"
+        {
+            self.captures.push(Marked::Artifact);
+            return Ok(());
+        }
         let mut capture = None;
         if let Some(properties) = properties {
             let resolved = self
@@ -533,13 +553,27 @@ impl<'a> TextInterpreter<'a> {
                 });
             }
         }
-        self.captures.push(capture);
+        self.captures.push(match capture {
+            Some(capture) => Marked::Text(capture),
+            None => Marked::Plain,
+        });
         Ok(())
     }
 
     /// `EMC`: put the sequence's text where the codes' own text would have gone.
+    /// Whether the innermost open sequence worth reading is an artefact.
+    ///
+    /// A `/Plain` sequence does not answer for itself: nested inside an `/Artifact`
+    /// it is still furniture, which is why the search runs through every open
+    /// entry rather than stopping at the first one.
+    fn inside_artifact(&self) -> bool {
+        self.captures
+            .iter()
+            .any(|marked| matches!(marked, Marked::Artifact))
+    }
+
     fn leave_marked(&mut self) {
-        let Some(capture) = self.captures.pop().flatten() else {
+        let Some(Marked::Text(capture)) = self.captures.pop() else {
             return;
         };
         let Some(index) = capture.line else {
@@ -685,7 +719,7 @@ impl<'a> TextInterpreter<'a> {
                 } else {
                     None
                 };
-                self.enter_marked(properties)?;
+                self.enter_marked(operands.first(), properties)?;
             }
             b"EMC" => self.leave_marked(),
             b"BI" => {
@@ -702,6 +736,13 @@ impl<'a> TextInterpreter<'a> {
         // Positive values move the pen left, so a wide negative adjustment is
         // how writers usually encode a space inside a `TJ` array.
         if -adjustment < WORD_GAP {
+            return;
+        }
+        // Inside an artefact the pen still moves and nothing is written.
+        if self.inside_artifact() {
+            if self.pen_tracked {
+                self.pen_x -= adjustment / 1000.0 * self.size;
+            }
             return;
         }
         let space = (-adjustment / 1000.0 * self.size).max(0.0);
@@ -735,21 +776,25 @@ impl<'a> TextInterpreter<'a> {
         // with it, and a quarter of an em is the threshold a word space clears.
         let gap =
             self.pen_tracked && self.size > 0.0 && self.line_x > self.pen_x + 0.25 * self.size;
+        // `/Artifact` is furniture, not content (`14.8.2.2.2`): the glyphs still
+        // move the pen, so a later run on the same line lands where the paint is,
+        // but no character is kept — and no line is created for a header that sits
+        // above a page which would then look like it starts with a blank line.
+        if self.inside_artifact() {
+            if self.pen_tracked {
+                self.pen_x = self.line_x + advance * self.size;
+            }
+            return;
+        }
         // `/ActualText` replaces what the codes say: the glyphtext still places the
         // line and moves the pen, but the characters are dropped here and the
         // writer's own string is inserted when `EMC` arrives.
-        let inside_has_line = self
-            .captures
-            .iter()
-            .rev()
-            .find_map(|capture| capture.as_ref())
-            .is_some_and(|capture| capture.line.is_some());
-        let capturing = self
-            .captures
-            .iter()
-            .rev()
-            .find_map(|capture| capture.as_ref())
-            .is_some();
+        let active = self.captures.iter().rev().find_map(|marked| match marked {
+            Marked::Text(capture) => Some(capture),
+            _ => None,
+        });
+        let inside_has_line = active.is_some_and(|capture| capture.line.is_some());
+        let capturing = active.is_some();
         if capturing {
             self.line();
             let index = self.lines.len() - 1;
@@ -759,7 +804,10 @@ impl<'a> TextInterpreter<'a> {
                     .captures
                     .iter_mut()
                     .rev()
-                    .find_map(|capture| capture.as_mut())
+                    .find_map(|marked| match marked {
+                        Marked::Text(capture) => Some(capture),
+                        _ => None,
+                    })
             {
                 slot.line = Some(index);
                 slot.offset = offset;

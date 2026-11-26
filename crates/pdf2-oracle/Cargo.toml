@@ -16,8 +16,8 @@ description = "Compare this renderer with independent engines (poppler, mupdf, G
 decoders = ["pdf2-render/jpx", "pdf2-render/jbig2"]
 
 [dependencies]
-pdf2 = { path = "../..", version = "1.8.0" }
-pdf2-render = { path = "../pdf2-render", version = "1.8.0" }
+pdf2 = { path = "../..", version = "1.9.0" }
+pdf2-render = { path = "../pdf2-render", version = "1.9.0" }
 
 [lints]
 workspace = true
