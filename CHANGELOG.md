@@ -4,6 +4,31 @@ All notable changes to this crate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] — 2026-11-18
+
+**An `/Artifact` sequence is furniture, not text.** `BMC`/`BDC` take a tag operand (`14.6`), and extraction
+read only the property list beside it, so a running header, a page number or a scanner's OCR overlay came
+back as text a reader would copy. A sequence whose tag is `/Artifact` (`14.8.2.2.2`) now contributes no
+characters while still moving the pen, so a run after the sequence lands where the paint is — and a page
+whose header is furniture no longer starts with the header, which is a change in what `text()` returns for
+such pages.
+
+### Changed
+
+- **`text()` drops `/Artifact`-marked content** — bare `/Artifact BMC`, `/Artifact <</Type /Pagination>> BDC`,
+  nested inside a body sequence, and with an `/ActualText` inside it (the outer rule wins). A page that used
+  to read `Body HDRend` now reads `Body end`, and one that leaked the replacement reads `Keep after` rather
+  than `Keep fiafter`. Proved by four tests in `tests/content.rs`, all of which fail on 1.8.0's code.
+
+### Added
+
+- **`/ToUnicode` targets of several characters are read whole** — a ligature code whose destination is
+  `006600660069` extracts `ffi`, `bfrange` array targets likewise, so the text is searchable as the reader
+  would type it. This worked before and was untested; the two tests that pin it are new, and truncating the
+  mapping to one character makes them fail.
+
+Every crate moves with the group ([ADR 0009](docs/adr/0009-one-version-per-group.md)).
+
 ## [1.8.0] — 2026-11-18
 
 **A search hit carries the rectangle of the characters it matched, not the box of the line they sit
